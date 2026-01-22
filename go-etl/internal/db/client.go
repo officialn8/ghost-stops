@@ -36,6 +36,11 @@ func (c *Client) Close() error {
 	return c.db.Close()
 }
 
+// Query executes a query that returns rows.
+func (c *Client) Query(query string, args ...interface{}) (*sql.Rows, error) {
+	return c.db.Query(query, args...)
+}
+
 // GetCityID returns the city ID for a given city code, creating it if necessary
 func (c *Client) GetCityID(code, name string) (string, error) {
 	var id string
@@ -115,6 +120,37 @@ func (c *Client) GetStationIDByExternalID(cityID, externalID string) (string, er
 	}
 
 	return id, nil
+}
+
+// GetStationIDByCtaStationId finds a station's UUID by its CTA station ID.
+func (c *Client) GetStationIDByCtaStationId(cityID, ctaStationId string) (string, error) {
+	var id string
+	err := c.db.QueryRow(`
+		SELECT id
+		FROM Station
+		WHERE cityId = ? AND ctaStationId = ?`,
+		cityID, ctaStationId,
+	).Scan(&id)
+
+	if err != nil {
+		return "", fmt.Errorf("could not find station with CTA station ID %s: %w", ctaStationId, err)
+	}
+
+	return id, nil
+}
+
+// UpdateStationCtaStationId updates a station's CTA station ID.
+func (c *Client) UpdateStationCtaStationId(stationID, ctaStationId string) error {
+	_, err := c.db.Exec(`
+		UPDATE Station
+		SET ctaStationId = ?
+		WHERE id = ?`,
+		ctaStationId, stationID,
+	)
+	if err != nil {
+		return fmt.Errorf("failed to update station CTA ID: %w", err)
+	}
+	return nil
 }
 
 // GetStationIDByName finds a station ID by city and normalized name
@@ -242,6 +278,27 @@ func (c *Client) GetStationNamesAndIDs(cityID string) (map[string]string, error)
 	return stations, rows.Err()
 }
 
+// GetStationCountWithRidershipInWindow returns the number of stations with ridership data in the given window
+func (c *Client) GetStationCountWithRidershipInWindow(cityID string, days int) (int, error) {
+	query := `
+		SELECT COUNT(DISTINCT s.id)
+		FROM Station s
+		WHERE s.cityId = ?
+		AND EXISTS (
+			SELECT 1
+			FROM RidershipDaily rd
+			WHERE rd.stationId = s.id
+			AND rd.serviceDate >= date('now', '-' || ? || ' days')
+		)`
+
+	var count int
+	err := c.db.QueryRow(query, cityID, days).Scan(&count)
+	if err != nil {
+		return 0, fmt.Errorf("failed to get station count with ridership: %w", err)
+	}
+	return count, nil
+}
+
 // RidershipRecord represents a single entry for batch insertion
 type RidershipRecord struct {
 	StationID   string
@@ -332,15 +389,15 @@ func (c *Client) GetRidershipDailyCount(cityCode string) (int, error) {
 
 // GetRidershipDailyMinMaxDates returns the min and max service dates for a city
 func (c *Client) GetRidershipDailyMinMaxDates(cityCode string) (time.Time, time.Time, error) {
-	var minDate, maxDate sql.NullTime
+	var minDateStr, maxDateStr sql.NullString
 	query := `
-		SELECT MIN(serviceDate), MAX(serviceDate)
+		SELECT MIN(datetime(serviceDate)), MAX(datetime(serviceDate))
 		FROM RidershipDaily rd
 		JOIN Station s ON s.id = rd.stationId
 		JOIN City c ON c.id = s.cityId
 		WHERE c.code = ?`
 
-	err := c.db.QueryRow(query, cityCode).Scan(&minDate, &maxDate)
+	err := c.db.QueryRow(query, cityCode).Scan(&minDateStr, &maxDateStr)
 	if err != nil {
 		if err == sql.ErrNoRows {
 			return time.Time{}, time.Time{}, nil
@@ -349,11 +406,27 @@ func (c *Client) GetRidershipDailyMinMaxDates(cityCode string) (time.Time, time.
 	}
 
 	var min, max time.Time
-	if minDate.Valid {
-		min = minDate.Time
+	if minDateStr.Valid && minDateStr.String != "" {
+		parsedTime, err := time.Parse("2006-01-02 15:04:05", minDateStr.String)
+		if err != nil {
+			parsedTime, err = time.Parse(time.RFC3339, minDateStr.String)
+			if err == nil {
+				min = parsedTime
+			}
+		} else {
+			min = parsedTime
+		}
 	}
-	if maxDate.Valid {
-		max = maxDate.Time
+	if maxDateStr.Valid && maxDateStr.String != "" {
+		parsedTime, err := time.Parse("2006-01-02 15:04:05", maxDateStr.String)
+		if err != nil {
+			parsedTime, err = time.Parse(time.RFC3339, maxDateStr.String)
+			if err == nil {
+				max = parsedTime
+			}
+		} else {
+			max = parsedTime
+		}
 	}
 
 	return min, max, nil
@@ -362,15 +435,15 @@ func (c *Client) GetRidershipDailyMinMaxDates(cityCode string) (time.Time, time.
 
 // GetMaxServiceDate returns the most recent service date for a city
 func (c *Client) GetMaxServiceDate(cityCode string) (time.Time, error) {
-	var maxDate sql.NullTime
+	var maxDateStr sql.NullString
 	query := `
-		SELECT MAX(rd.serviceDate)
+		SELECT MAX(datetime(rd.serviceDate))
 		FROM RidershipDaily rd
 		JOIN Station s ON s.id = rd.stationId
 		JOIN City c ON c.id = s.cityId
 		WHERE c.code = ?`
 
-	err := c.db.QueryRow(query, cityCode).Scan(&maxDate)
+	err := c.db.QueryRow(query, cityCode).Scan(&maxDateStr)
 	if err != nil {
 		if err == sql.ErrNoRows {
 			return time.Time{}, nil // No records, return zero time
@@ -378,8 +451,17 @@ func (c *Client) GetMaxServiceDate(cityCode string) (time.Time, error) {
 		return time.Time{}, fmt.Errorf("failed to query max service date: %w", err)
 	}
 
-	if maxDate.Valid {
-		return maxDate.Time, nil
+	if maxDateStr.Valid && maxDateStr.String != "" {
+		// Parse the datetime string
+		parsedTime, err := time.Parse("2006-01-02 15:04:05", maxDateStr.String)
+		if err != nil {
+			// Try RFC3339 format as fallback
+			parsedTime, err = time.Parse(time.RFC3339, maxDateStr.String)
+			if err != nil {
+				return time.Time{}, fmt.Errorf("failed to parse max service date: %w", err)
+			}
+		}
+		return parsedTime, nil
 	}
 
 	return time.Time{}, nil // No records, return zero time
@@ -396,6 +478,7 @@ func (c *Client) GetStationMetrics(cityCode string) ([]StationMetric, error) {
 			SELECT
 				s.id as stationId,
 				s.name,
+				COUNT(rd.id) as ridershipCount,
 				AVG(CASE
 					WHEN rd.serviceDate >= date((SELECT maxDate FROM MaxDate), '-30 days')
 					THEN rd.entries
@@ -418,7 +501,11 @@ func (c *Client) GetStationMetrics(cityCode string) ([]StationMetric, error) {
 			COALESCE(rolling30dAvg, 0) as rolling30dAvg,
 			COALESCE(rolling90dAvg, 0) as rolling90dAvg,
 			COALESCE(lastDayEntries, 0) as lastDayEntries,
-			serviceDateMax
+			serviceDateMax,
+			CASE
+				WHEN ridershipCount = 0 THEN 'missing'
+				ELSE 'normal'
+			END as dataStatus
 		FROM RollingAverages
 		ORDER BY rolling30dAvg ASC`
 
@@ -440,6 +527,7 @@ func (c *Client) GetStationMetrics(cityCode string) ([]StationMetric, error) {
 			&m.Rolling90dAvg,
 			&m.LastDayEntries,
 			&serviceDateMax,
+			&m.DataStatus,
 		)
 		if err != nil {
 			return nil, fmt.Errorf("failed to scan row: %w", err)
@@ -460,17 +548,17 @@ func (c *Client) UpdateStationMetrics(m StationMetric) error {
 	_, err := c.db.Exec(`
 		INSERT OR REPLACE INTO StationMetrics (
 			id, stationId, lastDayEntries, rolling30dAvg, rolling90dAvg,
-			ghostScore, lastUpdated, serviceDateMax
+			ghostScore, lastUpdated, serviceDateMax, dataStatus
 		) VALUES (
 			COALESCE(
 				(SELECT id FROM StationMetrics WHERE stationId = ?),
 				lower(hex(randomblob(16)))
 			),
-			?, ?, ?, ?, ?, datetime('now'), ?
+			?, ?, ?, ?, ?, datetime('now'), ?, ?
 		)`,
 		m.StationID,
 		m.StationID, m.LastDayEntries, m.Rolling30dAvg, m.Rolling90dAvg,
-		m.GhostScore, m.ServiceDateMax,
+		m.GhostScore, m.ServiceDateMax, m.DataStatus,
 	)
 	return err
 }
@@ -484,4 +572,5 @@ type StationMetric struct {
 	Rolling90dAvg  float64
 	GhostScore     int
 	ServiceDateMax string
+	DataStatus     string // "normal", "missing"
 }

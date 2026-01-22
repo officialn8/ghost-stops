@@ -63,11 +63,11 @@ export async function GET(
     const stationsWithLowerRidership = await prisma.station.count({
       where: {
         cityId: station.cityId,
-        metrics: {
+        metrics: station.metrics?.rolling30dAvg !== null && station.metrics?.rolling30dAvg !== undefined ? {
           rolling30dAvg: {
-            lt: station.metrics?.rolling30dAvg || 0
+            lt: station.metrics.rolling30dAvg
           }
-        }
+        } : undefined
       }
     });
 
@@ -80,10 +80,16 @@ export async function GET(
         name: station.name,
         latitude: station.latitude,
         longitude: station.longitude,
-        lines: JSON.parse(station.lines || '[]'),
+        lines: (() => {
+          try {
+            return JSON.parse(station.lines || '[]');
+          } catch {
+            return [];
+          }
+        })(),
         ghostScore: station.metrics?.ghostScore || 0,
-        rolling30dAvg: station.metrics?.rolling30dAvg || 0,
-        lastDayEntries: station.metrics?.lastDayEntries || 0
+        rolling30dAvg: station.metrics?.rolling30dAvg || null,
+        lastDayEntries: station.metrics?.lastDayEntries || null
       },
       ridershipSeries: ridershipData.map(r => ({
         date: r.serviceDate.toISOString().split('T')[0],

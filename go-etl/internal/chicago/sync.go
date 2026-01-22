@@ -7,6 +7,7 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"time"
@@ -22,10 +23,20 @@ type SyncOpts struct {
 }
 
 type SocrataRecord struct {
-	StationID   string    `json:"station_id"`
+	StationID   string `json:"station_id"`
 	StationName string `json:"stationname"`
-	Date        time.Time `json:"date"`
+	Date        string `json:"date"`
 	Rides       string `json:"rides"`
+}
+
+type UnmatchedStation struct {
+	StationID    string
+	StationName  string
+	Normalized   string
+	Reason       string
+	Occurrences  int
+	SampleDate   time.Time
+	SampleRides  string
 }
 
 func SyncRidership(dbClient *db.Client, token string, opts SyncOpts) error {
@@ -51,73 +62,77 @@ func SyncRidership(dbClient *db.Client, token string, opts SyncOpts) error {
 
 	log.Printf("Fetched %d new ridership records", len(records))
 
-	// 3. Get city ID and load station mapping data
+	// 3. Get city ID and create station matcher
 	cityID, err := dbClient.GetCityID("chicago", "")
 	if err != nil {
 		return fmt.Errorf("could not get city id for chicago: %w", err)
 	}
 
-	// Load all station aliases for name-based matching
-	aliases, err := dbClient.GetAllStationAliases(cityID)
+	// Create station matcher with intelligent name parsing
+	matcher, err := NewStationMatcher(dbClient, cityID)
 	if err != nil {
-		return fmt.Errorf("failed to get station aliases: %w", err)
+		return fmt.Errorf("failed to create station matcher: %w", err)
 	}
-	log.Printf("Loaded %d station aliases", len(aliases))
-
-	// Build normalized name lookup map for all stations
-	normalizedNameMap, err := dbClient.GetStationNamesAndIDs(cityID)
-	if err != nil {
-		log.Printf("Warning: failed to build normalized name map: %v", err)
-		normalizedNameMap = make(map[string]string)
-	}
-	log.Printf("Built normalized name map with %d entries", len(normalizedNameMap))
+	log.Printf("Loaded %d stations for matching", len(matcher.stations))
 
 	// Tracking variables
 	var dbRecords []db.RidershipRecord
 	stationIDCache := make(map[string]string) // caches successful mappings
-	unmatchedStations := make(map[string][]SocrataRecord) // track unmatched for CSV
+	unmatchedStations := make(map[string]UnmatchedStation) // track unmatched for CSV
 
 	// Statistics
 	totalRecords := len(records)
 	insertedCount := 0
 	skippedCount := 0
 	stationIDsInserted := make(map[string]bool)
+	ctaStationIDsInserted := make(map[string]bool)
 
 	for _, r := range records {
 		// Check cache first
-		stationID, ok := stationIDCache[r.StationID+"_"+r.StationName]
+		cacheKey := r.StationID + "_" + r.StationName
+		stationID, ok := stationIDCache[cacheKey]
 		if !ok {
-			// Try fast path: external ID mapping
-			id, err := dbClient.GetStationIDByExternalID(cityID, r.StationID)
-			if err == nil {
-				stationID = id
-			} else {
-				// Try name-based mapping: normalize the station name
-				normalized := db.NormalizeStationName(r.StationName)
-
-				// Check alias map first
-				if aliasID, found := aliases[normalized]; found {
-					stationID = aliasID
-				} else if nameID, found := normalizedNameMap[normalized]; found {
-					// Check direct normalized name match
-					stationID = nameID
-				} else {
-					// No match found - track for CSV output
-					unmatchedStations[r.StationID+"_"+r.StationName] = append(
-						unmatchedStations[r.StationID+"_"+r.StationName], r)
-					skippedCount++
-					continue
+			// Use the new matcher to find the station
+			id, err := matcher.MatchStation(r.StationID, r.StationName)
+			if err != nil {
+				// No match found - track for CSV output with detailed reason
+				if _, exists := unmatchedStations[cacheKey]; !exists {
+					parsedDate, _ := time.Parse("2006-01-02T15:04:05.000", r.Date)
+					unmatchedStations[cacheKey] = UnmatchedStation{
+						StationID:    r.StationID,
+						StationName:  r.StationName,
+						Normalized:   db.NormalizeStationName(r.StationName),
+						Reason:       matcher.GetUnmatchedReason(r.StationName),
+						Occurrences:  0,
+						SampleDate:   parsedDate,
+						SampleRides:  r.Rides,
+					}
 				}
+				unmatched := unmatchedStations[cacheKey]
+				unmatched.Occurrences++
+				unmatchedStations[cacheKey] = unmatched
+
+				skippedCount++
+				continue
 			}
-			stationIDCache[r.StationID+"_"+r.StationName] = stationID
+			stationID = id
+			stationIDCache[cacheKey] = stationID
+		}
+
+		// Parse the date string from Socrata
+		parsedDate, err := time.Parse("2006-01-02T15:04:05.000", r.Date)
+		if err != nil {
+			log.Printf("Warning: Failed to parse date %s: %v", r.Date, err)
+			continue
 		}
 
 		dbRecords = append(dbRecords, db.RidershipRecord{
 			StationID:   stationID,
-			ServiceDate: r.Date.Format(time.RFC3339),
+			ServiceDate: parsedDate.Format(time.RFC3339),
 			Entries:     parseRides(r.Rides),
 		})
 		stationIDsInserted[stationID] = true
+		ctaStationIDsInserted[r.StationID] = true
 		insertedCount++
 	}
 
@@ -141,9 +156,21 @@ func SyncRidership(dbClient *db.Client, token string, opts SyncOpts) error {
 	log.Printf("Total rows fetched: %d", totalRecords)
 	log.Printf("Rows inserted: %d", insertedCount)
 	log.Printf("Rows skipped (unmatched): %d", skippedCount)
-	log.Printf("Distinct stations inserted: %d", len(stationIDsInserted))
+	log.Printf("Distinct CTA station IDs in data: %d", len(ctaStationIDsInserted))
+	log.Printf("Distinct stations matched: %d", len(stationIDsInserted))
+	matchRate := float64(len(stationIDsInserted)) / float64(len(ctaStationIDsInserted)) * 100
+	log.Printf("Station match rate: %.1f%%", matchRate)
 	if len(unmatchedStations) > 0 {
 		log.Printf("Unmatched stations: %d (see /docs/unmatched_socrata.csv)", len(unmatchedStations))
+	}
+
+	// Additional diagnostics about station coverage
+	stationCount365, err := dbClient.GetStationCountWithRidershipInWindow(cityID, 365)
+	if err == nil {
+		log.Printf("✅ Stations with ridership in last 365 days: %d", stationCount365)
+		if stationCount365 < 140 {
+			log.Printf("⚠️  WARNING: Expected ~143 stations with ridership, but only have %d", stationCount365)
+		}
 	}
 
 	// 4. Prune old data
@@ -202,17 +229,23 @@ func fetchSocrataData(token string, sinceDate time.Time, limit int) ([]SocrataRe
 	totalFetched := 0
 
 	for {
-		// Construct the URL with pagination and filtering
-		soqlQuery := fmt.Sprintf("$where=date > '%s'&$limit=%d&$offset=%d", sinceDate.Format("2006-01-02T15:04:05.000"), limit, offset)
-		url := fmt.Sprintf("%s?%s", baseURL, soqlQuery)
+		// Construct the URL with proper encoding
+		params := url.Values{}
+		params.Add("$where", fmt.Sprintf("date > '%s'", sinceDate.Format("2006-01-02T00:00:00.000")))
+		params.Add("$limit", strconv.Itoa(limit))
+		params.Add("$offset", strconv.Itoa(offset))
+		params.Add("$order", "date DESC")
 
-		log.Printf("Fetching page: %s", url)
+		fullURL := fmt.Sprintf("%s?%s", baseURL, params.Encode())
+		log.Printf("Fetching page: %s", fullURL)
 
-		req, err := http.NewRequest("GET", url, nil)
+		req, err := http.NewRequest("GET", fullURL, nil)
 		if err != nil {
 			return nil, fmt.Errorf("failed to create request: %w", err)
 		}
-		req.Header.Set("X-App-Token", token)
+		if token != "" {
+			req.Header.Set("X-App-Token", token)
+		}
 
 		client := &http.Client{Timeout: 30 * time.Second}
 		resp, err := client.Do(req)
@@ -222,7 +255,8 @@ func fetchSocrataData(token string, sinceDate time.Time, limit int) ([]SocrataRe
 		defer resp.Body.Close()
 
 		if resp.StatusCode != http.StatusOK {
-			return nil, fmt.Errorf("Socrata API returned non-200 status: %d", resp.StatusCode)
+			body, _ := io.ReadAll(resp.Body)
+			return nil, fmt.Errorf("Socrata API returned non-200 status: %d, body: %s", resp.StatusCode, string(body))
 		}
 
 		body, err := io.ReadAll(resp.Body)
@@ -260,7 +294,7 @@ func parseRides(ridesStr string) int {
 }
 
 // writeUnmatchedStationsCSV writes unmatched stations to a CSV file
-func writeUnmatchedStationsCSV(unmatchedStations map[string][]SocrataRecord) error {
+func writeUnmatchedStationsCSV(unmatchedStations map[string]UnmatchedStation) error {
 	// Ensure docs directory exists
 	docsDir := "docs"
 	if err := os.MkdirAll(docsDir, 0755); err != nil {
@@ -279,23 +313,18 @@ func writeUnmatchedStationsCSV(unmatchedStations map[string][]SocrataRecord) err
 	defer writer.Flush()
 
 	// Write header
-	if err := writer.Write([]string{"station_id", "stationname", "date", "rides", "occurrences"}); err != nil {
+	if err := writer.Write([]string{"station_id", "stationname", "normalized", "reason", "occurrences"}); err != nil {
 		return fmt.Errorf("failed to write CSV header: %w", err)
 	}
 
 	// Write unmatched station records
-	for _, records := range unmatchedStations {
-		if len(records) == 0 {
-			continue
-		}
-		// Use the first record as representative
-		r := records[0]
+	for _, unmatched := range unmatchedStations {
 		row := []string{
-			r.StationID,
-			r.StationName,
-			r.Date.Format("2006-01-02"),
-			r.Rides,
-			strconv.Itoa(len(records)),
+			unmatched.StationID,
+			unmatched.StationName,
+			unmatched.Normalized,
+			unmatched.Reason,
+			strconv.Itoa(unmatched.Occurrences),
 		}
 		if err := writer.Write(row); err != nil {
 			return fmt.Errorf("failed to write CSV row: %w", err)

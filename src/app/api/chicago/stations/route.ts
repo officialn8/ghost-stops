@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
 import { PrismaClient } from "@prisma/client";
-import { getMockLinesForStation } from "@/lib/ctaLineColors";
 
 const prisma = new PrismaClient();
 
@@ -81,10 +80,16 @@ export async function GET(request: NextRequest) {
       name: station.name,
       latitude: station.latitude,
       longitude: station.longitude,
-      lines: getMockLinesForStation(station.name), // Still use mock lines until ETL is fixed
+      lines: (() => {
+        try {
+          return JSON.parse(station.lines || '[]');
+        } catch {
+          return [];
+        }
+      })(),
       ghostScore: station.metrics?.ghostScore || 0,
-      rolling30dAvg: station.metrics?.rolling30dAvg || 0,
-      lastDayEntries: station.metrics?.lastDayEntries || 0
+      rolling30dAvg: station.metrics?.rolling30dAvg || null,
+      lastDayEntries: station.metrics?.lastDayEntries || null
     }));
 
     return NextResponse.json({

@@ -18,6 +18,7 @@ model Station {
   id              String           @id @default(uuid())
   cityId          String
   externalId      String?          // GTFS stop_id or agency ID
+  ctaStationId    String?          // CTA station number from Socrata (e.g., "41240")
   name            String
   latitude        Float
   longitude       Float
@@ -29,6 +30,7 @@ model Station {
   metrics         StationMetrics?
 
   @@index([cityId, name])
+  @@index([cityId, ctaStationId])
   @@unique([cityId, externalId])
 }
 
@@ -65,6 +67,7 @@ model StationMetrics {
   ghostScore      Int      // 0-100, higher = more "ghost"
   lastUpdated     DateTime
   serviceDateMax  DateTime // Latest data date
+  dataStatus      String   @default("normal") // "normal" or "missing"
 
   station         Station  @relation(fields: [stationId], references: [id])
 }

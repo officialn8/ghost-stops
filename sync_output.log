@@ -1,0 +1,11 @@
+Error: unknown command "sync" for "go-etl"
+
+Did you mean this?
+	sync-ridership
+
+Run 'go-etl --help' for usage.
+unknown command "sync" for "go-etl"
+
+Did you mean this?
+	sync-ridership
+

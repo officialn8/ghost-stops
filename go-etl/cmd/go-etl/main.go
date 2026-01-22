@@ -165,7 +165,7 @@ var syncRidershipCmd = &cobra.Command{
 
 		appToken := os.Getenv("CHICAGO_DATA_APP_TOKEN")
 		if appToken == "" {
-			log.Fatal("CHICAGO_DATA_APP_TOKEN environment variable is required")
+			log.Println("Warning: CHICAGO_DATA_APP_TOKEN not set, proceeding without app token")
 		}
 
 		dbClient, err := db.NewClient(databaseURL)
