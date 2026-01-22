@@ -29,6 +29,7 @@
     "@types/mapbox-gl": "^3.4.1",
     "apache-arrow": "^19.0.0",
     "autoprefixer": "^10.4.20",
+    "claude": "^0.1.1",
     "clsx": "^2.1.1",
     "lucide-react": "^0.562.0",
     "mapbox-gl": "^3.9.4",
