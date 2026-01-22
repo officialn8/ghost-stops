@@ -2,20 +2,215 @@
 @tailwind components;
 @tailwind utilities;
 
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
-}
-
-@media (prefers-color-scheme: dark) {
+@layer base {
   :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+    /* Light Mode Glass UI Design System */
+    --background: 246 247 251; /* #F6F7FB */
+    --foreground: 11 18 32; /* Text primary */
+
+    /* Surfaces */
+    --card: 0 0% 100%;
+    --card-foreground: 11 18 32;
+
+    --popover: 0 0% 100%;
+    --popover-foreground: 11 18 32;
+
+    /* Brand Colors */
+    --primary: 173 71% 40%; /* Aurora teal #14B8A6 */
+    --primary-foreground: 0 0% 100%;
+
+    --secondary: 263 70% 58%; /* Spectral violet #9333EA */
+    --secondary-foreground: 0 0% 100%;
+
+    /* Neutral Tints */
+    --muted: 240 25% 95%; /* #F1F3F8 */
+    --muted-foreground: 11 18 32 / 0.72;
+
+    --accent: 173 71% 40%; /* Aurora teal */
+    --accent-foreground: 0 0% 100%;
+
+    --destructive: 0 84.2% 60.2%;
+    --destructive-foreground: 0 0% 100%;
+
+    /* Borders - very subtle */
+    --border: 15 23 42 / 0.06;
+    --input: 15 23 42 / 0.06;
+    --ring: 173 71% 40%;
+
+    --radius: 16px;
   }
 }
 
-body {
-  color: var(--foreground);
-  background: var(--background);
-  font-family: Arial, Helvetica, sans-serif;
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-neutral-bg text-text-primary;
+    font-feature-settings: "rlig" 1, "calt" 1;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+}
+
+@layer utilities {
+  /* Premium Glass Effects - Light Mode */
+  .glass {
+    @apply bg-white/80 backdrop-blur-glass border border-neutral-border shadow-md;
+  }
+
+  .glass-solid {
+    @apply bg-white backdrop-blur-glass border border-neutral-border shadow-md;
+  }
+
+  .glass-hover {
+    @apply hover:shadow-lg hover:translate-y-[-2px] transition-all duration-200;
+  }
+
+  /* Ghost Theme Effects - Spectral */
+  .ghost-glow {
+    box-shadow: 0 0 24px rgba(147, 51, 234, 0.15),
+                0 0 48px rgba(20, 184, 166, 0.12);
+  }
+
+  .ghost-mist {
+    background: radial-gradient(
+      ellipse at center,
+      rgba(147, 51, 234, 0.04) 0%,
+      rgba(20, 184, 166, 0.03) 50%,
+      transparent 100%
+    );
+  }
+
+  .ghost-shimmer {
+    background: linear-gradient(
+      105deg,
+      transparent 40%,
+      rgba(255, 255, 255, 0.9) 50%,
+      transparent 60%
+    );
+    background-size: 200% 100%;
+    animation: ghost-shimmer 3s linear infinite;
+  }
+
+  /* Text Gradients - Spectral Theme */
+  .text-gradient-aurora {
+    @apply bg-gradient-to-r from-aurora-600 to-aurora-500 bg-clip-text text-transparent;
+  }
+
+  .text-gradient-spectral {
+    @apply bg-gradient-to-r from-spectral-700 to-spectral-600 bg-clip-text text-transparent;
+  }
+
+  .text-gradient-ghost {
+    @apply bg-gradient-to-r from-spectral-600 via-aurora-500 to-aurora-400 bg-clip-text text-transparent;
+  }
+
+  /* Focus States */
+  .focus-aurora {
+    @apply focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-aurora-500/30 focus-visible:ring-offset-2 focus-visible:ring-offset-neutral-bg;
+  }
+
+  /* Smooth Transitions */
+  .transition-smooth {
+    @apply transition-all duration-300 ease-out;
+  }
+
+  /* Hide scrollbar */
+  .no-scrollbar::-webkit-scrollbar {
+    display: none;
+  }
+
+  .no-scrollbar {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+}
+
+@layer components {
+  /* Glass Panel Component */
+  .glass-panel {
+    @apply glass rounded-panel p-6;
+  }
+
+  /* CTA Line Badge - Small Rounded Pills */
+  .cta-line-badge {
+    @apply inline-flex items-center justify-center px-2.5 py-0.5 text-[11px] font-medium text-white rounded-full;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+  }
+
+  /* Interactive List Item */
+  .interactive-list-item {
+    @apply relative px-5 py-4 hover:bg-neutral-surface-muted cursor-pointer transition-all duration-200 rounded-ui;
+  }
+
+  /* Selected State */
+  .selected-item {
+    @apply bg-white shadow-sm;
+  }
+}
+
+/* Animations */
+@keyframes ghost-shimmer {
+  0% {
+    background-position: -200%;
+  }
+  100% {
+    background-position: 200%;
+  }
+}
+
+@keyframes ghost-pulse {
+  0%, 100% {
+    opacity: 0.8;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.5;
+    transform: scale(1.05);
+  }
+}
+
+@keyframes ghost-float {
+  0%, 100% {
+    transform: translateY(0px) rotate(0deg);
+  }
+  25% {
+    transform: translateY(-6px) rotate(-0.5deg);
+  }
+  75% {
+    transform: translateY(-3px) rotate(0.5deg);
+  }
+}
+
+/* Font Imports - handled by Next.js font system */
+
+/* Premium Light Mode Scrollbar */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  @apply bg-neutral-surface-muted;
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb {
+  @apply bg-neutral-border;
+  border-radius: 4px;
+
+  &:hover {
+    @apply bg-text-tertiary;
+  }
+}
+
+/* Selection Colors */
+::selection {
+  @apply bg-aurora-200 text-aurora-900;
+}
+
+::-moz-selection {
+  @apply bg-aurora-200 text-aurora-900;
 }

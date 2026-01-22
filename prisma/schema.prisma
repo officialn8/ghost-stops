@@ -1,0 +1,70 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model City {
+  id        String     @id @default(uuid())
+  code      String     @unique // "chicago", "phoenix"
+  name      String     // "Chicago CTA", "Phoenix Metro"
+  stations  Station[]
+}
+
+model Station {
+  id              String           @id @default(uuid())
+  cityId          String
+  externalId      String?          // GTFS stop_id or agency ID
+  name            String
+  latitude        Float
+  longitude       Float
+  lines           String           // JSON array like '["Red", "Blue"]' for multi-line stations
+
+  city            City             @relation(fields: [cityId], references: [id])
+  aliases         StationAlias[]
+  ridershipDaily  RidershipDaily[]
+  metrics         StationMetrics?
+
+  @@index([cityId, name])
+  @@unique([cityId, externalId])
+}
+
+model StationAlias {
+  id              String   @id @default(uuid())
+  stationId       String
+  aliasName       String   // Alternative name from ridership data
+  normalized      String   // Normalized version for matching
+
+  station         Station  @relation(fields: [stationId], references: [id])
+
+  @@index([normalized])
+  @@unique([stationId, aliasName])
+}
+
+model RidershipDaily {
+  id              String   @id @default(uuid())
+  stationId       String
+  serviceDate     DateTime
+  entries         Int      // Total boardings for the day
+
+  station         Station  @relation(fields: [stationId], references: [id])
+
+  @@index([stationId, serviceDate])
+  @@unique([stationId, serviceDate])
+}
+
+model StationMetrics {
+  id              String   @id @default(uuid())
+  stationId       String   @unique
+  lastDayEntries  Int?     // Most recent day's ridership
+  rolling30dAvg   Float?   // 30-day rolling average
+  rolling90dAvg   Float?   // 90-day rolling average (optional)
+  ghostScore      Int      // 0-100, higher = more "ghost"
+  lastUpdated     DateTime
+  serviceDateMax  DateTime // Latest data date
+
+  station         Station  @relation(fields: [stationId], references: [id])
+}
