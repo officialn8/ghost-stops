@@ -1,12 +1,21 @@
 "use client";
 
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import Map, { Source, Layer, MapMouseEvent } from "react-map-gl/mapbox";
-import type { FeatureCollection, Point, Feature } from "geojson";
+import type { FeatureCollection, Point, Feature, LineString } from "geojson";
+import type { MapRef } from "react-map-gl/mapbox";
 import MapTooltip from "./MapTooltip";
 import StationList from "@/components/station/StationList";
 import StationDetailPanel from "@/components/station/StationDetailPanel";
+import LineFilter from "@/components/map/LineFilter";
 import { getGhostScoreColor } from "@/lib/utils";
+import {
+  explodeAndStitchSegments,
+  explodeSegments,
+  isStationActiveByLineFilter,
+  CTA_LINE_ORDER,
+  CTA_LINE_COLORS
+} from "@/lib/cta/explodeAndStitchSegments";
 
 const MAPBOX_TOKEN = process.env.NEXT_PUBLIC_MAPBOX_TOKEN;
 
@@ -27,12 +36,23 @@ interface MapContainerProps {
 }
 
 export default function MapContainer({ searchQuery = "" }: MapContainerProps) {
+  const mapRef = useRef<MapRef>(null);
   const [stations, setStations] = useState<Station[]>([]);
   const [selectedStation, setSelectedStation] = useState<Station | null>(null);
   const [hoveredStation, setHoveredStation] = useState<Station | null>(null);
   const [mousePosition, setMousePosition] = useState({ x: 0, y: 0 });
   const [loading, setLoading] = useState(true);
   const [dataAsOf, setDataAsOf] = useState<string>("");
+  const [trackSegments, setTrackSegments] = useState<FeatureCollection<LineString> | null>(null);
+
+  // Line filter state - all lines active by default
+  const [activeLines, setActiveLines] = useState<Record<string, boolean>>(() => {
+    const initial: Record<string, boolean> = {};
+    CTA_LINE_ORDER.forEach(line => {
+      initial[line] = true;
+    });
+    return initial;
+  });
 
   const [viewState, setViewState] = useState({
     latitude: 41.8781,
@@ -63,6 +83,19 @@ export default function MapContainer({ searchQuery = "" }: MapContainerProps) {
       });
   }, []);
 
+  // Load track segments
+  useEffect(() => {
+    fetch("/data/cta/chicago_track_segments.geojson")
+      .then(res => res.json())
+      .then(data => {
+        console.log("Loaded track segments:", data);
+        setTrackSegments(data);
+      })
+      .catch(err => {
+        console.error("Failed to load track segments:", err);
+      });
+  }, []);
+
   // Filter stations based on search
   const filteredStations = useMemo(() => {
     if (!searchQuery) return stations;
@@ -81,6 +114,7 @@ export default function MapContainer({ searchQuery = "" }: MapContainerProps) {
       type: "FeatureCollection",
       features: filteredStations.map((station) => ({
         type: "Feature",
+        id: station.id, // Important for feature state
         geometry: {
           type: "Point",
           coordinates: [station.longitude, station.latitude],
@@ -88,14 +122,44 @@ export default function MapContainer({ searchQuery = "" }: MapContainerProps) {
         properties: {
           ...station,
           lines: JSON.stringify(station.lines), // Serialize lines array for GeoJSON
+          isActiveByLineFilter: isStationActiveByLineFilter(station.lines, activeLines),
         },
       })),
     }),
-    [filteredStations]
+    [filteredStations, activeLines]
   );
 
+  // Process track segments with offsets and stitch contiguous segments
+  const explodedTracks = useMemo(() => {
+    if (!trackSegments) return null;
+
+    // Only stitch Loop segments for safety (stitchOnlyLoop = true by default)
+    return explodeAndStitchSegments(trackSegments as any, activeLines);
+
+    // If stitching causes issues, uncomment this to use simple explosion:
+    // return explodeSegments(trackSegments as any, activeLines);
+  }, [trackSegments, activeLines]);
+
   const handleStationClick = (station: Station) => {
+    // Clear previous selection
+    if (selectedStation && mapRef.current) {
+      mapRef.current.setFeatureState(
+        { source: "stations", id: selectedStation.id },
+        { selected: false }
+      );
+    }
+
+    // Set new selection
     setSelectedStation(station);
+
+    // Set feature state for selected station
+    if (mapRef.current) {
+      mapRef.current.setFeatureState(
+        { source: "stations", id: station.id },
+        { selected: true }
+      );
+    }
+
     // Smooth pan to station
     setViewState({
       ...viewState,
@@ -103,6 +167,13 @@ export default function MapContainer({ searchQuery = "" }: MapContainerProps) {
       longitude: station.longitude,
       zoom: 14,
     });
+  };
+
+  const handleToggleLine = (line: string) => {
+    setActiveLines(prev => ({
+      ...prev,
+      [line]: !prev[line]
+    }));
   };
 
   return (
@@ -113,6 +184,12 @@ export default function MapContainer({ searchQuery = "" }: MapContainerProps) {
         selectedStationId={selectedStation?.id}
         onStationSelect={handleStationClick}
         dataAsOf={dataAsOf}
+      />
+
+      {/* Line Filter */}
+      <LineFilter
+        activeLines={activeLines}
+        onToggleLine={handleToggleLine}
       />
 
       {/* Map */}
@@ -126,6 +203,7 @@ export default function MapContainer({ searchQuery = "" }: MapContainerProps) {
           </div>
         ) : (
           <Map
+            ref={mapRef}
             {...viewState}
             onMove={(evt) => setViewState(evt.viewState)}
             style={{ width: "100%", height: "100%" }}
@@ -160,7 +238,110 @@ export default function MapContainer({ searchQuery = "" }: MapContainerProps) {
               }
             }}
           >
+            {/* CTA Track Lines */}
+            {explodedTracks && (
+              <Source id="cta-tracks" type="geojson" data={explodedTracks}>
+                {/* Render casing layers first, then core layers */}
+                {CTA_LINE_ORDER.map(line => (
+                  <Layer
+                    key={`casing-${line}`}
+                    id={`cta-line-casing-${line}`}
+                    type="line"
+                    filter={["==", ["get", "line"], line]}
+                    layout={{
+                      "line-cap": "round",
+                      "line-join": "round",
+                      "line-miter-limit": 2,
+                      "line-round-limit": 1.5
+                    }}
+                    paint={{
+                      "line-color": "rgba(11,18,32,0.22)",
+                      "line-width": [
+                        "interpolate",
+                        ["linear"],
+                        ["zoom"],
+                        10, ["case", ["get", "is_loop"], 3.825, 4.5],
+                        12, ["case", ["get", "is_loop"], 4.675, 5.5],
+                        14, ["case", ["get", "is_loop"], 6.375, 7.5]
+                      ],
+                      "line-opacity": [
+                        "interpolate",
+                        ["linear"],
+                        ["zoom"],
+                        10, ["case", ["get", "is_loop"], 0.48, 0.72],    // 0.6 * 0.8 for loop, 0.9 * 0.8 for regular
+                        11, ["case", ["get", "is_loop"], 0.51, 0.765],   // 0.6 * 0.85 for loop, 0.9 * 0.85 for regular
+                        12, ["case", ["get", "is_loop"], 0.6, 0.9]       // Full opacity values
+                      ],
+                      "line-blur": [
+                        "case",
+                        ["get", "is_loop"], 0.25,  // Slightly more blur for Loop
+                        0.2
+                      ],
+                      "line-offset": ["get", "offset_px"]
+                    }}
+                  />
+                ))}
+                {CTA_LINE_ORDER.map(line => (
+                  <Layer
+                    key={`core-${line}`}
+                    id={`cta-line-core-${line}`}
+                    type="line"
+                    filter={["==", ["get", "line"], line]}
+                    layout={{
+                      "line-cap": "round",
+                      "line-join": "round",
+                      "line-miter-limit": 2,
+                      "line-round-limit": 1.5
+                    }}
+                    paint={{
+                      "line-color": CTA_LINE_COLORS[line],
+                      "line-width": [
+                        "interpolate",
+                        ["linear"],
+                        ["zoom"],
+                        10, ["case", ["get", "is_loop"], 1.6, 2],     // Reduced by 0.1
+                        12, ["case", ["get", "is_loop"], 2.4, 3],     // Reduced by 0.15
+                        14, ["case", ["get", "is_loop"], 4.1, 5]      // Reduced by 0.15
+                      ],
+                      "line-opacity": [
+                        "interpolate",
+                        ["linear"],
+                        ["zoom"],
+                        10, 0.75,
+                        11, 0.85,
+                        13, 1
+                      ],
+                      "line-offset": ["get", "offset_px"]
+                    }}
+                  />
+                ))}
+              </Source>
+            )}
+
             <Source id="stations" type="geojson" data={geoJsonData}>
+              {/* Station Drop Shadow */}
+              <Layer
+                id="stations-shadow"
+                type="circle"
+                paint={{
+                  "circle-radius": [
+                    "interpolate",
+                    ["linear"],
+                    ["zoom"],
+                    10, 8,
+                    14, 12.5,
+                  ],
+                  "circle-color": "rgba(11, 18, 32, 0.15)",
+                  "circle-blur": 0.8,
+                  "circle-translate": [1, 2], // Slight offset down-right
+                  "circle-opacity": [
+                    "case",
+                    ["get", "isActiveByLineFilter"], 1,
+                    0.2
+                  ]
+                }}
+              />
+
               {/* Ghost Halo Layer */}
               <Layer
                 id="stations-halo"
@@ -190,6 +371,11 @@ export default function MapContainer({ searchQuery = "" }: MapContainerProps) {
                     ]
                   ],
                   "circle-blur": 0.8,
+                  "circle-opacity": [
+                    "case",
+                    ["get", "isActiveByLineFilter"], 1,
+                    0.05
+                  ]
                 }}
               />
 
@@ -227,6 +413,11 @@ export default function MapContainer({ searchQuery = "" }: MapContainerProps) {
                   ],
                   "circle-stroke-color": "#FFFFFF",
                   "circle-stroke-opacity": 0.9,
+                  "circle-opacity": [
+                    "case",
+                    ["get", "isActiveByLineFilter"], 1,
+                    0.2
+                  ]
                 }}
               />
             </Source>
