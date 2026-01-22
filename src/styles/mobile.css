@@ -1,0 +1,282 @@
+/* Mobile Layout CSS */
+
+/* Z-index hierarchy for mobile:
+ * 0    - Map
+ * 40   - Bottom sheet backdrop
+ * 50   - Bottom sheet
+ * 100  - Search bar, filter pills, FAB
+ * 1000 - Station detail modal
+ */
+
+/* Safe area handling for modern phones */
+@supports (padding-top: env(safe-area-inset-top)) {
+  .mobile-layout {
+    padding-top: env(safe-area-inset-top);
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+}
+
+/* Full-screen map */
+@media (max-width: 768px) {
+  /* Hide desktop sidebar */
+  .desktop-sidebar {
+    display: none;
+  }
+
+  /* Full-screen map */
+  .map-container {
+    position: fixed;
+    inset: 0;
+    z-index: 0;
+  }
+
+  /* Ensure proper touch event handling after modal close */
+  body {
+    touch-action: auto;
+  }
+}
+
+/* Floating Search Bar */
+.mobile-search-bar {
+  position: fixed;
+  top: calc(env(safe-area-inset-top, 0px) + 16px);
+  left: 16px;
+  right: 16px;
+  z-index: 100;
+  height: 48px;
+  border-radius: 24px;
+  background: rgba(255, 255, 255, 0.95);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px); /* Safari */
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
+  display: flex;
+  align-items: center;
+  padding: 0 20px;
+  gap: 12px;
+}
+
+/* Horizontal Filter Scroll */
+.mobile-filter-scroll {
+  position: fixed;
+  top: calc(env(safe-area-inset-top, 0px) + 80px);
+  left: 0;
+  right: 0;
+  z-index: 100;
+  display: flex;
+  gap: 8px;
+  padding: 0 16px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: none;
+  -webkit-overflow-scrolling: touch;
+  scroll-snap-type: x proximity;
+  -ms-overflow-style: none;
+}
+
+.mobile-filter-scroll::-webkit-scrollbar {
+  display: none;
+}
+
+.mobile-filter-pill {
+  flex: 0 0 auto;
+  padding: 8px 16px;
+  border-radius: 20px;
+  background: white;
+  border: 1px solid var(--gray-200, #e5e7eb);
+  font-size: 14px;
+  font-weight: 500;
+  white-space: nowrap;
+  scroll-snap-align: start;
+  transition: all 0.2s ease;
+  -webkit-tap-highlight-color: transparent;
+  cursor: pointer;
+}
+
+.mobile-filter-pill:active {
+  transform: scale(0.95);
+}
+
+.mobile-filter-pill.active {
+  background: var(--gray-900, #111827);
+  color: white;
+  border-color: var(--gray-900, #111827);
+}
+
+/* View List FAB */
+.mobile-view-list-fab {
+  position: fixed;
+  bottom: calc(env(safe-area-inset-bottom, 0px) + 24px);
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 100;
+  padding: 12px 20px;
+  background: var(--gray-900, #111827);
+  color: white;
+  border-radius: 24px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 600;
+  font-size: 14px;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.25);
+  -webkit-tap-highlight-color: transparent;
+  cursor: pointer;
+  border: none;
+  outline: none;
+}
+
+.mobile-view-list-fab:active {
+  transform: translateX(-50%) scale(0.95);
+}
+
+/* Mobile Bottom Sheet - handled by styled components */
+/* But we need styles for content */
+
+/* Ensure map is interactive when sheet is open */
+.mobile-layout .map-container {
+  pointer-events: auto !important;
+}
+
+/* Mobile Station Card */
+.mobile-station-card {
+  display: flex;
+  align-items: center;
+  padding: 16px;
+  gap: 12px;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.06);
+  -webkit-tap-highlight-color: transparent;
+  transition: background-color 0.1s ease;
+  cursor: pointer;
+  width: 100%;
+  background: transparent;
+  border-left: none;
+  border-right: none;
+  border-top: none;
+}
+
+.mobile-station-card:active {
+  background-color: rgba(0, 0, 0, 0.02);
+}
+
+.mobile-station-card .rank {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--gray-400, #9ca3af);
+  min-width: 32px;
+  text-align: center;
+}
+
+.mobile-station-card .station-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.mobile-station-card .station-name {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--gray-900, #111827);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.mobile-station-card .station-lines {
+  display: flex;
+  gap: 4px;
+  margin-top: 4px;
+}
+
+.mobile-station-card .ghost-score {
+  margin-left: auto;
+  text-align: right;
+}
+
+.mobile-station-card .ghost-score-value {
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--red-600, #dc2626);
+}
+
+.mobile-station-card .ghost-label {
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--gray-500, #6b7280);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+/* Mobile Station Detail */
+.mobile-station-detail {
+  display: flex;
+  flex-direction: column;
+  touch-action: none;
+}
+
+/* Responsive utilities */
+@media (min-width: 769px) {
+  .mobile-layout,
+  .mobile-search-bar,
+  .mobile-filter-scroll,
+  .mobile-view-list-fab {
+    display: none !important;
+  }
+}
+
+/* Animation performance */
+@media (prefers-reduced-motion: reduce) {
+  .mobile-filter-pill,
+  .mobile-view-list-fab,
+  .mobile-station-card {
+    transition: none !important;
+  }
+
+  .mobile-filter-pill:active,
+  .mobile-view-list-fab:active {
+    transform: none !important;
+  }
+}
+
+/* Dark mode support */
+@media (prefers-color-scheme: dark) {
+  .mobile-search-bar {
+    background: rgba(0, 0, 0, 0.85);
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+  }
+
+  .mobile-search-bar input {
+    color: white;
+  }
+
+  .mobile-search-bar input::placeholder {
+    color: rgba(255, 255, 255, 0.5);
+  }
+
+  .mobile-filter-pill {
+    background: rgba(255, 255, 255, 0.1);
+    border-color: rgba(255, 255, 255, 0.2);
+    color: white;
+  }
+
+  .mobile-filter-pill.active {
+    background: white;
+    color: black;
+    border-color: white;
+  }
+}
+
+/* High contrast mode */
+@media (prefers-contrast: high) {
+  .mobile-search-bar {
+    background: white;
+    border: 2px solid black;
+  }
+
+  .mobile-filter-pill {
+    border-width: 2px;
+  }
+
+  .mobile-view-list-fab {
+    border: 2px solid white;
+  }
+}

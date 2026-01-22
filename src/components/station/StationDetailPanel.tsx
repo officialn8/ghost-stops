@@ -1,11 +1,15 @@
 "use client";
 
 import { useState, useEffect, useMemo } from "react";
+import { motion } from "framer-motion";
 import { X, TrendingDown, Users, Calendar, Ghost } from "lucide-react";
 import CTALineBadge from "./CTALineBadge";
-import GhostScoreHero from "@/components/ghost/GhostScoreHero";
+import GhostScoreGauge from "@/components/ghost/GhostScoreGauge";
+import RidershipChart from "./RidershipChart";
+import StationDetailSkeleton from "./StationDetailSkeleton";
 import { cn } from "@/lib/utils";
 import { normalizeStationLines } from "@/lib/cta/normalizeStationLines";
+import { panelVariants, panelItemVariants } from "@/lib/motion/tokens";
 
 interface Station {
   id: string;
@@ -16,7 +20,7 @@ interface Station {
   ghostScore: number;
   rolling30dAvg: number;
   lastDayEntries: number;
-  dataStatus?: 'available' | 'missing' | 'zero';
+  dataStatus?: "available" | "missing" | "zero";
 }
 
 interface StationDetail {
@@ -66,15 +70,16 @@ export default function StationDetailPanel({
   }, [station.id]);
 
   return (
-    <div
-      className={cn(
-        "fixed right-6 top-24 bottom-6 z-40 w-[420px] animate-ghost-fade",
-        className
-      )}
+    <motion.div
+      className={cn("fixed right-6 top-24 bottom-6 z-40 w-[420px]", className)}
+      variants={panelVariants}
+      initial="hidden"
+      animate="visible"
+      exit="exit"
     >
-      <div className="h-full glass-panel flex flex-col">
+      <div className="h-full glass-panel rounded-panel flex flex-col">
         {/* Header */}
-        <div className="relative">
+        <motion.div className="relative" variants={panelItemVariants}>
           {/* Ghost watermark */}
           <div className="absolute top-4 right-4 opacity-5 pointer-events-none">
             <Ghost className="w-24 h-24" />
@@ -83,7 +88,7 @@ export default function StationDetailPanel({
           <div className="p-6 pb-4">
             <button
               onClick={onClose}
-              className="absolute right-4 top-4 p-2 rounded-ui hover:bg-white/20 transition-colors"
+              className="absolute right-4 top-4 p-2 rounded-ui hover:bg-white/20 transition-colors z-10"
             >
               <X className="w-4 h-4" />
             </button>
@@ -98,33 +103,45 @@ export default function StationDetailPanel({
               ))}
             </div>
           </div>
-        </div>
+        </motion.div>
 
         {loading ? (
-          <div className="flex-1 flex items-center justify-center">
-            <div className="text-center">
-              <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-gradient-to-br from-brandIndigo/20 to-emerald-500/20 animate-ghost-pulse" />
-              <p className="text-text-secondary">Loading details...</p>
-            </div>
-          </div>
+          <StationDetailSkeleton />
         ) : detail ? (
-          <div className="flex-1 overflow-y-auto no-scrollbar">
-            {/* Ghost Score Hero */}
-            <div className="px-6 mb-6">
-              <GhostScoreHero score={station.ghostScore} dataStatus={station.dataStatus} />
-            </div>
+          <motion.div
+            className="flex-1 overflow-y-auto station-list-scroll"
+            initial="hidden"
+            animate="visible"
+            variants={{
+              hidden: { opacity: 1 },
+              visible: {
+                opacity: 1,
+                transition: {
+                  staggerChildren: 0.04,
+                  delayChildren: 0.05,
+                },
+              },
+            }}
+          >
+            {/* Ghost Score Gauge */}
+            <motion.div variants={panelItemVariants} className="px-6 mb-6">
+              <GhostScoreGauge
+                score={station.ghostScore}
+                dataStatus={station.dataStatus}
+              />
+            </motion.div>
 
             {/* Key Metrics */}
-            <div className="px-6 mb-6">
+            <motion.div variants={panelItemVariants} className="px-6 mb-6">
               <div className="grid grid-cols-2 gap-3">
                 <div className="glass-solid rounded-ui p-4">
                   <div className="flex items-center gap-2 text-text-tertiary mb-1">
                     <Users className="w-4 h-4" />
                     <span className="text-ui-xs">30-Day Average</span>
                   </div>
-                  <div className="text-ui-xl font-semibold">
-                    {station.dataStatus === 'missing'
-                      ? '—'
+                  <div className="stat-value-text text-ui-xl">
+                    {station.dataStatus === "missing"
+                      ? "—"
                       : Math.round(station.rolling30dAvg).toLocaleString()}
                   </div>
                 </div>
@@ -134,17 +151,17 @@ export default function StationDetailPanel({
                     <Calendar className="w-4 h-4" />
                     <span className="text-ui-xs">Yesterday</span>
                   </div>
-                  <div className="text-ui-xl font-semibold">
-                    {station.dataStatus === 'missing'
-                      ? '—'
+                  <div className="stat-value-text text-ui-xl">
+                    {station.dataStatus === "missing"
+                      ? "—"
                       : station.lastDayEntries.toLocaleString()}
                   </div>
                 </div>
               </div>
-            </div>
+            </motion.div>
 
             {/* Ghost Analysis */}
-            <div className="px-6 mb-6">
+            <motion.div variants={panelItemVariants} className="px-6 mb-6">
               <div className="glass-solid rounded-ui p-5">
                 <div className="flex items-center gap-2 mb-3">
                   <div className="w-8 h-8 rounded-full bg-gradient-to-br from-brandIndigo/20 to-emerald-500/20 flex items-center justify-center">
@@ -160,29 +177,26 @@ export default function StationDetailPanel({
                 <div className="flex items-center gap-2 text-ui-xs text-text-tertiary">
                   <TrendingDown className="w-3 h-3" />
                   <span>
-                    Bottom {100 - detail.metrics.percentile}% of all CTA stations
+                    Bottom {100 - detail.metrics.percentile}% of all CTA
+                    stations
                   </span>
                 </div>
               </div>
-            </div>
+            </motion.div>
 
-            {/* Ridership Trend Placeholder */}
-            <div className="px-6 mb-6">
+            {/* Ridership Trend Chart */}
+            <motion.div variants={panelItemVariants} className="px-6 mb-6">
               <h3 className="font-display font-semibold text-ui-md mb-3">
                 90-Day Ridership Trend
               </h3>
-              <div className="glass-solid rounded-ui p-4 h-48 flex items-center justify-center">
-                <div className="text-center text-text-tertiary">
-                  <div className="w-12 h-12 mx-auto mb-2 rounded-full bg-neutral-surface-muted flex items-center justify-center">
-                    <TrendingDown className="w-6 h-6" />
-                  </div>
-                  <p className="text-ui-sm">Chart coming soon</p>
-                </div>
-              </div>
-            </div>
+              <RidershipChart
+                data={detail.ridershipSeries}
+                isLoading={false}
+              />
+            </motion.div>
 
             {/* Station Info */}
-            <div className="px-6 pb-6">
+            <motion.div variants={panelItemVariants} className="px-6 pb-6">
               <div className="text-ui-xs text-text-tertiary">
                 <p>Station ID: {station.id}</p>
                 <p>
@@ -190,14 +204,14 @@ export default function StationDetailPanel({
                   {station.longitude.toFixed(4)}
                 </p>
               </div>
-            </div>
-          </div>
+            </motion.div>
+          </motion.div>
         ) : (
           <div className="flex-1 flex items-center justify-center">
             <p className="text-text-secondary">Failed to load station details</p>
           </div>
         )}
       </div>
-    </div>
+    </motion.div>
   );
 }

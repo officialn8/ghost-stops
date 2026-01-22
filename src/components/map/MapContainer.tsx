@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useMemo, useRef } from "react";
+import { AnimatePresence } from "framer-motion";
 import Map, { Source, Layer, MapMouseEvent } from "react-map-gl/mapbox";
 import type { FeatureCollection, Point, Feature, LineString } from "geojson";
 import type { MapRef } from "react-map-gl/mapbox";
@@ -8,6 +9,9 @@ import MapTooltip from "./MapTooltip";
 import StationList from "@/components/station/StationList";
 import StationDetailPanel from "@/components/station/StationDetailPanel";
 import LineFilter from "@/components/map/LineFilter";
+import { useTheme } from "@/components/theme";
+import { useIsMobile } from "@/hooks/useMediaQuery";
+import MobileLayout from "@/components/mobile/MobileLayout";
 import {
   explodeAndStitchSegments,
   isStationActiveByLineFilter,
@@ -35,6 +39,8 @@ interface MapContainerProps {
 
 export default function MapContainer({ searchQuery = "" }: MapContainerProps) {
   const mapRef = useRef<MapRef>(null);
+  const { theme } = useTheme();
+  const isMobile = useIsMobile();
   const [stations, setStations] = useState<Station[]>([]);
   const [selectedStation, setSelectedStation] = useState<Station | null>(null);
   const [hoveredStation, setHoveredStation] = useState<Station | null>(null);
@@ -42,6 +48,7 @@ export default function MapContainer({ searchQuery = "" }: MapContainerProps) {
   const [loading, setLoading] = useState(true);
   const [dataAsOf, setDataAsOf] = useState<string>("");
   const [trackSegments, setTrackSegments] = useState<FeatureCollection<LineString> | null>(null);
+  const [mobileSearchQuery, setMobileSearchQuery] = useState("");
 
   // Line filter state - all lines active by default
   const [activeLines, setActiveLines] = useState<Record<string, boolean>>(() => {
@@ -96,15 +103,15 @@ export default function MapContainer({ searchQuery = "" }: MapContainerProps) {
 
   // Filter stations based on search
   const filteredStations = useMemo(() => {
-    if (!searchQuery) return stations;
+    const query = (isMobile ? mobileSearchQuery : searchQuery).toLowerCase();
+    if (!query) return stations;
 
-    const query = searchQuery.toLowerCase();
     return stations.filter(
       (station) =>
         station.name.toLowerCase().includes(query) ||
         station.lines.some((line) => line.toLowerCase().includes(query))
     );
-  }, [stations, searchQuery]);
+  }, [stations, searchQuery, mobileSearchQuery, isMobile]);
 
   // Create GeoJSON data
   const geoJsonData: FeatureCollection = useMemo(
@@ -174,6 +181,45 @@ export default function MapContainer({ searchQuery = "" }: MapContainerProps) {
     }));
   };
 
+  const handleClearAllLines = () => {
+    const newActiveLines: Record<string, boolean> = {};
+    CTA_LINE_ORDER.forEach(line => {
+      newActiveLines[line] = false;
+    });
+    setActiveLines(newActiveLines);
+  };
+
+  const handleSelectAllLines = () => {
+    const newActiveLines: Record<string, boolean> = {};
+    CTA_LINE_ORDER.forEach(line => {
+      newActiveLines[line] = true;
+    });
+    setActiveLines(newActiveLines);
+  };
+
+  // Mobile layout
+  if (isMobile) {
+    const selectedLinesArray = Object.entries(activeLines)
+      .filter(([_, isActive]) => isActive)
+      .map(([line]) => line);
+
+    return (
+      <MobileLayout
+        stations={filteredStations}
+        searchQuery={mobileSearchQuery}
+        onSearchChange={setMobileSearchQuery}
+        selectedLines={selectedLinesArray}
+        onLineToggle={handleToggleLine}
+        onClearAllLines={handleClearAllLines}
+        onSelectAllLines={handleSelectAllLines}
+        mapStyle={theme === "dark" ? "mapbox://styles/mapbox/dark-v11" : "mapbox://styles/mapbox/light-v11"}
+        stationsGeoJson={geoJsonData}
+        lineGeoJson={explodedTracks}
+      />
+    );
+  }
+
+  // Desktop layout
   return (
     <>
       {/* Glass Station List */}
@@ -182,6 +228,7 @@ export default function MapContainer({ searchQuery = "" }: MapContainerProps) {
         selectedStationId={selectedStation?.id}
         onStationSelect={handleStationClick}
         dataAsOf={dataAsOf}
+        loading={loading}
       />
 
       {/* Line Filter */}
@@ -205,7 +252,7 @@ export default function MapContainer({ searchQuery = "" }: MapContainerProps) {
             {...viewState}
             onMove={(evt) => setViewState(evt.viewState)}
             style={{ width: "100%", height: "100%" }}
-            mapStyle="mapbox://styles/mapbox/light-v11"
+            mapStyle={theme === "dark" ? "mapbox://styles/mapbox/dark-v11" : "mapbox://styles/mapbox/light-v11"}
             mapboxAccessToken={MAPBOX_TOKEN}
             interactiveLayerIds={["stations-circle", "stations-halo"]}
             onMouseMove={(e: MapMouseEvent) => {
@@ -433,12 +480,15 @@ export default function MapContainer({ searchQuery = "" }: MapContainerProps) {
       </div>
 
       {/* Station Detail Panel */}
-      {selectedStation && (
-        <StationDetailPanel
-          station={selectedStation}
-          onClose={() => setSelectedStation(null)}
-        />
-      )}
+      <AnimatePresence mode="wait">
+        {selectedStation && (
+          <StationDetailPanel
+            key={selectedStation.id}
+            station={selectedStation}
+            onClose={() => setSelectedStation(null)}
+          />
+        )}
+      </AnimatePresence>
     </>
   );
 }

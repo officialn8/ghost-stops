@@ -1,10 +1,17 @@
 "use client";
 
 import { useState } from "react";
+import { motion, AnimatePresence } from "framer-motion";
 import { ChevronLeft, ChevronRight, Ghost } from "lucide-react";
 import StationRow from "./StationRow";
+import StationCardSkeleton from "./StationCardSkeleton";
 import GhostWatermark from "@/components/ghost/GhostWatermark";
 import { cn } from "@/lib/utils";
+import {
+  listContainerVariants,
+  listItemVariants,
+  hoverStates,
+} from "@/lib/motion/tokens";
 
 interface Station {
   id: string;
@@ -15,7 +22,7 @@ interface Station {
   ghostScore: number;
   rolling30dAvg: number;
   lastDayEntries: number;
-  dataStatus?: 'available' | 'missing' | 'zero';
+  dataStatus?: "available" | "missing" | "zero";
 }
 
 interface StationListProps {
@@ -23,6 +30,7 @@ interface StationListProps {
   selectedStationId?: string;
   onStationSelect?: (station: Station) => void;
   dataAsOf?: string;
+  loading?: boolean;
   className?: string;
 }
 
@@ -31,6 +39,7 @@ export default function StationList({
   selectedStationId,
   onStationSelect,
   dataAsOf,
+  loading = false,
   className,
 }: StationListProps) {
   const [isCollapsed, setIsCollapsed] = useState(false);
@@ -46,7 +55,7 @@ export default function StationList({
         className
       )}
     >
-      <div className="h-full glass rounded-panel overflow-hidden flex flex-col relative">
+      <div className="h-full glass-sidebar rounded-panel overflow-hidden flex flex-col relative">
         {/* Ghost Watermark */}
         <GhostWatermark opacity={0.02} />
 
@@ -83,26 +92,54 @@ export default function StationList({
           )}
         </div>
 
-        {/* Station List */}
-        {!isCollapsed && (
-          <div className="flex-1 overflow-y-auto no-scrollbar">
-            <div className="divide-y divide-neutral-border">
-              {topStations.map((station, idx) => (
-                <StationRow
-                  key={station.id}
-                  rank={idx + 1}
-                  name={station.name}
-                  lines={station.lines}
-                  ghostScore={station.ghostScore}
-                  dailyAverage={station.rolling30dAvg}
-                  dataStatus={station.dataStatus}
-                  selected={selectedStationId === station.id}
-                  onClick={() => onStationSelect?.(station)}
-                />
-              ))}
-            </div>
-          </div>
-        )}
+        {/* Station List with Motion */}
+        <AnimatePresence mode="wait">
+          {!isCollapsed && (loading || topStations.length === 0) && (
+            <motion.div
+              key="skeleton"
+              className="flex-1 overflow-y-auto station-list-scroll"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 0.15 }}
+            >
+              <StationCardSkeleton count={10} />
+            </motion.div>
+          )}
+          {!isCollapsed && !loading && topStations.length > 0 && (
+            <motion.div
+              key="stations"
+              className="flex-1 overflow-y-auto station-list-scroll"
+              initial="hidden"
+              animate="visible"
+              exit="hidden"
+              variants={listContainerVariants}
+            >
+              <div className="divide-y divide-neutral-border">
+                {topStations.map((station, idx) => (
+                  <motion.div
+                    key={station.id}
+                    variants={listItemVariants}
+                    whileHover={hoverStates.listItem}
+                    whileTap={hoverStates.listItemTap}
+                    className="cursor-pointer"
+                    onClick={() => onStationSelect?.(station)}
+                  >
+                    <StationRow
+                      rank={idx + 1}
+                      name={station.name}
+                      lines={station.lines}
+                      ghostScore={station.ghostScore}
+                      dailyAverage={station.rolling30dAvg}
+                      dataStatus={station.dataStatus}
+                      selected={selectedStationId === station.id}
+                    />
+                  </motion.div>
+                ))}
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
 
         {/* Collapsed State */}
         {isCollapsed && (
@@ -113,7 +150,7 @@ export default function StationList({
 
         {/* Footer */}
         {!isCollapsed && (
-          <div className="p-4 border-t border-neutral-border bg-white/30">
+          <div className="p-4 border-t border-neutral-border bg-white/30 backdrop-blur-sm">
             <div className="text-center text-ui-xs text-text-secondary">
               Showing top 25 of {stations.length} stations
             </div>

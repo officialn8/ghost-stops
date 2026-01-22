@@ -10,8 +10,8 @@ const GhostStopsMap = dynamic(() => import("@/components/map/map"), {
   loading: () => (
     <div className="w-full h-full bg-neutral-bg flex items-center justify-center">
       <div className="text-center">
-        <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-gradient-to-br from-brandIndigo/20 to-emerald-500/20 animate-ghost-pulse" />
-        <p className="text-text-secondary">Loading map...</p>
+        <div className="w-20 h-20 mx-auto mb-4 rounded-full skeleton-shimmer" />
+        <div className="h-4 w-32 mx-auto rounded skeleton-shimmer" />
       </div>
     </div>
   ),
@@ -22,11 +22,13 @@ export default function Home() {
 
   return (
     <div className="h-screen w-screen overflow-hidden bg-neutral-bg">
-      {/* Top Navigation */}
-      <TopBar onSearch={setSearchQuery} />
+      {/* Top Navigation - hidden on mobile */}
+      <div className="hidden md:block">
+        <TopBar onSearch={setSearchQuery} />
+      </div>
 
       {/* Main Content Area */}
-      <div className="pt-16 h-full relative">
+      <div className="md:pt-16 h-full relative">
         {/* Map Background */}
         <div className="absolute inset-0">
           <GhostStopsMap searchQuery={searchQuery} />
