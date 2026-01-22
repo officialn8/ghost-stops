@@ -1,6 +1,8 @@
 import CTALineBadge from "@/components/station/CTALineBadge";
 import GhostScoreBadge from "@/components/ghost/GhostScoreBadge";
 import { Users } from "lucide-react";
+import { normalizeStationLines, warnIfNameContainsLineInfo } from "@/lib/cta/normalizeStationLines";
+import { useMemo } from "react";
 
 interface Station {
   id: string;
@@ -18,6 +20,28 @@ interface MapTooltipProps {
 }
 
 export default function MapTooltip({ station, x, y }: MapTooltipProps) {
+  // Normalize station lines for consistent rendering
+  const { lines, cleanName, rawLineString } = useMemo(() => {
+    const result = normalizeStationLines(station);
+
+    // Debug warning if station name still contains line info in parentheses
+    if (process.env.NODE_ENV === 'development') {
+      warnIfNameContainsLineInfo(station.name, station.id);
+    }
+
+    return result;
+  }, [station]);
+
+  // Determine if we should show a fallback
+  const showFallback = lines.length === 0 && rawLineString;
+
+  if (showFallback && process.env.NODE_ENV === 'development') {
+    console.warn(
+      `[CTA Line Pills] Could not parse lines for station "${station.name}" (id: ${station.id}). ` +
+      `Raw line data: "${rawLineString}"`
+    );
+  }
+
   return (
     <div
       className="absolute pointer-events-none z-50 animate-ghost-fade"
@@ -32,16 +56,22 @@ export default function MapTooltip({ station, x, y }: MapTooltipProps) {
         <div className="absolute inset-0 ghost-mist rounded-ui opacity-30" />
 
         <div className="relative z-10">
-          {/* Station Name */}
+          {/* Station Name (clean, without parenthetical line info) */}
           <h3 className="font-semibold text-ui-sm text-text-primary mb-2">
-            {station.name}
+            {cleanName || station.name}
           </h3>
 
           {/* Lines */}
           <div className="flex flex-wrap gap-1 mb-2">
-            {(Array.isArray(station.lines) ? station.lines : []).map((line) => (
-              <CTALineBadge key={line} line={line} size="sm" />
-            ))}
+            {lines.length > 0 ? (
+              lines.map((line) => (
+                <CTALineBadge key={line} line={line} size="sm" />
+              ))
+            ) : showFallback ? (
+              <span className="text-ui-xs text-text-tertiary italic">
+                Lines unavailable
+              </span>
+            ) : null}
           </div>
 
           {/* Score and Metrics */}

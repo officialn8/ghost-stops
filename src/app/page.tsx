@@ -10,7 +10,7 @@ const GhostStopsMap = dynamic(() => import("@/components/map/map"), {
   loading: () => (
     <div className="w-full h-full bg-neutral-bg flex items-center justify-center">
       <div className="text-center">
-        <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-gradient-to-br from-spectral-500/20 to-aurora-500/20 animate-ghost-pulse" />
+        <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-gradient-to-br from-brandIndigo/20 to-emerald-500/20 animate-ghost-pulse" />
         <p className="text-text-secondary">Loading map...</p>
       </div>
     </div>

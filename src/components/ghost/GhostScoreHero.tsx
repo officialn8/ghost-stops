@@ -69,7 +69,7 @@ export default function GhostScoreHero({
         </div>
       </div>
 
-      {/* Mist effect */}
+      {/* Mist effect - uses updated ghost-mist from globals.css */}
       <div className="absolute bottom-0 left-0 right-0 h-16 pointer-events-none">
         <div className="absolute inset-0 bg-gradient-to-t from-ghost-mist to-transparent animate-mist-drift" />
       </div>

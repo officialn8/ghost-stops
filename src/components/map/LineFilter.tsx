@@ -1,7 +1,6 @@
 "use client";
 
 import { CTA_LINE_ORDER, CTA_LINE_COLORS } from "@/lib/cta/explodeSegments";
-import type { CTALine } from "@/lib/cta/explodeSegments";
 
 interface LineFilterProps {
   activeLines: Record<string, boolean>;
@@ -12,7 +11,7 @@ export default function LineFilter({ activeLines, onToggleLine }: LineFilterProp
   const displayLines = CTA_LINE_ORDER;
 
   return (
-    <div className="absolute top-20 left-4 z-40">
+    <div className="absolute top-20 right-4 z-40">
       <div className="glass rounded-ui p-3 shadow-hover">
         <h3 className="text-ui-xs font-semibold text-text-secondary mb-2">Filter Lines</h3>
 

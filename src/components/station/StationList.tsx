@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { ChevronLeft, ChevronRight, Ghost } from "lucide-react";
 import StationRow from "./StationRow";
 import GhostWatermark from "@/components/ghost/GhostWatermark";
@@ -66,13 +66,13 @@ export default function StationList({
           {!isCollapsed && (
             <>
               <div className="flex items-center gap-2 mb-2">
-                <Ghost className="w-5 h-5 text-spectral-600" />
+                <Ghost className="w-5 h-5 text-brandIndigo" />
                 <h2 className="text-ui-lg font-display font-semibold">
                   Ghostiest Stations
                 </h2>
               </div>
               <p className="text-ui-sm text-text-secondary">
-                Chicago's emptiest CTA rail stops
+                Chicago&apos;s emptiest CTA rail stops
               </p>
               {dataAsOf && (
                 <p className="text-ui-xs text-text-tertiary mt-1">

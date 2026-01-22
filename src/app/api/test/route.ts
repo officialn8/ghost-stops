@@ -22,7 +22,7 @@ export async function GET() {
     });
 
     // Test 5: Get a few stations with metrics
-    let stationsWithMetrics: any[] = [];
+    let stationsWithMetrics: unknown[] = [];
     try {
       stationsWithMetrics = await prisma.station.findMany({
         take: 5,

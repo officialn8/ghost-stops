@@ -1,10 +1,11 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { X, TrendingDown, Users, Calendar, Ghost } from "lucide-react";
 import CTALineBadge from "./CTALineBadge";
 import GhostScoreHero from "@/components/ghost/GhostScoreHero";
 import { cn } from "@/lib/utils";
+import { normalizeStationLines } from "@/lib/cta/normalizeStationLines";
 
 interface Station {
   id: string;
@@ -42,6 +43,11 @@ export default function StationDetailPanel({
 }: StationDetailPanelProps) {
   const [detail, setDetail] = useState<StationDetail | null>(null);
   const [loading, setLoading] = useState(true);
+
+  // Normalize station lines for consistent rendering
+  const { lines: normalizedLines, cleanName } = useMemo(() => {
+    return normalizeStationLines(station);
+  }, [station]);
 
   useEffect(() => {
     setLoading(true);
@@ -83,11 +89,11 @@ export default function StationDetailPanel({
             </button>
 
             <h2 className="text-display-3 font-display font-semibold text-text-primary pr-12">
-              {station.name}
+              {cleanName || station.name}
             </h2>
 
             <div className="flex flex-wrap gap-2 mt-3">
-              {station.lines.map((line) => (
+              {normalizedLines.map((line) => (
                 <CTALineBadge key={line} line={line} size="md" />
               ))}
             </div>
@@ -97,7 +103,7 @@ export default function StationDetailPanel({
         {loading ? (
           <div className="flex-1 flex items-center justify-center">
             <div className="text-center">
-              <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-gradient-to-br from-spectral-500/20 to-aurora-500/20 animate-ghost-pulse" />
+              <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-gradient-to-br from-brandIndigo/20 to-emerald-500/20 animate-ghost-pulse" />
               <p className="text-text-secondary">Loading details...</p>
             </div>
           </div>
@@ -141,8 +147,8 @@ export default function StationDetailPanel({
             <div className="px-6 mb-6">
               <div className="glass-solid rounded-ui p-5">
                 <div className="flex items-center gap-2 mb-3">
-                  <div className="w-8 h-8 rounded-full bg-gradient-to-br from-spectral-500/20 to-aurora-500/20 flex items-center justify-center">
-                    <Ghost className="w-4 h-4 text-spectral-600" />
+                  <div className="w-8 h-8 rounded-full bg-gradient-to-br from-brandIndigo/20 to-emerald-500/20 flex items-center justify-center">
+                    <Ghost className="w-4 h-4 text-brandIndigo" />
                   </div>
                   <h3 className="font-display font-semibold text-ui-md">
                     Why is this a ghost stop?

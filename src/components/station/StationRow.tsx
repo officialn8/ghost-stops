@@ -1,9 +1,11 @@
 "use client";
 
-import { TrendingUp, Users } from "lucide-react";
+import { Users } from "lucide-react";
+import { useMemo } from "react";
 import CTALineBadge from "./CTALineBadge";
 import GhostScoreBadge from "@/components/ghost/GhostScoreBadge";
 import { cn } from "@/lib/utils";
+import { normalizeStationLines } from "@/lib/cta/normalizeStationLines";
 
 interface StationRowProps {
   rank: number;
@@ -28,6 +30,11 @@ export default function StationRow({
   onClick,
   className,
 }: StationRowProps) {
+  // Normalize lines for consistent rendering
+  const { lines: normalizedLines, cleanName } = useMemo(() => {
+    return normalizeStationLines({ name, lines });
+  }, [name, lines]);
+
   return (
     <div
       onClick={onClick}
@@ -40,7 +47,7 @@ export default function StationRow({
     >
       {/* Selected Indicator */}
       {selected && (
-        <div className="absolute left-0 top-0 bottom-0 w-1 bg-aurora rounded-r-full" />
+        <div className="absolute left-0 top-0 bottom-0 w-1 bg-emerald rounded-r-full" />
       )}
 
       <div className="flex items-start justify-between gap-3">
@@ -51,12 +58,12 @@ export default function StationRow({
               #{rank}
             </span>
             <h3 className="text-ui-md font-semibold text-text-primary truncate">
-              {name}
+              {cleanName || name}
             </h3>
           </div>
 
           <div className="flex flex-wrap gap-1">
-            {lines.map((line) => (
+            {normalizedLines.map((line) => (
               <CTALineBadge key={line} line={line} size="sm" />
             ))}
           </div>

@@ -8,16 +8,16 @@ export const CTA_LINE_ORDER = [
 
 export type CTALine = typeof CTA_LINE_ORDER[number];
 
-// CTA official colors
+// CTA brand colors (NOT official CTA colors)
 export const CTA_LINE_COLORS: Record<CTALine, string> = {
-  "Red": "#C60C30",
-  "Blue": "#00A1DE",
-  "Brown": "#62361B",
-  "Green": "#009B3A",
-  "Orange": "#F9461C",
-  "Purple": "#522398",
-  "Pink": "#E27EA6",
-  "Yellow": "#F9E300"
+  "Red": "#F25757",     // Vibrant Coral
+  "Blue": "#0090C1",    // Ocean Blue
+  "Brown": "#513B3C",   // Chocolate Plum
+  "Green": "#06D6A0",   // Emerald
+  "Orange": "#F58549",  // Atomic Tangerine
+  "Purple": "#4F1271",  // Indigo
+  "Pink": "#FF6B6B",    // Grapefruit Pink
+  "Yellow": "#F7E733"   // Bright Lemon
 };
 
 interface SegmentProperties {

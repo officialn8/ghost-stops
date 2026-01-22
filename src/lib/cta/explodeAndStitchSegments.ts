@@ -1,4 +1,4 @@
-import type { FeatureCollection, Feature, LineString, MultiLineString } from 'geojson';
+import type { FeatureCollection, Feature, LineString } from 'geojson';
 import {
   CTA_LINE_ORDER,
   CTA_LINE_COLORS,
@@ -443,7 +443,7 @@ function stitchSegments(
   // Process each group to stitch segments
   const stitchedFeatures: Feature<LineString, StitchedProperties>[] = [];
 
-  for (const [groupKey, groupSegments] of groups) {
+  for (const groupSegments of groups.values()) {
     if (groupSegments.length === 1) {
       // Single segment, just add it
       stitchedFeatures.push({
@@ -483,7 +483,7 @@ function stitchSegments(
 export { explodeSegments } from './explodeSegments';
 
 // Debug helper to check segment counts
-export function debugSegmentCounts(features: FeatureCollection<LineString, any>): void {
+export function debugSegmentCounts(features: FeatureCollection<LineString, { line?: string; lines?: string[] }>): void {
   if (process.env.NODE_ENV !== 'production') {
     const counts: Record<string, number> = {};
     for (const feature of features.features) {

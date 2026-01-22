@@ -13,30 +13,12 @@ const SheetTrigger = SheetPrimitive.Trigger
 
 const SheetClose = SheetPrimitive.Close
 
-const portalVariants = cva("fixed inset-0 z-50 flex", {
-  variants: {
-    position: {
-      top: "items-start",
-      bottom: "items-end",
-      left: "justify-start",
-      right: "justify-end",
-    },
-  },
-  defaultVariants: { position: "right" },
-})
-
-interface SheetPortalProps
-  extends SheetPrimitive.DialogPortalProps,
-    VariantProps<typeof portalVariants> {}
-
 const SheetPortal = ({
-  position,
-  className,
   children,
   ...props
-}: SheetPortalProps) => (
-  <SheetPrimitive.Portal className={cn(className)} {...props}>
-    <div className={portalVariants({ position })}>{children}</div>
+}: SheetPrimitive.DialogPortalProps) => (
+  <SheetPrimitive.Portal {...props}>
+    <div className="fixed inset-0 z-50 flex justify-end">{children}</div>
   </SheetPrimitive.Portal>
 )
 SheetPortal.displayName = SheetPrimitive.Portal.displayName
@@ -44,7 +26,7 @@ SheetPortal.displayName = SheetPrimitive.Portal.displayName
 const SheetOverlay = React.forwardRef<
   React.ElementRef<typeof SheetPrimitive.Overlay>,
   React.ComponentPropsWithoutRef<typeof SheetPrimitive.Overlay>
->(({ className, children, ...props }, ref) => (
+>(({ className, ...props }, ref) => (
   <SheetPrimitive.Overlay
     className={cn(
       "fixed inset-0 z-50 bg-background/80 backdrop-blur-sm transition-all duration-100 data-[state=closed]:animate-out data-[state=closed]:fade-out data-[state=open]:fade-in",
@@ -146,13 +128,13 @@ const sheetVariants = cva(
 
 export interface DialogContentProps
   extends React.ComponentPropsWithoutRef<typeof SheetPrimitive.Content>,
-    VariantProps<typeof sheetVariants> {}
+  VariantProps<typeof sheetVariants> { }
 
 const SheetContent = React.forwardRef<
   React.ElementRef<typeof SheetPrimitive.Content>,
   DialogContentProps
 >(({ position, size, className, children, ...props }, ref) => (
-  <SheetPortal position={position}>
+  <SheetPortal>
     <SheetOverlay />
     <SheetPrimitive.Content
       ref={ref}

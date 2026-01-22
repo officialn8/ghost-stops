@@ -4,7 +4,7 @@
 
 @layer base {
   :root {
-    /* Light Mode Glass UI Design System */
+    /* Light Mode Glass UI Design System v2 */
     --background: 246 247 251; /* #F6F7FB */
     --foreground: 11 18 32; /* Text primary */
 
@@ -15,27 +15,27 @@
     --popover: 0 0% 100%;
     --popover-foreground: 11 18 32;
 
-    /* Brand Colors */
-    --primary: 173 71% 40%; /* Aurora teal #14B8A6 */
+    /* Brand Colors - Indigo primary, Emerald secondary */
+    --primary: 280 76% 27%; /* Indigo #4F1271 */
     --primary-foreground: 0 0% 100%;
 
-    --secondary: 263 70% 58%; /* Spectral violet #9333EA */
+    --secondary: 164 95% 43%; /* Emerald #06D6A0 */
     --secondary-foreground: 0 0% 100%;
 
     /* Neutral Tints */
-    --muted: 240 25% 95%; /* #F1F3F8 */
+    --muted: 340 20% 92%; /* Lavender Blush #EEE5E9 */
     --muted-foreground: 11 18 32 / 0.72;
 
-    --accent: 173 71% 40%; /* Aurora teal */
+    --accent: 197 100% 38%; /* Ocean Blue #0090C1 */
     --accent-foreground: 0 0% 100%;
 
     --destructive: 0 84.2% 60.2%;
     --destructive-foreground: 0 0% 100%;
 
-    /* Borders - very subtle */
-    --border: 15 23 42 / 0.06;
-    --input: 15 23 42 / 0.06;
-    --ring: 173 71% 40%;
+    /* Borders - neutral by default, NOT purple-tinted */
+    --border: 11 18 32 / 0.08;
+    --input: 11 18 32 / 0.08;
+    --ring: 197 100% 38%; /* Ocean Blue for focus */
 
     --radius: 16px;
   }
@@ -68,17 +68,17 @@
     @apply hover:shadow-lg hover:translate-y-[-2px] transition-all duration-200;
   }
 
-  /* Ghost Theme Effects - Spectral */
+  /* Ghost Theme Effects - Indigo/Emerald palette */
   .ghost-glow {
-    box-shadow: 0 0 24px rgba(147, 51, 234, 0.15),
-                0 0 48px rgba(20, 184, 166, 0.12);
+    box-shadow: 0 0 24px rgba(79, 18, 113, 0.15),
+                0 0 48px rgba(6, 214, 160, 0.12);
   }
 
   .ghost-mist {
     background: radial-gradient(
       ellipse at center,
-      rgba(147, 51, 234, 0.04) 0%,
-      rgba(20, 184, 166, 0.03) 50%,
+      rgba(79, 18, 113, 0.04) 0%,
+      rgba(6, 214, 160, 0.03) 50%,
       transparent 100%
     );
   }
@@ -94,22 +94,22 @@
     animation: ghost-shimmer 3s linear infinite;
   }
 
-  /* Text Gradients - Spectral Theme */
-  .text-gradient-aurora {
-    @apply bg-gradient-to-r from-aurora-600 to-aurora-500 bg-clip-text text-transparent;
+  /* Text Gradients - New Palette */
+  .text-gradient-emerald {
+    @apply bg-gradient-to-r from-emerald-600 to-emerald-500 bg-clip-text text-transparent;
   }
 
-  .text-gradient-spectral {
-    @apply bg-gradient-to-r from-spectral-700 to-spectral-600 bg-clip-text text-transparent;
+  .text-gradient-indigo {
+    @apply bg-gradient-to-r from-brandIndigo to-brandWisteria bg-clip-text text-transparent;
   }
 
   .text-gradient-ghost {
-    @apply bg-gradient-to-r from-spectral-600 via-aurora-500 to-aurora-400 bg-clip-text text-transparent;
+    @apply bg-gradient-to-r from-brandIndigo via-brandWisteria to-emerald bg-clip-text text-transparent;
   }
 
-  /* Focus States */
-  .focus-aurora {
-    @apply focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-aurora-500/30 focus-visible:ring-offset-2 focus-visible:ring-offset-neutral-bg;
+  /* Focus States - Ocean Blue for accessibility */
+  .focus-ocean {
+    @apply focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-palette-ocean/50 focus-visible:ring-offset-2 focus-visible:ring-offset-neutral-bg;
   }
 
   /* Smooth Transitions */
@@ -206,11 +206,11 @@
   }
 }
 
-/* Selection Colors */
+/* Selection Colors - Emerald themed */
 ::selection {
-  @apply bg-aurora-200 text-aurora-900;
+  @apply bg-emerald-200 text-emerald-900;
 }
 
 ::-moz-selection {
-  @apply bg-aurora-200 text-aurora-900;
+  @apply bg-emerald-200 text-emerald-900;
 }

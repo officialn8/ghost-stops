@@ -8,10 +8,8 @@ import MapTooltip from "./MapTooltip";
 import StationList from "@/components/station/StationList";
 import StationDetailPanel from "@/components/station/StationDetailPanel";
 import LineFilter from "@/components/map/LineFilter";
-import { getGhostScoreColor } from "@/lib/utils";
 import {
   explodeAndStitchSegments,
-  explodeSegments,
   isStationActiveByLineFilter,
   CTA_LINE_ORDER,
   CTA_LINE_COLORS
@@ -134,7 +132,7 @@ export default function MapContainer({ searchQuery = "" }: MapContainerProps) {
     if (!trackSegments) return null;
 
     // Only stitch Loop segments for safety (stitchOnlyLoop = true by default)
-    return explodeAndStitchSegments(trackSegments as any, activeLines);
+    return explodeAndStitchSegments(trackSegments as FeatureCollection<LineString, { segment_id: string; corridor: string; is_loop: boolean; lines: string[] }>, activeLines);
 
     // If stitching causes issues, uncomment this to use simple explosion:
     // return explodeSegments(trackSegments as any, activeLines);
@@ -197,7 +195,7 @@ export default function MapContainer({ searchQuery = "" }: MapContainerProps) {
         {loading ? (
           <div className="w-full h-full bg-neutral-bg flex items-center justify-center">
             <div className="text-center">
-              <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-gradient-to-br from-spectral-500/20 to-aurora-500/20 animate-ghost-pulse" />
+              <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-gradient-to-br from-brandIndigo/20 to-emerald-500/20 animate-ghost-pulse" />
               <p className="text-text-secondary">Loading stations...</p>
             </div>
           </div>
@@ -216,7 +214,7 @@ export default function MapContainer({ searchQuery = "" }: MapContainerProps) {
                 const props = feature.properties;
                 // Parse the serialized lines array
                 const station: Station = {
-                  ...props as any,
+                  ...props as Station,
                   lines: typeof props.lines === 'string' ? JSON.parse(props.lines) : props.lines || [],
                 };
                 setHoveredStation(station);
@@ -231,7 +229,7 @@ export default function MapContainer({ searchQuery = "" }: MapContainerProps) {
                 const props = feature.properties;
                 // Parse the serialized lines array
                 const station: Station = {
-                  ...props as any,
+                  ...props as Station,
                   lines: typeof props.lines === 'string' ? JSON.parse(props.lines) : props.lines || [],
                 };
                 handleStationClick(station);

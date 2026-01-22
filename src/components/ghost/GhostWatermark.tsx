@@ -26,14 +26,14 @@ export default function GhostWatermark({
           {/* Main ghost body */}
           <path
             d="M0,-120 C-66.3,-120 -120,-66.3 -120,0 L-120,80 C-120,96 -108,108 -96,108 C-84,108 -72,96 -72,80 C-72,96 -60,108 -48,108 C-36,108 -24,96 -24,80 C-24,96 -12,108 0,108 C12,108 24,96 24,80 C24,96 36,108 48,108 C60,108 72,96 72,80 C72,96 84,108 96,108 C108,108 120,96 120,80 L120,0 C120,-66.3 66.3,-120 0,-120 Z"
-            className="text-spectral-600"
+            className="text-brandIndigo"
           />
 
           {/* Eyes */}
           <circle cx="-30" cy="-20" r="12" className="text-neutral-bg" />
           <circle cx="30" cy="-20" r="12" className="text-neutral-bg" />
-          <circle cx="-30" cy="-20" r="6" className="text-spectral-700" />
-          <circle cx="30" cy="-20" r="6" className="text-spectral-700" />
+          <circle cx="-30" cy="-20" r="6" className="text-brandIndigo" />
+          <circle cx="30" cy="-20" r="6" className="text-brandIndigo" />
 
           {/* Subtle glow */}
           <circle

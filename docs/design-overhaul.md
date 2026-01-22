@@ -12,36 +12,34 @@ This document details the comprehensive premium glass UI design system implement
 - **Fintech-Grade**: Professional, trustworthy, data-driven aesthetic
 - **Ghost Identity**: Subtle spectral elements that enhance the brand
 
-## Color Palette & Tokens
+## Color Palette & Tokens — Design Tokens v2
+
+> **Updated January 2026**: Evolved from Aurora Teal + Spectral Violet to a more ownable, editorial palette.
+
+### Brand Colors (Named)
+```css
+--brand-indigo: #4F1271   /* Primary: text, borders, selected states */
+--brand-wisteria: #7F96FF /* Glow: halos, gradients (NOT text on white) */
+--accent-ocean: #0090C1   /* Links, buttons — readable on white */
+--emerald: #06D6A0        /* Success, live indicators */
+```
 
 ### Neutrals (Light Mode)
 ```css
 --neutral-bg: #F6F7FB                    /* App background */
 --neutral-surface: rgba(255,255,255,0.72) /* Glass surface */
 --neutral-surface-solid: #FFFFFF          /* Solid surface */
---neutral-surface-muted: #F1F3F8          /* Muted background */
---neutral-border: rgba(15,23,42,0.08)     /* Subtle borders */
-```
-
-### Brand Accents
-```css
-/* Primary - Aurora Teal */
---aurora: #14B8A6
---aurora-50: #ECFDF5
---aurora-500: #14B8A6
---aurora-900: #134E4A
-
-/* Secondary - Spectral Violet */
---spectral: #7C3AED
---spectral-50: #FAF5FF
---spectral-700: #7C3AED
---spectral-900: #581C87
+--neutral-surface-muted: #EEE5E9          /* Lavender Blush - hover bg */
+--neutral-border: rgba(11,18,32,0.08)     /* Neutral ink (NOT purple) */
+--neutral-border-active: #4F1271          /* Indigo for focus/active */
+--neutral-plum: #513B3C                   /* Chocolate Plum */
+--neutral-grey: #7C7C7C
 ```
 
 ### Ghost Theme Accents
 ```css
---ghost-glow: rgba(124,58,237,0.18)    /* Violet haze */
---ghost-mist: rgba(20,184,166,0.14)    /* Teal haze */
+--ghost-glow: rgba(79,18,113,0.15)     /* Indigo haze */
+--ghost-mist: rgba(6,214,160,0.12)     /* Emerald haze */
 --ghost-ink: rgba(11,18,32,0.08)       /* Soft outline */
 ```
 
@@ -52,29 +50,28 @@ This document details the comprehensive premium glass UI design system implement
 --text-tertiary: rgba(11,18,32,0.52)     /* Tertiary text */
 ```
 
-### Ghost Score Colors
+### Ghost Score Colors (Semantic — DISTINCT from line colors)
 ```javascript
 const ghostScoreColors = {
-  100: "#DC2626",  // Score 80-100: Extreme ghost (red)
-  80: "#EA580C",   // Score 60-79: Very empty (orange)
-  60: "#F59E0B",   // Score 40-59: Somewhat empty (amber)
-  40: "#84CC16",   // Score 20-39: Moderate (lime)
-  20: "#22C55E"    // Score 0-19: Normal/busy (green)
+  100: "#DC2626",  // Score 80-100: Deep red (NOT coral)
+  80: "#EA580C",   // Score 60-79: Orange (NOT tangerine)
+  60: "#F59E0B",   // Score 40-59: Amber
+  40: "#84CC16",   // Score 20-39: Lime (NOT light green)
+  20: "#22C55E"    // Score 0-19: Green (NOT emerald)
 }
 ```
 
-### CTA Line Colors (Tastefully Bright)
+### CTA Line Brand Colors (NOT official CTA colors)
 ```javascript
 const ctaLineColors = {
-  "Red": "#C60C30",
-  "Blue": "#00A1DE",
-  "Brown": "#62361B",
-  "Green": "#009B3A",
-  "Orange": "#F9461C",
-  "Purple": "#522398",
-  "Purple Express": "#522398",
-  "Pink": "#E27EA6",
-  "Yellow": "#F9E300"
+  "Red": "#F25757",     // Vibrant Coral
+  "Blue": "#0090C1",    // Ocean Blue
+  "Brown": "#513B3C",   // Chocolate Plum
+  "Green": "#06D6A0",   // Emerald
+  "Orange": "#F58549",  // Atomic Tangerine
+  "Purple": "#4F1271",  // Indigo
+  "Pink": "#FF6B6B",    // Grapefruit Pink
+  "Yellow": "#F7E733"   // Bright Lemon (text: Chocolate Plum)
 }
 ```
 

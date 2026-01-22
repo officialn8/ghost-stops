@@ -4,15 +4,15 @@ import { PrismaClient } from "@prisma/client";
 const prisma = new PrismaClient();
 
 // Simple in-memory cache for arrivals
-const arrivalsCache = new Map<string, { data: any; timestamp: number }>();
+const arrivalsCache = new Map<string, { data: unknown; timestamp: number }>();
 const CACHE_DURATION = 30 * 1000; // 30 seconds
 
 export async function GET(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
-    const stationId = params.id;
+    const { id: stationId } = await params;
     const ctaApiKey = process.env.CTA_API_KEY;
 
     if (!ctaApiKey) {

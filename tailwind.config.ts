@@ -54,67 +54,74 @@ export default {
           foreground: "hsl(var(--card-foreground))",
         },
 
-        // Premium Design System Colors
+        // === DESIGN TOKENS v2 ===
+
+        // Neutrals - default borders are NEUTRAL (not purple-tinted)
         neutral: {
           bg: "#F6F7FB",
           surface: "rgba(255, 255, 255, 0.72)",
           "surface-solid": "#FFFFFF",
-          "surface-muted": "#F1F3F8",
-          border: "rgba(15, 23, 42, 0.08)",
+          "surface-muted": "#EEE5E9", // Lavender Blush
+          border: "rgba(11, 18, 32, 0.08)", // Neutral ink (NOT purple)
+          "border-active": "#4F1271", // Indigo for focus/active only
+          plum: "#513B3C", // Chocolate Plum
+          grey: "#7C7C7C",
         },
 
-        // Brand Colors
-        aurora: {
-          DEFAULT: "#14B8A6", // Primary accent
-          50: "#ECFDF5",
-          100: "#D1FAE5",
-          200: "#A7F3D0",
-          300: "#6EE7B7",
-          400: "#34D399",
-          500: "#14B8A6",
-          600: "#0D9488",
-          700: "#0F766E",
-          800: "#115E59",
-          900: "#134E4A",
-        },
-        spectral: {
-          DEFAULT: "#7C3AED", // Secondary accent
-          50: "#FAF5FF",
-          100: "#F3E8FF",
-          200: "#E9D5FF",
-          300: "#D8B4FE",
-          400: "#C084FC",
-          500: "#A855F7",
-          600: "#9333EA",
-          700: "#7C3AED",
-          800: "#6B21A8",
-          900: "#581C87",
+        // Brand Colors - named (no confusing numeric scale)
+        brandIndigo: "#4F1271",   // Primary: text, borders, selected
+        brandWisteria: "#7F96FF", // Glow: halos, gradients (NOT text)
+
+        // Emerald scale (replaces aurora)
+        emerald: {
+          DEFAULT: "#06D6A0",
+          50: "#E6FFF7",
+          100: "#CCFFF0",
+          200: "#99FFE0",
+          300: "#66F5CF",
+          400: "#33E8BD",
+          500: "#06D6A0",
+          600: "#05B085",
+          700: "#048A6A",
+          800: "#03654F",
+          900: "#024035",
         },
 
-        // Ghost Theme Accents
+        // Palette accent colors (avoiding conflict with shadcn 'accent')
+        palette: {
+          ocean: "#0090C1",      // Links/buttons on white
+          coral: "#F25757",
+          grapefruit: "#FF6B6B",
+          tangerine: "#F58549",
+          lemon: "#F7E733",
+          lightGreen: "#7AE582",
+        },
+
+        // Ghost Theme Accents - updated with new palette
         ghost: {
-          glow: "rgba(124, 58, 237, 0.18)",
-          mist: "rgba(20, 184, 166, 0.14)",
+          glow: "rgba(79, 18, 113, 0.15)",  // Indigo-based
+          mist: "rgba(6, 214, 160, 0.12)",  // Emerald-based
           ink: "rgba(11, 18, 32, 0.08)",
+          // Ghost score colors DISTINCT from line colors
           score: {
-            100: "#DC2626", // Extreme ghost
-            80: "#EA580C",  // Very empty
-            60: "#F59E0B",  // Somewhat empty
-            40: "#84CC16",  // Moderate
-            20: "#22C55E",  // Normal/busy
+            100: "#DC2626", // Deep red (NOT coral)
+            80: "#EA580C",  // Orange (NOT tangerine)
+            60: "#F59E0B",  // Amber
+            40: "#84CC16",  // Lime (NOT light green)
+            20: "#22C55E",  // Green (NOT emerald)
           }
         },
 
-        // CTA Line Colors
+        // CTA Line Brand Colors (NOT official CTA colors)
         cta: {
-          red: "#C60C30",
-          blue: "#00A1DE",
-          brown: "#62361B",
-          green: "#009B3A",
-          orange: "#F9461C",
-          purple: "#522398",
-          pink: "#E27EA6",
-          yellow: "#F9E300",
+          red: "#F25757",     // Vibrant Coral
+          blue: "#0090C1",    // Ocean Blue
+          brown: "#513B3C",   // Chocolate Plum
+          green: "#06D6A0",   // Emerald
+          orange: "#F58549",  // Atomic Tangerine
+          purple: "#4F1271",  // Indigo
+          pink: "#FF6B6B",    // Grapefruit Pink
+          yellow: "#F7E733",  // Bright Lemon
         },
 
         // Text Colors
