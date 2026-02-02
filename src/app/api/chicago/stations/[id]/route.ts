@@ -41,14 +41,15 @@ export async function GET(
     // Get last 90 days of ridership data (relative to latest station data)
     type RidershipRow = { serviceDate: Date | string; entries: number };
     const ridershipData = await prisma.$queryRaw<RidershipRow[]>`
-      SELECT serviceDate, entries
-      FROM RidershipDaily
-      WHERE stationId = ${stationId}
-        AND date(serviceDate) >= date(
-          (SELECT MAX(serviceDate) FROM RidershipDaily WHERE stationId = ${stationId}),
-          '-90 days'
+      SELECT "serviceDate", entries
+      FROM "RidershipDaily"
+      WHERE "stationId" = ${stationId}
+        AND "serviceDate" >= (
+          SELECT MAX("serviceDate") - INTERVAL '90 days'
+          FROM "RidershipDaily"
+          WHERE "stationId" = ${stationId}
         )
-      ORDER BY serviceDate ASC
+      ORDER BY "serviceDate" ASC
     `;
 
     // Calculate system average for comparison
