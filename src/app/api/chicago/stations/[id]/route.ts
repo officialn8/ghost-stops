@@ -207,12 +207,25 @@ export async function GET(
       where: { stationId },
     });
 
+    // Fact key to display label mapping
+    const factLabels: Record<string, string> = {
+      ridership_2001_avg: "Ridership Average (2001)",
+      ridership_2012_avg: "Ridership Average (2012)",
+      ridership_latest_avg: "Ridership Average (Latest)",
+      ridership_decline_pct: "Ridership Decline",
+      population_change: "Population Change",
+      vehicle_ownership_pct: "Vehicle Ownership",
+      jobs_walkshed_change: "Jobs in Walkshed",
+      il_lane_miles_change: "IL Lane Miles Added",
+    };
+
     // Build facts response object
     const factsResponse = facts.length > 0
       ? Object.fromEntries(
           facts.map((f) => [
             f.factKey,
             {
+              label: factLabels[f.factKey] || f.factKey.replace(/_/g, " ").replace(/\b\w/g, (l) => l.toUpperCase()),
               value: f.value,
               displayValue: formatValue(
                 f.value,
