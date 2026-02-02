@@ -1,5 +1,5 @@
 declare module 'shapefile' {
-  export function open(path: string): Promise<{
+  export function open(shpPath: string, dbfPath?: string): Promise<{
     read: () => Promise<{ done: boolean; value?: { properties: any; geometry: any } }>;
   }>;
 }
