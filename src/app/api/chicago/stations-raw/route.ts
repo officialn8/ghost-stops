@@ -21,7 +21,8 @@ export async function GET(request: NextRequest) {
     }
 
     // Build order by for Prisma
-    let orderBy: any = {};
+    type OrderByType = { metrics?: { ghostScore?: 'asc' | 'desc'; rolling30dAvg?: 'asc' | 'desc' }; name?: 'asc' | 'desc' };
+    let orderBy: OrderByType = {};
     switch (sort) {
       case "ghost_score_desc":
         orderBy = { metrics: { ghostScore: 'desc' } };
