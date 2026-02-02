@@ -1,7 +1,10 @@
 [build]
 builder = "DOCKERFILE"
 dockerfilePath = "Dockerfile.railway"
+watchPatterns = ["go.mod", "go.sum", "**/*.go"]
 
 [deploy]
 startCommand = "./etl sync-ridership --city chicago --days 90 && ./etl compute --city chicago"
 cron = "0 6 * * *"  # Run daily at 6 AM
+restartPolicyType = "ON_FAILURE"
+restartPolicyMaxRetries = 3

@@ -1,0 +1,6 @@
+# Ignore parent directory files that confuse Railway
+../node_modules
+../prisma
+../package.json
+../package-lock.json
+../.env
