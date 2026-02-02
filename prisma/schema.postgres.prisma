@@ -35,7 +35,7 @@ model Station {
   name            String
   latitude        Float
   longitude       Float
-  lines           String           // JSON array like '["Red", "Blue"]' for multi-line stations
+  lines           Json             // JSON array like '["Red", "Blue"]' for multi-line stations
 
   city            City             @relation(fields: [cityId], references: [id])
   aliases         StationAlias[]
@@ -139,7 +139,7 @@ model StationNarrative {
   stationId        String   @unique
   archetypeKey     String   // "suburban_shift", "car_culture", "jobs_exodus"
   renderedStory    String   // Pre-rendered markdown
-  evidenceFactKeys String   // JSON array: '["ridership_2001_avg", "population_change"]'
+  evidenceFactKeys Json     // JSON array: '["ridership_2001_avg", "population_change"]'
   templateVersion  String   // "v1.0" - bump when template copy changes
   confidence       Float    // 0-1, how well facts match archetype
   quality          DataQuality @default(UNKNOWN)

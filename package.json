@@ -8,7 +8,10 @@
     "start": "next start",
     "lint": "next lint",
     "seed": "tsx prisma/seed.ts",
-    "test": "vitest"
+    "test": "vitest",
+    "migrate:data": "tsx scripts/migrate-to-postgres.ts",
+    "db:push": "prisma db push",
+    "db:generate": "prisma generate"
   },
   "dependencies": {
     "@prisma/client": "^6.19.2",
@@ -51,7 +54,8 @@
     "sqlite3": "^5.1.7",
     "tailwind-merge": "^3.0.1",
     "unzipper": "^0.12.3",
-    "vaul": "^1.1.2"
+    "vaul": "^1.1.2",
+    "vercel": "^50.9.6"
   },
   "type": "module",
   "devDependencies": {

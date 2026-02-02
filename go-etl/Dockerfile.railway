@@ -1,0 +1,19 @@
+FROM golang:1.23-alpine
+
+WORKDIR /app
+
+# Install dependencies
+RUN apk add --no-cache git
+
+# Copy go mod files
+COPY go.mod go.sum ./
+RUN go mod download
+
+# Copy source
+COPY . .
+
+# Build
+RUN go build -o etl ./cmd/go-etl
+
+# Run ETL
+CMD ["./etl", "sync-ridership", "--city", "chicago", "--days", "90"]
