@@ -2,7 +2,7 @@
 
 import { useSpring, animated } from "@react-spring/web";
 import { springConfigs } from "@/lib/motion/tokens";
-import { cn, getGhostScoreColor } from "@/lib/utils";
+import { clampGhostScore, cn, getGhostScoreColor, normalizeDataStatus } from "@/lib/utils";
 import { Ghost } from "lucide-react";
 
 interface GhostScoreGaugeProps {
@@ -18,12 +18,14 @@ export default function GhostScoreGauge({
   dataStatus = "available",
   className,
 }: GhostScoreGaugeProps) {
-  const color = dataStatus === "missing" ? "#9CA3AF" : getGhostScoreColor(score);
+  const resolvedStatus = normalizeDataStatus(dataStatus);
+  const safeScore = clampGhostScore(score);
+  const color = resolvedStatus === "missing" ? "#9CA3AF" : getGhostScoreColor(safeScore);
 
   // Animated count-up with react-spring
   const { number } = useSpring({
     from: { number: 0 },
-    to: { number: dataStatus === "missing" ? 0 : score },
+    to: { number: resolvedStatus === "missing" ? 0 : safeScore },
     delay: 300,
     config: springConfigs.countUp,
   });
@@ -31,14 +33,13 @@ export default function GhostScoreGauge({
   // Animated gauge fill
   const { progress } = useSpring({
     from: { progress: 0 },
-    to: { progress: dataStatus === "missing" ? 0 : score / 100 },
+    to: { progress: resolvedStatus === "missing" ? 0 : safeScore / 100 },
     delay: 200,
     config: { tension: 280, friction: 60 },
   });
 
-  // Calculate stroke dash array for circular progress
+  // Circle radius for the gauge
   const radius = 58;
-  const circumference = 2 * Math.PI * radius;
 
   return (
     <div
@@ -114,7 +115,7 @@ export default function GhostScoreGauge({
 
         {/* Center content */}
         <div className="absolute inset-0 flex flex-col items-center justify-center">
-          {dataStatus === "missing" ? (
+          {resolvedStatus === "missing" ? (
             <>
               <span className="text-3xl font-display font-bold text-gray-400">—</span>
               <Ghost className="w-4 h-4 text-gray-400 mt-1" />
@@ -124,7 +125,7 @@ export default function GhostScoreGauge({
               <animated.span
                 className="text-4xl font-display font-bold ghost-score-gauge-text"
                 style={{
-                  background: `linear-gradient(135deg, ${color}, ${color}dd)`,
+                  backgroundImage: `linear-gradient(135deg, ${color}, ${color}dd)`,
                   WebkitBackgroundClip: "text",
                   WebkitTextFillColor: "transparent",
                   backgroundClip: "text",
@@ -133,8 +134,8 @@ export default function GhostScoreGauge({
                 {number.to((n) => n.toFixed(0))}
               </animated.span>
 
-              {/* Add particle effects for high scores */}
-              {score > 95 && (
+              {/* Add particle effects for high scores (top tier) */}
+              {safeScore > 65 && (
                 <div className="absolute inset-0 pointer-events-none">
                   <div className="absolute top-2 left-1/2 -translate-x-1/2">
                     <Ghost className="w-3 h-3 text-red-500 animate-float-up opacity-60" />
@@ -154,11 +155,11 @@ export default function GhostScoreGauge({
 
       {/* Label */}
       <span className="stat-label-text mt-4">
-        {dataStatus === "missing" ? "No Data" : label}
+        {resolvedStatus === "missing" ? "No Data" : label}
       </span>
 
       {/* Pulsing ring for high ghost scores */}
-      {score > 80 && dataStatus !== "missing" && (
+      {safeScore > 55 && resolvedStatus !== "missing" && (
         <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
           <div
             className="w-36 h-36 rounded-full ghost-score-high"

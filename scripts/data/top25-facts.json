@@ -1,0 +1,1118 @@
+{
+  "sources": [
+    {
+      "code": "cta_socrata",
+      "name": "CTA L Station Entries Daily Totals",
+      "url": "https://data.cityofchicago.org/Transportation/CTA-Ridership-L-Station-Entries-Daily-Totals/5neh-572f",
+      "apiUrl": "https://data.cityofchicago.org/resource/5neh-572f.json",
+      "datasetId": "5neh-572f",
+      "license": "Public Domain",
+      "refreshCadence": "daily"
+    },
+    {
+      "code": "census_decennial",
+      "name": "2010 Decennial Census SF1",
+      "url": "https://data.census.gov/",
+      "apiUrl": "https://api.census.gov/data/2010/dec/sf1",
+      "license": "Public Domain",
+      "refreshCadence": "static"
+    },
+    {
+      "code": "census_acs_5yr",
+      "name": "American Community Survey 5-Year Estimates (2020-2024)",
+      "url": "https://data.census.gov/",
+      "apiUrl": "https://api.census.gov/data/2024/acs/acs5",
+      "license": "Public Domain",
+      "refreshCadence": "annual"
+    },
+    {
+      "code": "lodes",
+      "name": "LEHD LODES Origin-Destination Employment Statistics",
+      "url": "https://lehd.ces.census.gov/data/",
+      "license": "Public Domain",
+      "refreshCadence": "annual"
+    },
+    {
+      "code": "fhwa",
+      "name": "FHWA Highway Statistics HM-60",
+      "url": "https://www.fhwa.dot.gov/policyinformation/statistics.cfm",
+      "license": "Public Domain",
+      "refreshCadence": "annual"
+    }
+  ],
+  "defaultFactQuality": "LOW",
+  "defaultFactQualityNote": "Placeholder fact (Phase 1). Replace with sourced data.",
+  "defaultEvidenceMeta": {
+    "placeholder": true,
+    "source": "phase1_seed"
+  },
+  "stations": [
+    {
+      "name": "Harlem (Blue - Forest Park Branch)",
+      "facts": {
+        "ridership_2001_avg": {
+          "value": 1250,
+          "unit": "riders/day",
+          "geography": "station",
+          "timeframeStart": 2001,
+          "timeframeEnd": 2001,
+          "sourceCode": "cta_socrata",
+          "methodology": "Daily average for calendar year 2001"
+        },
+        "population_change": {
+          "value": -0.08,
+          "unit": "%",
+          "geography": "walkshed_0.5mi",
+          "timeframeStart": 2010,
+          "timeframeEnd": 2024,
+          "sourceCode": "census_acs_5yr",
+          "sourceNote": "Baseline: 2010 Decennial SF1 P001001",
+          "methodology": "Area-weighted block groups in 0.5mi radius"
+        },
+        "vehicle_ownership_pct": {
+          "value": 0.58,
+          "unit": "%",
+          "geography": "walkshed_0.5mi",
+          "timeframeStart": 2020,
+          "timeframeEnd": 2024,
+          "sourceCode": "census_acs_5yr",
+          "methodology": "ACS B08201: % households with 2+ vehicles"
+        },
+        "jobs_walkshed_change": {
+          "value": -0.22,
+          "unit": "%",
+          "geography": "walkshed_0.5mi",
+          "timeframeStart": 2010,
+          "timeframeEnd": 2023,
+          "sourceCode": "lodes",
+          "methodology": "LODES WAC C000 (total jobs) change"
+        }
+      }
+    },
+    {
+      "name": "Halsted (Green)",
+      "facts": {
+        "ridership_2001_avg": {
+          "value": 980,
+          "unit": "riders/day",
+          "geography": "station",
+          "timeframeStart": 2001,
+          "timeframeEnd": 2001,
+          "sourceCode": "cta_socrata",
+          "methodology": "Daily average for calendar year 2001"
+        },
+        "population_change": {
+          "value": -0.15,
+          "unit": "%",
+          "geography": "walkshed_0.5mi",
+          "timeframeStart": 2010,
+          "timeframeEnd": 2024,
+          "sourceCode": "census_acs_5yr",
+          "sourceNote": "Baseline: 2010 Decennial SF1 P001001",
+          "methodology": "Area-weighted block groups in 0.5mi radius"
+        },
+        "vehicle_ownership_pct": {
+          "value": 0.42,
+          "unit": "%",
+          "geography": "walkshed_0.5mi",
+          "timeframeStart": 2020,
+          "timeframeEnd": 2024,
+          "sourceCode": "census_acs_5yr",
+          "methodology": "ACS B08201: % households with 2+ vehicles"
+        },
+        "jobs_walkshed_change": {
+          "value": -0.31,
+          "unit": "%",
+          "geography": "walkshed_0.5mi",
+          "timeframeStart": 2010,
+          "timeframeEnd": 2023,
+          "sourceCode": "lodes",
+          "methodology": "LODES WAC C000 (total jobs) change"
+        }
+      }
+    },
+    {
+      "name": "Oakton-Skokie",
+      "facts": {
+        "ridership_2001_avg": {
+          "value": 1580,
+          "unit": "riders/day",
+          "geography": "station",
+          "timeframeStart": 2001,
+          "timeframeEnd": 2001,
+          "sourceCode": "cta_socrata",
+          "methodology": "Daily average for calendar year 2001"
+        },
+        "population_change": {
+          "value": 0.02,
+          "unit": "%",
+          "geography": "walkshed_0.5mi",
+          "timeframeStart": 2010,
+          "timeframeEnd": 2024,
+          "sourceCode": "census_acs_5yr",
+          "sourceNote": "Baseline: 2010 Decennial SF1 P001001",
+          "methodology": "Area-weighted block groups in 0.5mi radius"
+        },
+        "vehicle_ownership_pct": {
+          "value": 0.65,
+          "unit": "%",
+          "geography": "walkshed_0.5mi",
+          "timeframeStart": 2020,
+          "timeframeEnd": 2024,
+          "sourceCode": "census_acs_5yr",
+          "methodology": "ACS B08201: % households with 2+ vehicles"
+        },
+        "jobs_walkshed_change": {
+          "value": -0.12,
+          "unit": "%",
+          "geography": "walkshed_0.5mi",
+          "timeframeStart": 2010,
+          "timeframeEnd": 2023,
+          "sourceCode": "lodes",
+          "methodology": "LODES WAC C000 (total jobs) change"
+        }
+      }
+    },
+    {
+      "name": "Kostner",
+      "facts": {
+        "ridership_2001_avg": {
+          "value": 890,
+          "unit": "riders/day",
+          "geography": "station",
+          "timeframeStart": 2001,
+          "timeframeEnd": 2001,
+          "sourceCode": "cta_socrata",
+          "methodology": "Daily average for calendar year 2001"
+        },
+        "population_change": {
+          "value": -0.18,
+          "unit": "%",
+          "geography": "walkshed_0.5mi",
+          "timeframeStart": 2010,
+          "timeframeEnd": 2024,
+          "sourceCode": "census_acs_5yr",
+          "sourceNote": "Baseline: 2010 Decennial SF1 P001001",
+          "methodology": "Area-weighted block groups in 0.5mi radius"
+        },
+        "vehicle_ownership_pct": {
+          "value": 0.48,
+          "unit": "%",
+          "geography": "walkshed_0.5mi",
+          "timeframeStart": 2020,
+          "timeframeEnd": 2024,
+          "sourceCode": "census_acs_5yr",
+          "methodology": "ACS B08201: % households with 2+ vehicles"
+        },
+        "jobs_walkshed_change": {
+          "value": -0.25,
+          "unit": "%",
+          "geography": "walkshed_0.5mi",
+          "timeframeStart": 2010,
+          "timeframeEnd": 2023,
+          "sourceCode": "lodes",
+          "methodology": "LODES WAC C000 (total jobs) change"
+        }
+      }
+    },
+    {
+      "name": "King Drive",
+      "facts": {
+        "ridership_2001_avg": {
+          "value": 1120,
+          "unit": "riders/day",
+          "geography": "station",
+          "timeframeStart": 2001,
+          "timeframeEnd": 2001,
+          "sourceCode": "cta_socrata",
+          "methodology": "Daily average for calendar year 2001"
+        },
+        "population_change": {
+          "value": -0.22,
+          "unit": "%",
+          "geography": "walkshed_0.5mi",
+          "timeframeStart": 2010,
+          "timeframeEnd": 2024,
+          "sourceCode": "census_acs_5yr",
+          "sourceNote": "Baseline: 2010 Decennial SF1 P001001",
+          "methodology": "Area-weighted block groups in 0.5mi radius"
+        },
+        "vehicle_ownership_pct": {
+          "value": 0.35,
+          "unit": "%",
+          "geography": "walkshed_0.5mi",
+          "timeframeStart": 2020,
+          "timeframeEnd": 2024,
+          "sourceCode": "census_acs_5yr",
+          "methodology": "ACS B08201: % households with 2+ vehicles"
+        },
+        "jobs_walkshed_change": {
+          "value": -0.28,
+          "unit": "%",
+          "geography": "walkshed_0.5mi",
+          "timeframeStart": 2010,
+          "timeframeEnd": 2023,
+          "sourceCode": "lodes",
+          "methodology": "LODES WAC C000 (total jobs) change"
+        }
+      }
+    },
+    {
+      "name": "Indiana",
+      "facts": {
+        "ridership_2001_avg": {
+          "value": 1340,
+          "unit": "riders/day",
+          "geography": "station",
+          "timeframeStart": 2001,
+          "timeframeEnd": 2001,
+          "sourceCode": "cta_socrata",
+          "methodology": "Daily average for calendar year 2001"
+        },
+        "population_change": {
+          "value": -0.19,
+          "unit": "%",
+          "geography": "walkshed_0.5mi",
+          "timeframeStart": 2010,
+          "timeframeEnd": 2024,
+          "sourceCode": "census_acs_5yr",
+          "sourceNote": "Baseline: 2010 Decennial SF1 P001001",
+          "methodology": "Area-weighted block groups in 0.5mi radius"
+        },
+        "vehicle_ownership_pct": {
+          "value": 0.38,
+          "unit": "%",
+          "geography": "walkshed_0.5mi",
+          "timeframeStart": 2020,
+          "timeframeEnd": 2024,
+          "sourceCode": "census_acs_5yr",
+          "methodology": "ACS B08201: % households with 2+ vehicles"
+        },
+        "jobs_walkshed_change": {
+          "value": -0.24,
+          "unit": "%",
+          "geography": "walkshed_0.5mi",
+          "timeframeStart": 2010,
+          "timeframeEnd": 2023,
+          "sourceCode": "lodes",
+          "methodology": "LODES WAC C000 (total jobs) change"
+        }
+      }
+    },
+    {
+      "name": "South Boulevard",
+      "facts": {
+        "ridership_2001_avg": {
+          "value": 1450,
+          "unit": "riders/day",
+          "geography": "station",
+          "timeframeStart": 2001,
+          "timeframeEnd": 2001,
+          "sourceCode": "cta_socrata",
+          "methodology": "Daily average for calendar year 2001"
+        },
+        "population_change": {
+          "value": -0.05,
+          "unit": "%",
+          "geography": "walkshed_0.5mi",
+          "timeframeStart": 2010,
+          "timeframeEnd": 2024,
+          "sourceCode": "census_acs_5yr",
+          "sourceNote": "Baseline: 2010 Decennial SF1 P001001",
+          "methodology": "Area-weighted block groups in 0.5mi radius"
+        },
+        "vehicle_ownership_pct": {
+          "value": 0.72,
+          "unit": "%",
+          "geography": "walkshed_0.5mi",
+          "timeframeStart": 2020,
+          "timeframeEnd": 2024,
+          "sourceCode": "census_acs_5yr",
+          "methodology": "ACS B08201: % households with 2+ vehicles"
+        },
+        "jobs_walkshed_change": {
+          "value": -0.08,
+          "unit": "%",
+          "geography": "walkshed_0.5mi",
+          "timeframeStart": 2010,
+          "timeframeEnd": 2023,
+          "sourceCode": "lodes",
+          "methodology": "LODES WAC C000 (total jobs) change"
+        }
+      }
+    },
+    {
+      "name": "Oak Park (Blue)",
+      "facts": {
+        "ridership_2001_avg": {
+          "value": 1680,
+          "unit": "riders/day",
+          "geography": "station",
+          "timeframeStart": 2001,
+          "timeframeEnd": 2001,
+          "sourceCode": "cta_socrata",
+          "methodology": "Daily average for calendar year 2001"
+        },
+        "population_change": {
+          "value": 0.04,
+          "unit": "%",
+          "geography": "walkshed_0.5mi",
+          "timeframeStart": 2010,
+          "timeframeEnd": 2024,
+          "sourceCode": "census_acs_5yr",
+          "sourceNote": "Baseline: 2010 Decennial SF1 P001001",
+          "methodology": "Area-weighted block groups in 0.5mi radius"
+        },
+        "vehicle_ownership_pct": {
+          "value": 0.55,
+          "unit": "%",
+          "geography": "walkshed_0.5mi",
+          "timeframeStart": 2020,
+          "timeframeEnd": 2024,
+          "sourceCode": "census_acs_5yr",
+          "methodology": "ACS B08201: % households with 2+ vehicles"
+        },
+        "jobs_walkshed_change": {
+          "value": -0.15,
+          "unit": "%",
+          "geography": "walkshed_0.5mi",
+          "timeframeStart": 2010,
+          "timeframeEnd": 2023,
+          "sourceCode": "lodes",
+          "methodology": "LODES WAC C000 (total jobs) change"
+        }
+      }
+    },
+    {
+      "name": "Central (Purple)",
+      "facts": {
+        "ridership_2001_avg": {
+          "value": 1520,
+          "unit": "riders/day",
+          "geography": "station",
+          "timeframeStart": 2001,
+          "timeframeEnd": 2001,
+          "sourceCode": "cta_socrata",
+          "methodology": "Daily average for calendar year 2001"
+        },
+        "population_change": {
+          "value": 0.06,
+          "unit": "%",
+          "geography": "walkshed_0.5mi",
+          "timeframeStart": 2010,
+          "timeframeEnd": 2024,
+          "sourceCode": "census_acs_5yr",
+          "sourceNote": "Baseline: 2010 Decennial SF1 P001001",
+          "methodology": "Area-weighted block groups in 0.5mi radius"
+        },
+        "vehicle_ownership_pct": {
+          "value": 0.68,
+          "unit": "%",
+          "geography": "walkshed_0.5mi",
+          "timeframeStart": 2020,
+          "timeframeEnd": 2024,
+          "sourceCode": "census_acs_5yr",
+          "methodology": "ACS B08201: % households with 2+ vehicles"
+        },
+        "jobs_walkshed_change": {
+          "value": -0.05,
+          "unit": "%",
+          "geography": "walkshed_0.5mi",
+          "timeframeStart": 2010,
+          "timeframeEnd": 2023,
+          "sourceCode": "lodes",
+          "methodology": "LODES WAC C000 (total jobs) change"
+        }
+      }
+    },
+    {
+      "name": "43rd",
+      "facts": {
+        "ridership_2001_avg": {
+          "value": 1780,
+          "unit": "riders/day",
+          "geography": "station",
+          "timeframeStart": 2001,
+          "timeframeEnd": 2001,
+          "sourceCode": "cta_socrata",
+          "methodology": "Daily average for calendar year 2001"
+        },
+        "population_change": {
+          "value": -0.25,
+          "unit": "%",
+          "geography": "walkshed_0.5mi",
+          "timeframeStart": 2010,
+          "timeframeEnd": 2024,
+          "sourceCode": "census_acs_5yr",
+          "sourceNote": "Baseline: 2010 Decennial SF1 P001001",
+          "methodology": "Area-weighted block groups in 0.5mi radius"
+        },
+        "vehicle_ownership_pct": {
+          "value": 0.32,
+          "unit": "%",
+          "geography": "walkshed_0.5mi",
+          "timeframeStart": 2020,
+          "timeframeEnd": 2024,
+          "sourceCode": "census_acs_5yr",
+          "methodology": "ACS B08201: % households with 2+ vehicles"
+        },
+        "jobs_walkshed_change": {
+          "value": -0.35,
+          "unit": "%",
+          "geography": "walkshed_0.5mi",
+          "timeframeStart": 2010,
+          "timeframeEnd": 2023,
+          "sourceCode": "lodes",
+          "methodology": "LODES WAC C000 (total jobs) change"
+        }
+      }
+    },
+    {
+      "name": "51st",
+      "facts": {
+        "ridership_2001_avg": {
+          "value": 1650,
+          "unit": "riders/day",
+          "geography": "station",
+          "timeframeStart": 2001,
+          "timeframeEnd": 2001,
+          "sourceCode": "cta_socrata",
+          "methodology": "Daily average for calendar year 2001"
+        },
+        "population_change": {
+          "value": -0.20,
+          "unit": "%",
+          "geography": "walkshed_0.5mi",
+          "timeframeStart": 2010,
+          "timeframeEnd": 2024,
+          "sourceCode": "census_acs_5yr",
+          "sourceNote": "Baseline: 2010 Decennial SF1 P001001",
+          "methodology": "Area-weighted block groups in 0.5mi radius"
+        },
+        "vehicle_ownership_pct": {
+          "value": 0.36,
+          "unit": "%",
+          "geography": "walkshed_0.5mi",
+          "timeframeStart": 2020,
+          "timeframeEnd": 2024,
+          "sourceCode": "census_acs_5yr",
+          "methodology": "ACS B08201: % households with 2+ vehicles"
+        },
+        "jobs_walkshed_change": {
+          "value": -0.29,
+          "unit": "%",
+          "geography": "walkshed_0.5mi",
+          "timeframeStart": 2010,
+          "timeframeEnd": 2023,
+          "sourceCode": "lodes",
+          "methodology": "LODES WAC C000 (total jobs) change"
+        }
+      }
+    },
+    {
+      "name": "Foster",
+      "facts": {
+        "ridership_2001_avg": {
+          "value": 1420,
+          "unit": "riders/day",
+          "geography": "station",
+          "timeframeStart": 2001,
+          "timeframeEnd": 2001,
+          "sourceCode": "cta_socrata",
+          "methodology": "Daily average for calendar year 2001"
+        },
+        "population_change": {
+          "value": -0.03,
+          "unit": "%",
+          "geography": "walkshed_0.5mi",
+          "timeframeStart": 2010,
+          "timeframeEnd": 2024,
+          "sourceCode": "census_acs_5yr",
+          "sourceNote": "Baseline: 2010 Decennial SF1 P001001",
+          "methodology": "Area-weighted block groups in 0.5mi radius"
+        },
+        "vehicle_ownership_pct": {
+          "value": 0.45,
+          "unit": "%",
+          "geography": "walkshed_0.5mi",
+          "timeframeStart": 2020,
+          "timeframeEnd": 2024,
+          "sourceCode": "census_acs_5yr",
+          "methodology": "ACS B08201: % households with 2+ vehicles"
+        },
+        "jobs_walkshed_change": {
+          "value": -0.12,
+          "unit": "%",
+          "geography": "walkshed_0.5mi",
+          "timeframeStart": 2010,
+          "timeframeEnd": 2023,
+          "sourceCode": "lodes",
+          "methodology": "LODES WAC C000 (total jobs) change"
+        }
+      }
+    },
+    {
+      "name": "Linden",
+      "facts": {
+        "ridership_2001_avg": {
+          "value": 1380,
+          "unit": "riders/day",
+          "geography": "station",
+          "timeframeStart": 2001,
+          "timeframeEnd": 2001,
+          "sourceCode": "cta_socrata",
+          "methodology": "Daily average for calendar year 2001"
+        },
+        "population_change": {
+          "value": 0.08,
+          "unit": "%",
+          "geography": "walkshed_0.5mi",
+          "timeframeStart": 2010,
+          "timeframeEnd": 2024,
+          "sourceCode": "census_acs_5yr",
+          "sourceNote": "Baseline: 2010 Decennial SF1 P001001",
+          "methodology": "Area-weighted block groups in 0.5mi radius"
+        },
+        "vehicle_ownership_pct": {
+          "value": 0.75,
+          "unit": "%",
+          "geography": "walkshed_0.5mi",
+          "timeframeStart": 2020,
+          "timeframeEnd": 2024,
+          "sourceCode": "census_acs_5yr",
+          "methodology": "ACS B08201: % households with 2+ vehicles"
+        },
+        "jobs_walkshed_change": {
+          "value": -0.02,
+          "unit": "%",
+          "geography": "walkshed_0.5mi",
+          "timeframeStart": 2010,
+          "timeframeEnd": 2023,
+          "sourceCode": "lodes",
+          "methodology": "LODES WAC C000 (total jobs) change"
+        }
+      }
+    },
+    {
+      "name": "Dempster",
+      "facts": {
+        "ridership_2001_avg": {
+          "value": 1490,
+          "unit": "riders/day",
+          "geography": "station",
+          "timeframeStart": 2001,
+          "timeframeEnd": 2001,
+          "sourceCode": "cta_socrata",
+          "methodology": "Daily average for calendar year 2001"
+        },
+        "population_change": {
+          "value": 0.05,
+          "unit": "%",
+          "geography": "walkshed_0.5mi",
+          "timeframeStart": 2010,
+          "timeframeEnd": 2024,
+          "sourceCode": "census_acs_5yr",
+          "sourceNote": "Baseline: 2010 Decennial SF1 P001001",
+          "methodology": "Area-weighted block groups in 0.5mi radius"
+        },
+        "vehicle_ownership_pct": {
+          "value": 0.62,
+          "unit": "%",
+          "geography": "walkshed_0.5mi",
+          "timeframeStart": 2020,
+          "timeframeEnd": 2024,
+          "sourceCode": "census_acs_5yr",
+          "methodology": "ACS B08201: % households with 2+ vehicles"
+        },
+        "jobs_walkshed_change": {
+          "value": -0.08,
+          "unit": "%",
+          "geography": "walkshed_0.5mi",
+          "timeframeStart": 2010,
+          "timeframeEnd": 2023,
+          "sourceCode": "lodes",
+          "methodology": "LODES WAC C000 (total jobs) change"
+        }
+      }
+    },
+    {
+      "name": "Laramie",
+      "facts": {
+        "ridership_2001_avg": {
+          "value": 1560,
+          "unit": "riders/day",
+          "geography": "station",
+          "timeframeStart": 2001,
+          "timeframeEnd": 2001,
+          "sourceCode": "cta_socrata",
+          "methodology": "Daily average for calendar year 2001"
+        },
+        "population_change": {
+          "value": -0.12,
+          "unit": "%",
+          "geography": "walkshed_0.5mi",
+          "timeframeStart": 2010,
+          "timeframeEnd": 2024,
+          "sourceCode": "census_acs_5yr",
+          "sourceNote": "Baseline: 2010 Decennial SF1 P001001",
+          "methodology": "Area-weighted block groups in 0.5mi radius"
+        },
+        "vehicle_ownership_pct": {
+          "value": 0.52,
+          "unit": "%",
+          "geography": "walkshed_0.5mi",
+          "timeframeStart": 2020,
+          "timeframeEnd": 2024,
+          "sourceCode": "census_acs_5yr",
+          "methodology": "ACS B08201: % households with 2+ vehicles"
+        },
+        "jobs_walkshed_change": {
+          "value": -0.18,
+          "unit": "%",
+          "geography": "walkshed_0.5mi",
+          "timeframeStart": 2010,
+          "timeframeEnd": 2023,
+          "sourceCode": "lodes",
+          "methodology": "LODES WAC C000 (total jobs) change"
+        }
+      }
+    },
+    {
+      "name": "Conservatory-Central Park Drive",
+      "facts": {
+        "ridership_2001_avg": {
+          "value": 1480,
+          "unit": "riders/day",
+          "geography": "station",
+          "timeframeStart": 2001,
+          "timeframeEnd": 2001,
+          "sourceCode": "cta_socrata",
+          "methodology": "Daily average for calendar year 2001"
+        },
+        "population_change": {
+          "value": -0.16,
+          "unit": "%",
+          "geography": "walkshed_0.5mi",
+          "timeframeStart": 2010,
+          "timeframeEnd": 2024,
+          "sourceCode": "census_acs_5yr",
+          "sourceNote": "Baseline: 2010 Decennial SF1 P001001",
+          "methodology": "Area-weighted block groups in 0.5mi radius"
+        },
+        "vehicle_ownership_pct": {
+          "value": 0.44,
+          "unit": "%",
+          "geography": "walkshed_0.5mi",
+          "timeframeStart": 2020,
+          "timeframeEnd": 2024,
+          "sourceCode": "census_acs_5yr",
+          "methodology": "ACS B08201: % households with 2+ vehicles"
+        },
+        "jobs_walkshed_change": {
+          "value": -0.21,
+          "unit": "%",
+          "geography": "walkshed_0.5mi",
+          "timeframeStart": 2010,
+          "timeframeEnd": 2023,
+          "sourceCode": "lodes",
+          "methodology": "LODES WAC C000 (total jobs) change"
+        }
+      }
+    },
+    {
+      "name": "Racine",
+      "facts": {
+        "ridership_2001_avg": {
+          "value": 1890,
+          "unit": "riders/day",
+          "geography": "station",
+          "timeframeStart": 2001,
+          "timeframeEnd": 2001,
+          "sourceCode": "cta_socrata",
+          "methodology": "Daily average for calendar year 2001"
+        },
+        "population_change": {
+          "value": 0.12,
+          "unit": "%",
+          "geography": "walkshed_0.5mi",
+          "timeframeStart": 2010,
+          "timeframeEnd": 2024,
+          "sourceCode": "census_acs_5yr",
+          "sourceNote": "Baseline: 2010 Decennial SF1 P001001",
+          "methodology": "Area-weighted block groups in 0.5mi radius"
+        },
+        "vehicle_ownership_pct": {
+          "value": 0.28,
+          "unit": "%",
+          "geography": "walkshed_0.5mi",
+          "timeframeStart": 2020,
+          "timeframeEnd": 2024,
+          "sourceCode": "census_acs_5yr",
+          "methodology": "ACS B08201: % households with 2+ vehicles"
+        },
+        "jobs_walkshed_change": {
+          "value": -0.15,
+          "unit": "%",
+          "geography": "walkshed_0.5mi",
+          "timeframeStart": 2010,
+          "timeframeEnd": 2023,
+          "sourceCode": "lodes",
+          "methodology": "LODES WAC C000 (total jobs) change"
+        }
+      }
+    },
+    {
+      "name": "47th (Green)",
+      "facts": {
+        "ridership_2001_avg": {
+          "value": 1720,
+          "unit": "riders/day",
+          "geography": "station",
+          "timeframeStart": 2001,
+          "timeframeEnd": 2001,
+          "sourceCode": "cta_socrata",
+          "methodology": "Daily average for calendar year 2001"
+        },
+        "population_change": {
+          "value": -0.28,
+          "unit": "%",
+          "geography": "walkshed_0.5mi",
+          "timeframeStart": 2010,
+          "timeframeEnd": 2024,
+          "sourceCode": "census_acs_5yr",
+          "sourceNote": "Baseline: 2010 Decennial SF1 P001001",
+          "methodology": "Area-weighted block groups in 0.5mi radius"
+        },
+        "vehicle_ownership_pct": {
+          "value": 0.34,
+          "unit": "%",
+          "geography": "walkshed_0.5mi",
+          "timeframeStart": 2020,
+          "timeframeEnd": 2024,
+          "sourceCode": "census_acs_5yr",
+          "methodology": "ACS B08201: % households with 2+ vehicles"
+        },
+        "jobs_walkshed_change": {
+          "value": -0.32,
+          "unit": "%",
+          "geography": "walkshed_0.5mi",
+          "timeframeStart": 2010,
+          "timeframeEnd": 2023,
+          "sourceCode": "lodes",
+          "methodology": "LODES WAC C000 (total jobs) change"
+        }
+      }
+    },
+    {
+      "name": "Western (Blue - Forest Park Branch)",
+      "facts": {
+        "ridership_2001_avg": {
+          "value": 1580,
+          "unit": "riders/day",
+          "geography": "station",
+          "timeframeStart": 2001,
+          "timeframeEnd": 2001,
+          "sourceCode": "cta_socrata",
+          "methodology": "Daily average for calendar year 2001"
+        },
+        "population_change": {
+          "value": -0.10,
+          "unit": "%",
+          "geography": "walkshed_0.5mi",
+          "timeframeStart": 2010,
+          "timeframeEnd": 2024,
+          "sourceCode": "census_acs_5yr",
+          "sourceNote": "Baseline: 2010 Decennial SF1 P001001",
+          "methodology": "Area-weighted block groups in 0.5mi radius"
+        },
+        "vehicle_ownership_pct": {
+          "value": 0.51,
+          "unit": "%",
+          "geography": "walkshed_0.5mi",
+          "timeframeStart": 2020,
+          "timeframeEnd": 2024,
+          "sourceCode": "census_acs_5yr",
+          "methodology": "ACS B08201: % households with 2+ vehicles"
+        },
+        "jobs_walkshed_change": {
+          "value": -0.19,
+          "unit": "%",
+          "geography": "walkshed_0.5mi",
+          "timeframeStart": 2010,
+          "timeframeEnd": 2023,
+          "sourceCode": "lodes",
+          "methodology": "LODES WAC C000 (total jobs) change"
+        }
+      }
+    },
+    {
+      "name": "Noyes",
+      "facts": {
+        "ridership_2001_avg": {
+          "value": 1650,
+          "unit": "riders/day",
+          "geography": "station",
+          "timeframeStart": 2001,
+          "timeframeEnd": 2001,
+          "sourceCode": "cta_socrata",
+          "methodology": "Daily average for calendar year 2001"
+        },
+        "population_change": {
+          "value": 0.03,
+          "unit": "%",
+          "geography": "walkshed_0.5mi",
+          "timeframeStart": 2010,
+          "timeframeEnd": 2024,
+          "sourceCode": "census_acs_5yr",
+          "sourceNote": "Baseline: 2010 Decennial SF1 P001001",
+          "methodology": "Area-weighted block groups in 0.5mi radius"
+        },
+        "vehicle_ownership_pct": {
+          "value": 0.58,
+          "unit": "%",
+          "geography": "walkshed_0.5mi",
+          "timeframeStart": 2020,
+          "timeframeEnd": 2024,
+          "sourceCode": "census_acs_5yr",
+          "methodology": "ACS B08201: % households with 2+ vehicles"
+        },
+        "jobs_walkshed_change": {
+          "value": -0.06,
+          "unit": "%",
+          "geography": "walkshed_0.5mi",
+          "timeframeStart": 2010,
+          "timeframeEnd": 2023,
+          "sourceCode": "lodes",
+          "methodology": "LODES WAC C000 (total jobs) change"
+        }
+      }
+    },
+    {
+      "name": "Ridgeland",
+      "facts": {
+        "ridership_2001_avg": {
+          "value": 1820,
+          "unit": "riders/day",
+          "geography": "station",
+          "timeframeStart": 2001,
+          "timeframeEnd": 2001,
+          "sourceCode": "cta_socrata",
+          "methodology": "Daily average for calendar year 2001"
+        },
+        "population_change": {
+          "value": 0.02,
+          "unit": "%",
+          "geography": "walkshed_0.5mi",
+          "timeframeStart": 2010,
+          "timeframeEnd": 2024,
+          "sourceCode": "census_acs_5yr",
+          "sourceNote": "Baseline: 2010 Decennial SF1 P001001",
+          "methodology": "Area-weighted block groups in 0.5mi radius"
+        },
+        "vehicle_ownership_pct": {
+          "value": 0.64,
+          "unit": "%",
+          "geography": "walkshed_0.5mi",
+          "timeframeStart": 2020,
+          "timeframeEnd": 2024,
+          "sourceCode": "census_acs_5yr",
+          "methodology": "ACS B08201: % households with 2+ vehicles"
+        },
+        "jobs_walkshed_change": {
+          "value": -0.11,
+          "unit": "%",
+          "geography": "walkshed_0.5mi",
+          "timeframeStart": 2010,
+          "timeframeEnd": 2023,
+          "sourceCode": "lodes",
+          "methodology": "LODES WAC C000 (total jobs) change"
+        }
+      }
+    },
+    {
+      "name": "Cicero (Blue)",
+      "facts": {
+        "ridership_2001_avg": {
+          "value": 1540,
+          "unit": "riders/day",
+          "geography": "station",
+          "timeframeStart": 2001,
+          "timeframeEnd": 2001,
+          "sourceCode": "cta_socrata",
+          "methodology": "Daily average for calendar year 2001"
+        },
+        "population_change": {
+          "value": -0.14,
+          "unit": "%",
+          "geography": "walkshed_0.5mi",
+          "timeframeStart": 2010,
+          "timeframeEnd": 2024,
+          "sourceCode": "census_acs_5yr",
+          "sourceNote": "Baseline: 2010 Decennial SF1 P001001",
+          "methodology": "Area-weighted block groups in 0.5mi radius"
+        },
+        "vehicle_ownership_pct": {
+          "value": 0.56,
+          "unit": "%",
+          "geography": "walkshed_0.5mi",
+          "timeframeStart": 2020,
+          "timeframeEnd": 2024,
+          "sourceCode": "census_acs_5yr",
+          "methodology": "ACS B08201: % households with 2+ vehicles"
+        },
+        "jobs_walkshed_change": {
+          "value": -0.20,
+          "unit": "%",
+          "geography": "walkshed_0.5mi",
+          "timeframeStart": 2010,
+          "timeframeEnd": 2023,
+          "sourceCode": "lodes",
+          "methodology": "LODES WAC C000 (total jobs) change"
+        }
+      }
+    },
+    {
+      "name": "Kedzie (Green)",
+      "facts": {
+        "ridership_2001_avg": {
+          "value": 1780,
+          "unit": "riders/day",
+          "geography": "station",
+          "timeframeStart": 2001,
+          "timeframeEnd": 2001,
+          "sourceCode": "cta_socrata",
+          "methodology": "Daily average for calendar year 2001"
+        },
+        "population_change": {
+          "value": -0.17,
+          "unit": "%",
+          "geography": "walkshed_0.5mi",
+          "timeframeStart": 2010,
+          "timeframeEnd": 2024,
+          "sourceCode": "census_acs_5yr",
+          "sourceNote": "Baseline: 2010 Decennial SF1 P001001",
+          "methodology": "Area-weighted block groups in 0.5mi radius"
+        },
+        "vehicle_ownership_pct": {
+          "value": 0.40,
+          "unit": "%",
+          "geography": "walkshed_0.5mi",
+          "timeframeStart": 2020,
+          "timeframeEnd": 2024,
+          "sourceCode": "census_acs_5yr",
+          "methodology": "ACS B08201: % households with 2+ vehicles"
+        },
+        "jobs_walkshed_change": {
+          "value": -0.26,
+          "unit": "%",
+          "geography": "walkshed_0.5mi",
+          "timeframeStart": 2010,
+          "timeframeEnd": 2023,
+          "sourceCode": "lodes",
+          "methodology": "LODES WAC C000 (total jobs) change"
+        }
+      }
+    },
+    {
+      "name": "Austin (Blue)",
+      "facts": {
+        "ridership_2001_avg": {
+          "value": 1720,
+          "unit": "riders/day",
+          "geography": "station",
+          "timeframeStart": 2001,
+          "timeframeEnd": 2001,
+          "sourceCode": "cta_socrata",
+          "methodology": "Daily average for calendar year 2001"
+        },
+        "population_change": {
+          "value": -0.21,
+          "unit": "%",
+          "geography": "walkshed_0.5mi",
+          "timeframeStart": 2010,
+          "timeframeEnd": 2024,
+          "sourceCode": "census_acs_5yr",
+          "sourceNote": "Baseline: 2010 Decennial SF1 P001001",
+          "methodology": "Area-weighted block groups in 0.5mi radius"
+        },
+        "vehicle_ownership_pct": {
+          "value": 0.47,
+          "unit": "%",
+          "geography": "walkshed_0.5mi",
+          "timeframeStart": 2020,
+          "timeframeEnd": 2024,
+          "sourceCode": "census_acs_5yr",
+          "methodology": "ACS B08201: % households with 2+ vehicles"
+        },
+        "jobs_walkshed_change": {
+          "value": -0.24,
+          "unit": "%",
+          "geography": "walkshed_0.5mi",
+          "timeframeStart": 2010,
+          "timeframeEnd": 2023,
+          "sourceCode": "lodes",
+          "methodology": "LODES WAC C000 (total jobs) change"
+        }
+      }
+    },
+    {
+      "name": "Pulaski (Blue)",
+      "facts": {
+        "ridership_2001_avg": {
+          "value": 1620,
+          "unit": "riders/day",
+          "geography": "station",
+          "timeframeStart": 2001,
+          "timeframeEnd": 2001,
+          "sourceCode": "cta_socrata",
+          "methodology": "Daily average for calendar year 2001"
+        },
+        "population_change": {
+          "value": -0.13,
+          "unit": "%",
+          "geography": "walkshed_0.5mi",
+          "timeframeStart": 2010,
+          "timeframeEnd": 2024,
+          "sourceCode": "census_acs_5yr",
+          "sourceNote": "Baseline: 2010 Decennial SF1 P001001",
+          "methodology": "Area-weighted block groups in 0.5mi radius"
+        },
+        "vehicle_ownership_pct": {
+          "value": 0.54,
+          "unit": "%",
+          "geography": "walkshed_0.5mi",
+          "timeframeStart": 2020,
+          "timeframeEnd": 2024,
+          "sourceCode": "census_acs_5yr",
+          "methodology": "ACS B08201: % households with 2+ vehicles"
+        },
+        "jobs_walkshed_change": {
+          "value": -0.16,
+          "unit": "%",
+          "geography": "walkshed_0.5mi",
+          "timeframeStart": 2010,
+          "timeframeEnd": 2023,
+          "sourceCode": "lodes",
+          "methodology": "LODES WAC C000 (total jobs) change"
+        }
+      }
+    }
+  ],
+  "regionalFacts": {
+    "il_lane_miles_change": {
+      "value": 4200,
+      "unit": "lane-miles",
+      "geography": "region_il",
+      "timeframeStart": 2000,
+      "timeframeEnd": 2023,
+      "sourceCode": "fhwa",
+      "methodology": "IL total public road lane-miles change from FHWA HM-60 series"
+    }
+  },
+  "_notes": {
+    "dataStatus": "PLACEHOLDER - These values are representative placeholders. Real data should be curated from actual CTA Socrata 2001 records, Census ACS/Decennial, and LODES datasets.",
+    "ridership2001": "Values are illustrative. Actual 2001 daily averages should be computed from CTA Socrata dataset 5neh-572f filtered to calendar year 2001.",
+    "census": "Population change and vehicle ownership should be computed via area-weighted block group analysis for 0.5mi walksheds.",
+    "lodes": "Jobs change should be computed from LODES WAC files comparing 2010 to 2023 totals within walksheds."
+  }
+}

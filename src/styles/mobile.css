@@ -8,6 +8,44 @@
  * 1000 - Station detail modal
  */
 
+/* Prevent yellow highlights and selection issues on mobile */
+@media (max-width: 768px) {
+  * {
+    -webkit-tap-highlight-color: transparent !important;
+    -webkit-touch-callout: none !important;
+  }
+
+  /* Prevent text selection highlighting */
+  .mobile-station-card *,
+  .mobile-station-detail *,
+  .mobile-filter-pill *,
+  .mobile-search-bar * {
+    -webkit-user-select: none !important;
+    user-select: none !important;
+  }
+
+  /* Override any focus-visible styles that might show yellow */
+  *:focus-visible {
+    outline: 2px solid var(--dm-text-primary) !important;
+    outline-offset: 2px;
+  }
+
+  /* Ensure muted backgrounds are not yellow */
+  .mobile-station-card,
+  .mobile-station-detail,
+  .mobile-station-detail .bg-muted,
+  .mobile-station-card .bg-muted {
+    background-color: rgb(245 245 245) !important; /* Light mode neutral gray */
+  }
+
+  [data-theme="dark"] .mobile-station-card,
+  [data-theme="dark"] .mobile-station-detail,
+  [data-theme="dark"] .mobile-station-detail .bg-muted,
+  [data-theme="dark"] .mobile-station-card .bg-muted {
+    background-color: rgb(30 41 59) !important; /* Dark mode slate */
+  }
+}
+
 /* Safe area handling for modern phones */
 @supports (padding-top: env(safe-area-inset-top)) {
   .mobile-layout {
@@ -41,14 +79,14 @@
   position: fixed;
   top: calc(env(safe-area-inset-top, 0px) + 16px);
   left: 16px;
-  right: 16px;
+  right: 76px; /* Space for theme toggle */
   z-index: 100;
   height: 48px;
   border-radius: 24px;
-  background: rgba(255, 255, 255, 0.95);
+  background: var(--glass-bg-solid);
   backdrop-filter: blur(20px);
   -webkit-backdrop-filter: blur(20px); /* Safari */
-  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
+  box-shadow: 0 4px 20px var(--shadow-color);
   display: flex;
   align-items: center;
   padding: 0 20px;
@@ -81,8 +119,9 @@
   flex: 0 0 auto;
   padding: 8px 16px;
   border-radius: 20px;
-  background: white;
-  border: 1px solid var(--gray-200, #e5e7eb);
+  background: var(--bg-primary);
+  border: 1px solid var(--border-color);
+  color: var(--dm-text-primary);
   font-size: 14px;
   font-weight: 500;
   white-space: nowrap;
@@ -97,36 +136,9 @@
 }
 
 .mobile-filter-pill.active {
-  background: var(--gray-900, #111827);
-  color: white;
-  border-color: var(--gray-900, #111827);
-}
-
-/* View List FAB */
-.mobile-view-list-fab {
-  position: fixed;
-  bottom: calc(env(safe-area-inset-bottom, 0px) + 24px);
-  left: 50%;
-  transform: translateX(-50%);
-  z-index: 100;
-  padding: 12px 20px;
-  background: var(--gray-900, #111827);
-  color: white;
-  border-radius: 24px;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-weight: 600;
-  font-size: 14px;
-  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.25);
-  -webkit-tap-highlight-color: transparent;
-  cursor: pointer;
-  border: none;
-  outline: none;
-}
-
-.mobile-view-list-fab:active {
-  transform: translateX(-50%) scale(0.95);
+  background: var(--dm-text-primary);
+  color: var(--bg-primary);
+  border-color: var(--dm-text-primary);
 }
 
 /* Mobile Bottom Sheet - handled by styled components */
@@ -145,24 +157,54 @@
   gap: 12px;
   border-bottom: 1px solid rgba(0, 0, 0, 0.06);
   -webkit-tap-highlight-color: transparent;
-  transition: background-color 0.1s ease;
+  -webkit-touch-callout: none;
+  -webkit-user-select: none;
+  user-select: none;
+  transition: transform 0.15s cubic-bezier(0.25, 0.46, 0.45, 0.94),
+              background-color 0.15s ease,
+              box-shadow 0.15s ease;
   cursor: pointer;
   width: 100%;
   background: transparent;
   border-left: none;
   border-right: none;
   border-top: none;
+  transform-origin: center center;
+  will-change: transform;
 }
 
 .mobile-station-card:active {
-  background-color: rgba(0, 0, 0, 0.02);
+  transform: scale(0.98);
+  background-color: rgba(0, 0, 0, 0.04) !important;
+}
+
+/* Dark mode active state */
+[data-theme="dark"] .mobile-station-card:active,
+.dark .mobile-station-card:active {
+  background-color: rgba(255, 255, 255, 0.06) !important;
+}
+
+/* Prevent any selection or highlight backgrounds */
+.mobile-station-card::selection,
+.mobile-station-card *::selection,
+.mobile-station-detail::selection,
+.mobile-station-detail *::selection {
+  background-color: transparent !important;
+}
+
+/* Prevent iOS selection highlights */
+.mobile-station-card::-webkit-selection,
+.mobile-station-card *::-webkit-selection,
+.mobile-station-detail::-webkit-selection,
+.mobile-station-detail *::-webkit-selection {
+  background-color: transparent !important;
 }
 
 .mobile-station-card .rank {
-  font-size: 14px;
-  font-weight: 700;
-  color: var(--gray-400, #9ca3af);
-  min-width: 32px;
+  font-size: 18px;
+  font-weight: 800;
+  color: var(--gray-700, #374151);
+  min-width: 36px;
   text-align: center;
 }
 
@@ -172,8 +214,8 @@
 }
 
 .mobile-station-card .station-name {
-  font-size: 15px;
-  font-weight: 600;
+  font-size: 14px;
+  font-weight: 500;
   color: var(--gray-900, #111827);
   white-space: nowrap;
   overflow: hidden;
@@ -186,23 +228,23 @@
   margin-top: 4px;
 }
 
+.mobile-station-card.is-ghosty .station-lines span {
+  opacity: 0.65;
+}
+
+.mobile-station-card.is-ghosty .station-name {
+  color: var(--gray-700, #374151);
+}
+
 .mobile-station-card .ghost-score {
   margin-left: auto;
   text-align: right;
 }
 
 .mobile-station-card .ghost-score-value {
-  font-size: 20px;
-  font-weight: 700;
+  font-size: 24px;
+  font-weight: 800;
   color: var(--red-600, #dc2626);
-}
-
-.mobile-station-card .ghost-label {
-  font-size: 11px;
-  font-weight: 500;
-  color: var(--gray-500, #6b7280);
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
 }
 
 /* Mobile Station Detail */
@@ -216,8 +258,7 @@
 @media (min-width: 769px) {
   .mobile-layout,
   .mobile-search-bar,
-  .mobile-filter-scroll,
-  .mobile-view-list-fab {
+  .mobile-filter-scroll {
     display: none !important;
   }
 }
@@ -225,13 +266,11 @@
 /* Animation performance */
 @media (prefers-reduced-motion: reduce) {
   .mobile-filter-pill,
-  .mobile-view-list-fab,
   .mobile-station-card {
     transition: none !important;
   }
 
-  .mobile-filter-pill:active,
-  .mobile-view-list-fab:active {
+  .mobile-filter-pill:active {
     transform: none !important;
   }
 }
@@ -276,7 +315,4 @@
     border-width: 2px;
   }
 
-  .mobile-view-list-fab {
-    border: 2px solid white;
-  }
 }

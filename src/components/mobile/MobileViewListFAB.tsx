@@ -26,7 +26,7 @@ export default function MobileViewListFAB({
       aria-label="View station list"
     >
       <List className="w-5 h-5" />
-      <span>{stationCount} stations • {ghostStopCount} ghost stops</span>
+      <span>Top {stationCount} • {ghostStopCount} ghost stops</span>
     </button>
   );
 }

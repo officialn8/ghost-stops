@@ -7,6 +7,19 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+enum DataQuality {
+  HIGH
+  MEDIUM
+  LOW
+  UNKNOWN
+}
+
+enum DataSourceStatus {
+  ACTIVE
+  ERROR
+  DEPRECATED
+}
+
 model City {
   id        String     @id @default(uuid())
   code      String     @unique // "chicago", "phoenix"
@@ -28,6 +41,8 @@ model Station {
   aliases         StationAlias[]
   ridershipDaily  RidershipDaily[]
   metrics         StationMetrics?
+  facts           StationFact[]
+  narrative       StationNarrative?
 
   @@index([cityId, name])
   @@index([cityId, ctaStationId])
@@ -70,4 +85,67 @@ model StationMetrics {
   dataStatus      String   @default("normal") // "normal" or "missing"
 
   station         Station  @relation(fields: [stationId], references: [id])
+}
+
+// ═══════════════════════════════════════════════════════════════
+// FACTS + NARRATIVE SYSTEM
+// Journalism-grade storytelling backed by cited facts
+// ═══════════════════════════════════════════════════════════════
+
+model DataSource {
+  id             String        @id @default(uuid())
+  code           String        @unique  // "cta_socrata", "census_acs_5yr", "census_decennial", "lodes", "fhwa"
+  name           String        // "CTA L Station Entries Daily Totals"
+  url            String        // Landing page URL
+  apiUrl         String?       // Socrata API endpoint or Census API base
+  datasetId      String?       // "5neh-572f" for Socrata
+  license        String?       // "Public Domain", "CC BY 4.0", etc.
+  lastFetched    DateTime?
+  lastSuccessfulFetch DateTime?
+  lastError      String?
+  status         DataSourceStatus @default(ACTIVE)
+  refreshCadence String?       // "daily", "annual", "static"
+
+  facts          StationFact[]
+}
+
+model StationFact {
+  id             String     @id @default(uuid())
+  stationId      String
+  factKey        String     // "ridership_2001_avg", "population_change"
+  value          Float      // Percents stored as decimals: 0.52 = 52%
+  valueType      String     // "number" | "percent" | "currency"
+  unit           String     // "riders/day", "%", "lane-miles"
+  geography      String     // "station", "walkshed_0.5mi", "region_il"
+  timeframeStart Int?       // 2001, 2010, etc.
+  timeframeEnd   Int?       // 2024, 2023, etc.
+  methodology    String     // "Daily average for calendar year 2001"
+  sourceId       String     // Primary source
+  sourceNote     String?    // For multi-source facts: "Baseline: 2010 Decennial SF1 P001001"
+  quality        DataQuality @default(UNKNOWN)
+  qualityNote    String?
+  evidenceMeta   Json?
+  computedAt     DateTime   @default(now())
+
+  station        Station    @relation(fields: [stationId], references: [id])
+  source         DataSource @relation(fields: [sourceId], references: [id])
+
+  @@unique([stationId, factKey])
+  @@index([stationId])
+}
+
+model StationNarrative {
+  id               String   @id @default(uuid())
+  stationId        String   @unique
+  archetypeKey     String   // "suburban_shift", "car_culture", "jobs_exodus"
+  renderedStory    String   // Pre-rendered markdown
+  evidenceFactKeys String   // JSON array: '["ridership_2001_avg", "population_change"]'
+  templateVersion  String   // "v1.0" - bump when template copy changes
+  confidence       Float    // 0-1, how well facts match archetype
+  quality          DataQuality @default(UNKNOWN)
+  qualityNote      String?
+  evidenceMeta     Json?
+  lastComputed     DateTime @default(now())
+
+  station          Station  @relation(fields: [stationId], references: [id])
 }

@@ -1,3 +1,6 @@
 station_id,stationname,normalized,reason,occurrences
-40260,State/Lake,state lake,No station found with matching base name,699
-41280,Jefferson Park,jefferson park,No station found with matching base name,699
+41580,Homan,homan,No station found with matching base name,31
+40260,State/Lake,state lake,No station found with matching base name,9104
+41280,Jefferson Park,jefferson park,No station found with matching base name,9104
+40200,Randolph/Wabash,randolph wabash,No station found with matching base name,6606
+40640,Madison/Wabash,madison wabash,No station found with matching base name,6215

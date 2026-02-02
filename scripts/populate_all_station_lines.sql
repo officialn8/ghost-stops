@@ -30,7 +30,12 @@ AND name IN ('Adams/Wabash', 'Washington/Wells', 'LaSalle/Van Buren', 'Quincy', 
 
 UPDATE Station SET lines = '["Red"]'
 WHERE cityId = (SELECT id FROM City WHERE code = 'chicago')
-AND name IN ('LaSalle', 'Washington', 'Harrison', 'Clark/Division');
+AND name IN ('Harrison', 'Clark/Division');
+
+-- LaSalle and Washington are Blue Line subway stations, not Red Line
+UPDATE Station SET lines = '["Blue"]'
+WHERE cityId = (SELECT id FROM City WHERE code = 'chicago')
+AND name IN ('LaSalle', 'Washington');
 
 -- ========================================
 -- RED LINE STATIONS

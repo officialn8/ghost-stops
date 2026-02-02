@@ -182,6 +182,7 @@ var syncRidershipCmd = &cobra.Command{
 			Days:  days,
 			Since: since,
 			Limit: limit,
+			Backfill: false,
 		}
 
 		switch city {
@@ -191,6 +192,56 @@ var syncRidershipCmd = &cobra.Command{
 				log.Fatalf("Failed to sync Chicago ridership: %v", err)
 			}
 			fmt.Println("✅ Chicago ridership data synced successfully")
+		default:
+			log.Fatalf("Unsupported city: %s", city)
+		}
+	},
+}
+
+var backfillRidershipCmd = &cobra.Command{
+	Use:   "backfill-ridership",
+	Short: "Backfills CTA ridership data without pruning",
+	Run: func(cmd *cobra.Command, args []string) {
+		if city == "" {
+			log.Fatal("--city is required")
+		}
+
+		databaseURL := os.Getenv("DATABASE_URL")
+		if databaseURL == "" {
+			log.Fatal("DATABASE_URL environment variable is required")
+		}
+
+		appToken := os.Getenv("CHICAGO_DATA_APP_TOKEN")
+		if appToken == "" {
+			log.Println("Warning: CHICAGO_DATA_APP_TOKEN not set, proceeding without app token")
+		}
+
+		since, _ := cmd.Flags().GetString("since")
+		if since == "" {
+			log.Fatal("--since is required for backfill (YYYY-MM-DD)")
+		}
+		limit, _ := cmd.Flags().GetInt("limit")
+
+		dbClient, err := db.NewClient(databaseURL)
+		if err != nil {
+			log.Fatalf("Failed to connect to database: %v", err)
+		}
+		defer dbClient.Close()
+
+		opts := chicago.SyncOpts{
+			Days:     0,
+			Since:    since,
+			Limit:    limit,
+			Backfill: true,
+		}
+
+		switch city {
+		case "chicago":
+			err := chicago.SyncRidership(dbClient, appToken, opts)
+			if err != nil {
+				log.Fatalf("Failed to backfill Chicago ridership: %v", err)
+			}
+			fmt.Println("✅ Chicago ridership backfill completed successfully")
 		default:
 			log.Fatalf("Unsupported city: %s", city)
 		}
@@ -256,6 +307,11 @@ func init() {
 	syncRidershipCmd.Flags().String("since", "", "Override start date (YYYY-MM-DD)")
 	syncRidershipCmd.Flags().Int("limit", 50000, "Socrata page size")
 
+	// Backfill ridership command flags
+	backfillRidershipCmd.Flags().StringVar(&city, "city", "chicago", "City code (e.g., chicago)")
+	backfillRidershipCmd.Flags().String("since", "", "Start date for backfill (YYYY-MM-DD)")
+	backfillRidershipCmd.Flags().Int("limit", 50000, "Socrata page size")
+
 	// Add commands to root
 	rootCmd.AddCommand(gtfsCmd)
 	rootCmd.AddCommand(ridershipCmd)
@@ -263,6 +319,7 @@ func init() {
 	rootCmd.AddCommand(allCmd)
 	rootCmd.AddCommand(listStationsCmd)
 	rootCmd.AddCommand(syncRidershipCmd)
+	rootCmd.AddCommand(backfillRidershipCmd)
 }
 
 func main() {

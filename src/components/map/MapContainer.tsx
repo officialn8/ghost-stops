@@ -6,6 +6,7 @@ import Map, { Source, Layer, MapMouseEvent } from "react-map-gl/mapbox";
 import type { FeatureCollection, Point, Feature, LineString } from "geojson";
 import type { MapRef } from "react-map-gl/mapbox";
 import MapTooltip from "./MapTooltip";
+import StationMarker from "./StationMarker";
 import StationList from "@/components/station/StationList";
 import StationDetailPanel from "@/components/station/StationDetailPanel";
 import LineFilter from "@/components/map/LineFilter";
@@ -18,6 +19,14 @@ import {
   CTA_LINE_ORDER,
   CTA_LINE_COLORS
 } from "@/lib/cta/explodeAndStitchSegments";
+import { safeJsonParse } from "@/lib/utils";
+
+// Zoom thresholds for progressive marker display
+const MARKER_ZOOM_THRESHOLD = 12;        // Start showing markers
+const MARKER_ZOOM_ALL_THRESHOLD = 14.5;  // Show all markers without filtering
+const MIN_VIEWPORT_MARKERS = 6;          // Minimum markers to show in any viewport
+const MAX_VIEWPORT_MARKERS_MEDIUM = 15;  // Max markers at medium zoom (12-13.5)
+const MAX_VIEWPORT_MARKERS_HIGH = 25;    // Max markers at high zoom (13.5-14.5)
 
 const MAPBOX_TOKEN = process.env.NEXT_PUBLIC_MAPBOX_TOKEN;
 
@@ -29,7 +38,7 @@ interface Station {
   lines: string[];
   ghostScore: number;
   rolling30dAvg: number;
-  lastDayEntries: number;
+  trend: number | null;
   dataStatus?: 'available' | 'missing' | 'zero';
 }
 
@@ -70,10 +79,15 @@ export default function MapContainer({ searchQuery = "" }: MapContainerProps) {
   // Fetch stations data
   useEffect(() => {
     fetch("/api/chicago/stations-raw?sort=ghost_score_desc")
-      .then((res) => res.json())
+      .then((res) => {
+        if (!res.ok) {
+          throw new Error(`Failed to load stations (${res.status})`);
+        }
+        return res.json();
+      })
       .then((data) => {
         console.log("API Response:", data); // Debug log
-        if (data.stations) {
+        if (Array.isArray(data.stations)) {
           console.log(`Loaded ${data.stations.length} stations`); // Debug log
           setStations(data.stations);
           setDataAsOf(data.dataAsOf);
@@ -91,7 +105,12 @@ export default function MapContainer({ searchQuery = "" }: MapContainerProps) {
   // Load track segments
   useEffect(() => {
     fetch("/data/cta/chicago_track_segments.geojson")
-      .then(res => res.json())
+      .then(res => {
+        if (!res.ok) {
+          throw new Error(`Failed to load track segments (${res.status})`);
+        }
+        return res.json();
+      })
       .then(data => {
         console.log("Loaded track segments:", data);
         setTrackSegments(data);
@@ -113,23 +132,30 @@ export default function MapContainer({ searchQuery = "" }: MapContainerProps) {
     );
   }, [stations, searchQuery, mobileSearchQuery, isMobile]);
 
-  // Create GeoJSON data
+  // Create GeoJSON data with clean station names
   const geoJsonData: FeatureCollection = useMemo(
     () => ({
       type: "FeatureCollection",
-      features: filteredStations.map((station) => ({
-        type: "Feature",
-        id: station.id, // Important for feature state
-        geometry: {
-          type: "Point",
-          coordinates: [station.longitude, station.latitude],
-        },
-        properties: {
-          ...station,
-          lines: JSON.stringify(station.lines), // Serialize lines array for GeoJSON
-          isActiveByLineFilter: isStationActiveByLineFilter(station.lines, activeLines),
-        },
-      })),
+      features: filteredStations.map((station) => {
+        // Clean station name by removing parenthetical line info like "(Blue)"
+        const cleanName = station.name.replace(/\s*\([^)]*\)\s*$/, '').trim();
+        
+        return {
+          type: "Feature",
+          id: station.id, // Important for feature state
+          geometry: {
+            type: "Point",
+            coordinates: [station.longitude, station.latitude],
+          },
+          properties: {
+            ...station,
+            cleanName, // Clean name without "(Blue)" etc
+            lines: JSON.stringify(station.lines), // Serialize lines array for GeoJSON
+            primaryLine: station.lines[0] || null, // For label coloring
+            isActiveByLineFilter: isStationActiveByLineFilter(station.lines, activeLines),
+          },
+        };
+      }),
     }),
     [filteredStations, activeLines]
   );
@@ -154,8 +180,12 @@ export default function MapContainer({ searchQuery = "" }: MapContainerProps) {
       );
     }
 
+    // Always use the station from the main stations array to ensure consistency
+    const stationFromMainList = stations.find(s => s.id === station.id);
+    const stationToSelect = stationFromMainList || station;
+
     // Set new selection
-    setSelectedStation(station);
+    setSelectedStation(stationToSelect);
 
     // Set feature state for selected station
     if (mapRef.current) {
@@ -172,6 +202,14 @@ export default function MapContainer({ searchQuery = "" }: MapContainerProps) {
       longitude: station.longitude,
       zoom: 14,
     });
+  };
+
+  // Handle station selection by ID (for neighbor navigation)
+  const handleStationSelectById = (stationId: string) => {
+    const station = stations.find(s => s.id === stationId);
+    if (station) {
+      handleStationClick(station);
+    }
   };
 
   const handleToggleLine = (line: string) => {
@@ -200,7 +238,7 @@ export default function MapContainer({ searchQuery = "" }: MapContainerProps) {
   // Mobile layout
   if (isMobile) {
     const selectedLinesArray = Object.entries(activeLines)
-      .filter(([_, isActive]) => isActive)
+      .filter(([, isActive]) => isActive)
       .map(([line]) => line);
 
     return (
@@ -212,7 +250,6 @@ export default function MapContainer({ searchQuery = "" }: MapContainerProps) {
         onLineToggle={handleToggleLine}
         onClearAllLines={handleClearAllLines}
         onSelectAllLines={handleSelectAllLines}
-        mapStyle={theme === "dark" ? "mapbox://styles/mapbox/dark-v11" : "mapbox://styles/mapbox/light-v11"}
         stationsGeoJson={geoJsonData}
         lineGeoJson={explodedTracks}
       />
@@ -262,7 +299,9 @@ export default function MapContainer({ searchQuery = "" }: MapContainerProps) {
                 // Parse the serialized lines array
                 const station: Station = {
                   ...props as Station,
-                  lines: typeof props.lines === 'string' ? JSON.parse(props.lines) : props.lines || [],
+                  lines: typeof props.lines === 'string'
+                    ? safeJsonParse<string[]>(props.lines, [])
+                    : props.lines || [],
                 };
                 setHoveredStation(station);
                 setMousePosition({ x: e.point.x, y: e.point.y });
@@ -271,13 +310,20 @@ export default function MapContainer({ searchQuery = "" }: MapContainerProps) {
               }
             }}
             onClick={(e: MapMouseEvent) => {
+              // Only handle clicks on circle layers when markers aren't shown
+              if (viewState.zoom >= MARKER_ZOOM_THRESHOLD) {
+                return; // Let marker onClick handlers handle it
+              }
+
               const feature = e.features?.[0] as Feature<Point> | undefined;
               if (feature && feature.properties) {
                 const props = feature.properties;
                 // Parse the serialized lines array
                 const station: Station = {
                   ...props as Station,
-                  lines: typeof props.lines === 'string' ? JSON.parse(props.lines) : props.lines || [],
+                  lines: typeof props.lines === 'string'
+                    ? safeJsonParse<string[]>(props.lines, [])
+                    : props.lines || [],
                 };
                 handleStationClick(station);
               }
@@ -294,34 +340,28 @@ export default function MapContainer({ searchQuery = "" }: MapContainerProps) {
                     type="line"
                     filter={["==", ["get", "line"], line]}
                     layout={{
-                      "line-cap": "round",
-                      "line-join": "round",
-                      "line-miter-limit": 2,
-                      "line-round-limit": 1.5
+                      "line-cap": "butt",      // Cleaner line ends
+                      "line-join": "bevel",    // Cleaner corners for offset lines
                     }}
                     paint={{
-                      "line-color": "rgba(11,18,32,0.22)",
+                      "line-color": "rgba(11,18,32,0.15)",
                       "line-width": [
                         "interpolate",
                         ["linear"],
                         ["zoom"],
-                        10, ["case", ["get", "is_loop"], 3.825, 4.5],
-                        12, ["case", ["get", "is_loop"], 4.675, 5.5],
-                        14, ["case", ["get", "is_loop"], 6.375, 7.5]
+                        10, ["case", ["get", "is_loop"], 2.2, 2.8],
+                        12, ["case", ["get", "is_loop"], 2.8, 3.2],
+                        14, ["case", ["get", "is_loop"], 3.5, 4.0]
                       ],
                       "line-opacity": [
                         "interpolate",
                         ["linear"],
                         ["zoom"],
-                        10, ["case", ["get", "is_loop"], 0.48, 0.72],    // 0.6 * 0.8 for loop, 0.9 * 0.8 for regular
-                        11, ["case", ["get", "is_loop"], 0.51, 0.765],   // 0.6 * 0.85 for loop, 0.9 * 0.85 for regular
-                        12, ["case", ["get", "is_loop"], 0.6, 0.9]       // Full opacity values
+                        10, ["case", ["get", "is_loop"], 0.20, 0.30],
+                        11, ["case", ["get", "is_loop"], 0.25, 0.35],
+                        12, ["case", ["get", "is_loop"], 0.30, 0.40]
                       ],
-                      "line-blur": [
-                        "case",
-                        ["get", "is_loop"], 0.25,  // Slightly more blur for Loop
-                        0.2
-                      ],
+                      "line-blur": 0.05,
                       "line-offset": ["get", "offset_px"]
                     }}
                   />
@@ -333,10 +373,8 @@ export default function MapContainer({ searchQuery = "" }: MapContainerProps) {
                     type="line"
                     filter={["==", ["get", "line"], line]}
                     layout={{
-                      "line-cap": "round",
-                      "line-join": "round",
-                      "line-miter-limit": 2,
-                      "line-round-limit": 1.5
+                      "line-cap": "butt",      // Cleaner line ends
+                      "line-join": "bevel",    // Cleaner corners
                     }}
                     paint={{
                       "line-color": CTA_LINE_COLORS[line],
@@ -344,18 +382,11 @@ export default function MapContainer({ searchQuery = "" }: MapContainerProps) {
                         "interpolate",
                         ["linear"],
                         ["zoom"],
-                        10, ["case", ["get", "is_loop"], 1.6, 2],     // Reduced by 0.1
-                        12, ["case", ["get", "is_loop"], 2.4, 3],     // Reduced by 0.15
-                        14, ["case", ["get", "is_loop"], 4.1, 5]      // Reduced by 0.15
+                        10, ["case", ["get", "is_loop"], 1.4, 1.8],
+                        12, ["case", ["get", "is_loop"], 2.0, 2.6],
+                        14, ["case", ["get", "is_loop"], 3.0, 3.8]
                       ],
-                      "line-opacity": [
-                        "interpolate",
-                        ["linear"],
-                        ["zoom"],
-                        10, 0.75,
-                        11, 0.85,
-                        13, 1
-                      ],
+                      "line-opacity": 1,  // Full opacity for crisp lines
                       "line-offset": ["get", "offset_px"]
                     }}
                   />
@@ -364,77 +395,80 @@ export default function MapContainer({ searchQuery = "" }: MapContainerProps) {
             )}
 
             <Source id="stations" type="geojson" data={geoJsonData}>
-              {/* Station Drop Shadow */}
+              {/* Station Drop Shadow - fade out as markers appear */}
               <Layer
                 id="stations-shadow"
                 type="circle"
+                maxzoom={13}
                 paint={{
                   "circle-radius": [
                     "interpolate",
                     ["linear"],
                     ["zoom"],
-                    10, 8,
-                    14, 12.5,
+                    10, 5,
+                    13, 7,
                   ],
-                  "circle-color": "rgba(11, 18, 32, 0.15)",
-                  "circle-blur": 0.8,
-                  "circle-translate": [1, 2], // Slight offset down-right
+                  "circle-color": "rgba(11, 18, 32, 0.12)",
+                  "circle-blur": 0.6,
+                  "circle-translate": [0.5, 1],
                   "circle-opacity": [
                     "case",
                     ["get", "isActiveByLineFilter"], 1,
-                    0.2
+                    0.15
                   ]
                 }}
               />
 
-              {/* Ghost Halo Layer */}
+              {/* Ghost Halo Layer - fade out as markers appear */}
               <Layer
                 id="stations-halo"
                 type="circle"
+                maxzoom={12}
                 paint={{
                   "circle-radius": [
                     "interpolate",
                     ["linear"],
                     ["zoom"],
                     10,
-                    ["*", 1.8, ["interpolate", ["linear"], ["get", "ghostScore"], 0, 8, 100, 16]],
-                    14,
-                    ["*", 2.5, ["interpolate", ["linear"], ["get", "ghostScore"], 0, 12, 100, 24]],
+                    ["*", 1.3, ["interpolate", ["linear"], ["get", "ghostScore"], 0, 6, 100, 12]],
+                    13,
+                    ["*", 1.5, ["interpolate", ["linear"], ["get", "ghostScore"], 0, 7, 100, 14]],
                   ],
                   "circle-color": [
                     "case",
-                    ["==", ["get", "dataStatus"], "missing"], "rgba(156, 163, 175, 0.15)",
+                    ["==", ["get", "dataStatus"], "missing"], "rgba(156, 163, 175, 0.10)",
                     [
                       "interpolate",
                       ["linear"],
                       ["get", "ghostScore"],
-                      0, "rgba(34, 197, 94, 0.1)",
-                      20, "rgba(132, 204, 22, 0.15)",
-                      40, "rgba(245, 158, 11, 0.2)",
-                      60, "rgba(234, 88, 12, 0.25)",
-                      80, "rgba(220, 38, 38, 0.3)",
+                      0, "rgba(34, 197, 94, 0.08)",
+                      20, "rgba(132, 204, 22, 0.10)",
+                      40, "rgba(245, 158, 11, 0.14)",
+                      60, "rgba(234, 88, 12, 0.18)",
+                      80, "rgba(220, 38, 38, 0.22)",
                     ]
                   ],
-                  "circle-blur": 0.8,
+                  "circle-blur": 0.7,
                   "circle-opacity": [
                     "case",
                     ["get", "isActiveByLineFilter"], 1,
-                    0.05
+                    0.03
                   ]
                 }}
               />
 
-              {/* Main Station Dots */}
+              {/* Main Station Dots - fade out as markers appear */}
               <Layer
                 id="stations-circle"
                 type="circle"
+                maxzoom={12}
                 paint={{
                   "circle-radius": [
                     "interpolate",
                     ["linear"],
                     ["zoom"],
-                    10, 6,
-                    14, 10,
+                    10, 4,
+                    13, 6,
                   ],
                   "circle-color": [
                     "case",
@@ -453,11 +487,11 @@ export default function MapContainer({ searchQuery = "" }: MapContainerProps) {
                   "circle-stroke-width": [
                     "case",
                     ["boolean", ["feature-state", "selected"], false],
-                    3,
-                    2,
+                    2.5,
+                    1.5,
                   ],
                   "circle-stroke-color": "#FFFFFF",
-                  "circle-stroke-opacity": 0.9,
+                  "circle-stroke-opacity": 0.95,
                   "circle-opacity": [
                     "case",
                     ["get", "isActiveByLineFilter"], 1,
@@ -467,8 +501,112 @@ export default function MapContainer({ searchQuery = "" }: MapContainerProps) {
               />
             </Source>
 
-            {/* Tooltip */}
-            {hoveredStation && (
+            {/* Station Markers with Labels - viewport-aware progressive display */}
+            {(viewState.zoom >= MARKER_ZOOM_THRESHOLD || selectedStation) && (() => {
+              // If we're below zoom threshold, only show selected station
+              if (viewState.zoom < MARKER_ZOOM_THRESHOLD && selectedStation) {
+                return (
+                  <StationMarker
+                    key={selectedStation.id}
+                    station={selectedStation}
+                    onClick={handleStationClick}
+                    isSelected={true}
+                    showGhostIcon={selectedStation.ghostScore >= 65}
+                    zoomLevel={viewState.zoom}
+                  />
+                );
+              }
+
+              // STEP 1: Start with all filtered stations, but ALWAYS include selected station
+              const candidateStations = [...filteredStations];
+              
+              // Ensure selected station is in candidates before ANY filtering
+              if (selectedStation && !candidateStations.some(s => s.id === selectedStation.id)) {
+                const fullSelected = stations.find(s => s.id === selectedStation.id);
+                if (fullSelected) {
+                  candidateStations.push(fullSelected);
+                } else {
+                  candidateStations.push(selectedStation);
+                }
+              }
+              
+              // STEP 2: Filter by active lines, but ALWAYS keep selected station
+              const activeStations = candidateStations.filter(station => 
+                station.id === selectedStation?.id || // Always include selected
+                isStationActiveByLineFilter(station.lines, activeLines)
+              );
+              
+              // STEP 3: Filter by viewport bounds, but ALWAYS keep selected station
+              const bounds = mapRef.current?.getBounds();
+              const visibleStations = bounds 
+                ? activeStations.filter(station => 
+                    station.id === selectedStation?.id || // Always include selected
+                    bounds.contains([station.longitude, station.latitude])
+                  )
+                : activeStations;
+              
+              // STEP 4: Determine how many markers to show based on zoom level
+              const showAllMarkers = viewState.zoom >= MARKER_ZOOM_ALL_THRESHOLD;
+              let maxMarkers: number;
+              if (showAllMarkers) {
+                maxMarkers = Infinity;
+              } else if (viewState.zoom >= 13.5) {
+                maxMarkers = MAX_VIEWPORT_MARKERS_HIGH;
+              } else {
+                maxMarkers = MAX_VIEWPORT_MARKERS_MEDIUM;
+              }
+              
+              // STEP 5: Smart filtering with ghost score priority
+              let stationsToShow: Station[];
+              
+              if (showAllMarkers || visibleStations.length <= maxMarkers) {
+                stationsToShow = visibleStations;
+              } else {
+                // Separate selected station from the rest for priority sorting
+                const selectedInVisible = visibleStations.find(s => s.id === selectedStation?.id);
+                const otherStations = visibleStations.filter(s => s.id !== selectedStation?.id);
+                
+                // Sort others by ghost score descending
+                const sortedByGhost = [...otherStations].sort((a, b) => b.ghostScore - a.ghostScore);
+                
+                // Take top ghost score stations (reserve 1 slot for selected if needed)
+                const slotsForOthers = selectedInVisible ? maxMarkers - 1 : maxMarkers;
+                stationsToShow = sortedByGhost.slice(0, slotsForOthers);
+                
+                // ALWAYS add selected station first (renders on top due to array order)
+                if (selectedInVisible) {
+                  stationsToShow.unshift(selectedInVisible);
+                }
+                
+                // Ensure minimum coverage
+                if (stationsToShow.length < MIN_VIEWPORT_MARKERS && visibleStations.length >= MIN_VIEWPORT_MARKERS) {
+                  const needed = MIN_VIEWPORT_MARKERS - stationsToShow.length;
+                  const additional = sortedByGhost.slice(slotsForOthers, slotsForOthers + needed);
+                  stationsToShow.push(...additional);
+                }
+              }
+              
+              // STEP 6: Final safety check - selected station MUST be shown
+              if (selectedStation && !stationsToShow.some(s => s.id === selectedStation.id)) {
+                const fullStation = stations.find(s => s.id === selectedStation.id) || selectedStation;
+                stationsToShow.unshift(fullStation);
+              }
+              
+              // Render all stations with proper selection state
+              return stationsToShow.map((station) => (
+                <StationMarker
+                  key={station.id}
+                  station={station}
+                  onClick={handleStationClick}
+                  isSelected={selectedStation?.id === station.id}
+                  showGhostIcon={station.ghostScore >= 65}
+                  zoomLevel={viewState.zoom}
+                />
+              ));
+            })()}
+
+            {/* Tooltip - only show when not using markers */}
+            {hoveredStation && viewState.zoom < MARKER_ZOOM_THRESHOLD && (
               <MapTooltip
                 station={hoveredStation}
                 x={mousePosition.x}
@@ -486,6 +624,7 @@ export default function MapContainer({ searchQuery = "" }: MapContainerProps) {
             key={selectedStation.id}
             station={selectedStation}
             onClose={() => setSelectedStation(null)}
+            onStationSelect={handleStationSelectById}
           />
         )}
       </AnimatePresence>

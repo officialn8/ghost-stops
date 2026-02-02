@@ -1,6 +1,7 @@
-import { animated } from '@react-spring/web';
-import { useState, useRef, useEffect } from 'react';
-import { useMobileSheet } from '@/hooks/useMobileSheet';
+'use client';
+
+import { Drawer } from 'vaul';
+import { useState, useEffect, useRef } from 'react';
 import MobileStationCard from './MobileStationCard';
 
 interface Station {
@@ -11,132 +12,118 @@ interface Station {
   lines: string[];
   ghostScore: number;
   rolling30dAvg: number;
-  lastDayEntries: number;
+  trend: number | null;
   dataStatus?: 'available' | 'missing' | 'zero';
 }
 
 interface MobileBottomSheetProps {
   stations: Station[];
   onStationClick: (station: Station) => void;
-  sheetState: ReturnType<typeof useMobileSheet>;
+  isHidden?: boolean;
 }
 
-export default function MobileBottomSheet({ stations, onStationClick, sheetState }: MobileBottomSheetProps) {
-  const scrollRef = useRef<HTMLDivElement>(null);
-  const [isRefreshing, setIsRefreshing] = useState(false);
-  const { y, opacity, bind, snapIndex } = sheetState;
+// Snap points: 25% visible (peek), 50% visible, 90% visible (full)
+const SNAP_POINTS: (number | string)[] = [0.25, 0.5, 0.9];
 
-  // Pull to refresh handling
-  const handleRefresh = async () => {
-    setIsRefreshing(true);
-    // Simulate refresh - in real app this would refetch data
-    await new Promise(resolve => setTimeout(resolve, 1000));
-    setIsRefreshing(false);
+export default function MobileBottomSheet({
+  stations,
+  onStationClick,
+  isHidden = false
+}: MobileBottomSheetProps) {
+  // Track internal open state to allow animation
+  const [isOpen, setIsOpen] = useState(true);
+  const [shouldRender, setShouldRender] = useState(true);
+  const [activeSnap, setActiveSnap] = useState<number | string | null>(SNAP_POINTS[0]);
+  const scrollRef = useRef<HTMLDivElement>(null);
+
+  // Check if we're at the highest snap point where scrolling should be enabled
+  const isAtFullHeight = activeSnap === 0.9;
+
+  // When isHidden changes, animate the drawer closed/open
+  useEffect(() => {
+    if (isHidden) {
+      // Close the drawer (will animate)
+      setIsOpen(false);
+    } else {
+      // Re-render and open
+      setShouldRender(true);
+      // Small delay to ensure DOM is ready
+      requestAnimationFrame(() => {
+        setIsOpen(true);
+      });
+    }
+  }, [isHidden]);
+
+  // Handle animation end - stop rendering after close animation
+  const handleAnimationEnd = (open: boolean) => {
+    if (!open && isHidden) {
+      setShouldRender(false);
+    }
   };
 
-  // Lock body scroll only when sheet is mostly open
+  // Reset scroll position when not at full height
   useEffect(() => {
-    if (snapIndex >= 2) {
-      document.body.style.overflow = 'hidden';
-    } else {
-      document.body.style.overflow = '';
+    if (!isAtFullHeight && scrollRef.current) {
+      scrollRef.current.scrollTop = 0;
     }
+  }, [isAtFullHeight]);
 
-    return () => {
-      document.body.style.overflow = '';
-    };
-  }, [snapIndex]);
-
-  // Count ghost stops
-  const ghostStopCount = stations.filter(s => s.ghostScore > 70).length;
+  if (!shouldRender) {
+    return null;
+  }
 
   return (
-    <>
-      {/* Backdrop - only visible when sheet is more than half open */}
-      {snapIndex >= 2 && (
-        <animated.div
-          className="fixed inset-0 bg-black/20 z-40"
-          style={{
-            opacity,
-          }}
-          onClick={() => {
-            // Close sheet when backdrop clicked
-          }}
-        />
-      )}
-
-      {/* Sheet */}
-      <animated.div
-        {...bind()}
-        style={{
-          y,
-          touchAction: 'none',
-        }}
-        className="fixed inset-x-0 top-0 h-[90vh] bg-white rounded-t-[20px] shadow-[0_-4px_30px_rgba(0,0,0,0.15)] z-50 flex flex-col"
-      >
-        {/* Drag Indicator */}
-        <div className="flex-shrink-0 py-3">
-          <div className="w-10 h-1 bg-gray-200 rounded-full mx-auto" />
-        </div>
-
-        {/* Header */}
-        <div className="flex-shrink-0 px-4 pb-3 border-b border-gray-100">
-          <h2 className="text-lg font-semibold text-gray-900">
-            {stations.length} Stations • {ghostStopCount} Ghost Stops
-          </h2>
-        </div>
-
-        {/* Pull to Refresh Indicator */}
-        {isRefreshing && (
-          <div className="flex-shrink-0 py-2 px-4 bg-gray-50 border-b border-gray-100">
-            <div className="flex items-center justify-center gap-2 text-sm text-gray-600">
-              <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24">
-                <circle
-                  className="opacity-25"
-                  cx="12"
-                  cy="12"
-                  r="10"
-                  stroke="currentColor"
-                  strokeWidth="4"
-                />
-                <path
-                  className="opacity-75"
-                  fill="currentColor"
-                  d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
-                />
-              </svg>
-              <span>Refreshing...</span>
-            </div>
-          </div>
-        )}
-
-        {/* Scrollable Content */}
-        <div
-          ref={scrollRef}
-          className="flex-1 overflow-y-auto overscroll-contain"
-          onTouchMove={(e) => {
-            // Allow scrolling only when at top and pulling down
-            if (scrollRef.current && scrollRef.current.scrollTop === 0) {
-              const touch = e.touches[0];
-              if (touch.clientY > 100 && !isRefreshing) {
-                handleRefresh();
-              }
-            }
-          }}
+    <Drawer.Root
+      open={isOpen}
+      onOpenChange={setIsOpen}
+      onAnimationEnd={handleAnimationEnd}
+      modal={false}
+      snapPoints={SNAP_POINTS}
+      activeSnapPoint={activeSnap}
+      setActiveSnapPoint={setActiveSnap}
+      fadeFromIndex={2}
+      dismissible={false}
+    >
+      <Drawer.Portal>
+        <Drawer.Content
+          className="fixed inset-x-0 bottom-0 z-50 flex flex-col bg-background rounded-t-[20px] shadow-[0_-4px_30px_rgba(0,0,0,0.15)] outline-none"
+          style={{ height: '90vh' }}
         >
-          {stations.map((station, index) => (
-            <MobileStationCard
-              key={station.id}
-              rank={index + 1}
-              station={station}
-              onClick={() => onStationClick(station)}
-            />
-          ))}
+          {/* Drag Handle */}
+          <Drawer.Handle className="mx-auto mt-3 mb-2 h-1 w-10 rounded-full bg-border" />
 
-          {/* Bottom padding for safe area */}
-          <div className="h-8" />
-        </div>
-      </animated.div>
-    </>
+          {/* Header */}
+          <div className="px-4 pb-3 border-b border-border flex-shrink-0">
+            <Drawer.Title className="text-lg font-semibold text-foreground">
+              Ghostiest Stations
+            </Drawer.Title>
+            <Drawer.Description className="text-sm text-muted-foreground">
+              Top {stations.length} stations by ghost score
+            </Drawer.Description>
+          </div>
+
+          {/* Scrollable Content - only scrollable at full height */}
+          <div
+            ref={scrollRef}
+            data-vaul-no-drag
+            className={`flex-1 overscroll-contain ${
+              isAtFullHeight ? 'overflow-y-auto' : 'overflow-hidden'
+            }`}
+          >
+            {stations.map((station, index) => (
+              <MobileStationCard
+                key={station.id}
+                rank={index + 1}
+                station={station}
+                onClick={() => onStationClick(station)}
+              />
+            ))}
+
+            {/* Bottom padding for safe area */}
+            <div className="h-8" />
+          </div>
+        </Drawer.Content>
+      </Drawer.Portal>
+    </Drawer.Root>
   );
 }

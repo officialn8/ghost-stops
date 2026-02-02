@@ -1,10 +1,11 @@
 "use client";
 
-import { Users, TrendingUp, TrendingDown, Minus } from "lucide-react";
+import { Users, Ghost } from "lucide-react";
 import { useMemo } from "react";
+import { motion } from "framer-motion";
 import CTALineBadge from "./CTALineBadge";
-import GhostScoreBadge from "@/components/ghost/GhostScoreBadge";
-import { cn } from "@/lib/utils";
+import Sparkline from "@/components/charts/Sparkline";
+import { clampGhostScore, cn, normalizeDataStatus } from "@/lib/utils";
 import { normalizeStationLines } from "@/lib/cta/normalizeStationLines";
 import { CTA_LINE_COLORS } from "@/lib/cta/explodeAndStitchSegments";
 
@@ -18,6 +19,7 @@ interface StationRowProps {
   selected?: boolean;
   onClick?: () => void;
   className?: string;
+  sparkline?: number[];
 }
 
 export default function StationRow({
@@ -30,11 +32,16 @@ export default function StationRow({
   selected = false,
   onClick,
   className,
+  sparkline,
 }: StationRowProps) {
   // Normalize lines for consistent rendering
   const { lines: normalizedLines, cleanName } = useMemo(() => {
     return normalizeStationLines({ name, lines });
   }, [name, lines]);
+
+  const resolvedStatus = normalizeDataStatus(dataStatus);
+  const safeScore = clampGhostScore(ghostScore);
+  const displayScore = resolvedStatus === "missing" ? null : safeScore;
 
   // Get primary line color for rank badge
   const primaryLineColor = normalizedLines[0] ? CTA_LINE_COLORS[normalizedLines[0]] : '#6B7280';
@@ -44,8 +51,8 @@ export default function StationRow({
       onClick={onClick}
       className={cn(
         "group relative p-4 cursor-pointer transition-all duration-200",
-        "hover:translate-y-[-2px] hover:shadow-lg rounded-lg",
-        selected && "bg-white/60 backdrop-blur-sm shadow-md",
+        "hover:translate-y-[-4px] hover:shadow-xl hover:shadow-black/10 rounded-lg",
+        selected && "bg-white/60 backdrop-blur-sm shadow-lg ring-2 ring-primary/20",
         className
       )}
       style={{
@@ -90,13 +97,26 @@ export default function StationRow({
             <div className="flex items-center gap-1 text-ui-xs text-text-secondary">
               <Users className="w-3 h-3" />
               <span className="font-mono">
-                {dataStatus === 'missing'
+                {resolvedStatus === 'missing'
                   ? '—'
                   : Math.round(dailyAverage).toLocaleString()}
               </span>
             </div>
           </div>
         </div>
+
+        {/* Sparkline: 7-day trend */}
+        {sparkline && sparkline.length > 1 && (
+          <div className="flex-shrink-0">
+            <Sparkline
+              data={sparkline}
+              width={56}
+              height={28}
+              color={primaryLineColor}
+              showTrend
+            />
+          </div>
+        )}
 
         {/* Right: Ghost Score as Circular Indicator */}
         <div className="flex-shrink-0 relative">
@@ -121,22 +141,26 @@ export default function StationRow({
                 fill="none"
                 pathLength="100"
                 strokeDasharray="100"
-                strokeDashoffset={100 - ghostScore}
+                strokeDashoffset={displayScore === null ? 100 : 100 - displayScore}
                 className={cn(
                   "transition-all duration-500",
-                  ghostScore > 80 ? "text-red-500" :
-                  ghostScore > 60 ? "text-orange-500" :
-                  ghostScore > 40 ? "text-amber-500" :
+                  resolvedStatus === "missing" ? "text-gray-300" :
+                  safeScore > 65 ? "text-red-500" :
+                  safeScore > 50 ? "text-orange-500" :
+                  safeScore > 35 ? "text-amber-500" :
                   "text-emerald-500"
                 )}
               />
             </svg>
-            <span className="font-display font-bold text-lg">
-              {Math.round(ghostScore)}
+            <span className="font-display font-bold text-lg leading-none">
+              {displayScore === null ? "—" : Math.round(displayScore)}
             </span>
-            <span className="text-[9px] font-medium text-text-tertiary uppercase tracking-wider">
-              Ghost
-            </span>
+            <motion.div
+              animate={{ y: [0, -2, 0] }}
+              transition={{ repeat: Infinity, duration: 1.5, ease: "easeInOut" }}
+            >
+              <Ghost className="w-3 h-3 text-text-tertiary" />
+            </motion.div>
           </div>
         </div>
       </div>

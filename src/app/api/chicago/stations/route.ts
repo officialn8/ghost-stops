@@ -66,6 +66,27 @@ export async function GET(request: NextRequest) {
     // Take only the requested limit
     const limitedStations = sortedStations.slice(0, limit);
 
+    // Get last 7 days of ridership for sparklines
+    const sevenDaysAgo = new Date();
+    sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+
+    const stationIds = limitedStations.map(s => s.id);
+    const recentRidership = await prisma.ridershipDaily.findMany({
+      where: {
+        stationId: { in: stationIds },
+        serviceDate: { gte: sevenDaysAgo }
+      },
+      orderBy: { serviceDate: 'asc' }
+    });
+
+    // Group ridership by station
+    const sparklineMap = new Map<string, number[]>();
+    for (const r of recentRidership) {
+      const existing = sparklineMap.get(r.stationId) || [];
+      existing.push(r.entries);
+      sparklineMap.set(r.stationId, existing);
+    }
+
     // Get max service date for "data as of" info
     const latestMetric = allMetrics.reduce((latest, current) => {
       if (!latest || current.serviceDateMax > latest.serviceDateMax) {
@@ -75,22 +96,35 @@ export async function GET(request: NextRequest) {
     }, null as typeof allMetrics[0] | null);
 
     // Format response with real data
-    const formattedStations = limitedStations.map(station => ({
-      id: station.id,
-      name: station.name,
-      latitude: station.latitude,
-      longitude: station.longitude,
-      lines: (() => {
-        try {
-          return JSON.parse(station.lines || '[]');
-        } catch {
-          return [];
-        }
-      })(),
-      ghostScore: station.metrics?.ghostScore || 0,
-      rolling30dAvg: station.metrics?.rolling30dAvg || null,
-      lastDayEntries: station.metrics?.lastDayEntries || null
-    }));
+    const formattedStations = limitedStations.map(station => {
+      // Calculate trend
+      const rolling30d = station.metrics?.rolling30dAvg ?? 0;
+      const rolling90d = station.metrics?.rolling90dAvg ?? 0;
+      let trend: number | null = null;
+
+      if (rolling90d > 0 && rolling30d !== null) {
+        // Calculate percentage change from 90-day to 30-day average
+        trend = ((rolling30d - rolling90d) / rolling90d) * 100;
+      }
+
+      return {
+        id: station.id,
+        name: station.name,
+        latitude: station.latitude,
+        longitude: station.longitude,
+        lines: (() => {
+          try {
+            return JSON.parse(station.lines || '[]');
+          } catch {
+            return [];
+          }
+        })(),
+        ghostScore: station.metrics?.ghostScore || 0,
+        rolling30dAvg: station.metrics?.rolling30dAvg || null,
+        trend: trend,
+        sparkline: sparklineMap.get(station.id) || []
+      };
+    });
 
     return NextResponse.json({
       stations: formattedStations,

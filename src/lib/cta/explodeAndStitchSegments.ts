@@ -301,8 +301,8 @@ function mergeSegments(
 export function explodeAndStitchSegments(
   segments: FeatureCollection<LineString, SegmentProperties>,
   activeLines: Record<string, boolean>,
-  offsetStep = 3.5,
-  loopOffsetStep = 2.0,
+  offsetStep = 5.0,      // Clear separation on shared corridors
+  loopOffsetStep = 3.0,  // Balanced: 5 lines span ~12px, less corner distortion
   stitchOnlyLoop = true // Safety: only stitch Loop segments by default
 ): FeatureCollection<LineString, StitchedProperties> {
   // First, explode segments as before

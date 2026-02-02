@@ -4,12 +4,12 @@ import type { MapRef } from 'react-map-gl/mapbox';
 import { Source, Layer } from 'react-map-gl/mapbox';
 import MobileSearchBar from './MobileSearchBar';
 import MobileFilterScroll from './MobileFilterScroll';
-import MobileViewListFAB from './MobileViewListFAB';
 import MobileBottomSheet from './MobileBottomSheet';
 import MobileStationDetail from './MobileStationDetail';
 import { CTA_LINE_ORDER, CTA_LINE_COLORS, isStationActiveByLineFilter } from '@/lib/cta/explodeAndStitchSegments';
 import { useHapticFeedback } from '@/hooks/useHapticFeedback';
-import { useMobileSheet } from '@/hooks/useMobileSheet';
+import { ThemeToggle, useTheme } from '@/components/theme';
+import type { FactMap, StationNarrativeData, DataSourceInfo } from "@/types/narrative";
 
 const MAPBOX_TOKEN = process.env.NEXT_PUBLIC_MAPBOX_TOKEN;
 
@@ -21,8 +21,43 @@ interface Station {
   lines: string[];
   ghostScore: number;
   rolling30dAvg: number;
-  lastDayEntries: number;
+  trend: number | null;
   dataStatus?: 'available' | 'missing' | 'zero';
+}
+
+interface NeighborStation {
+  id: string;
+  name: string;
+  rolling30dAvg: number;
+  ghostScore: number;
+}
+
+interface StationDetailResponse {
+  ridershipSeries?: { date: string; entries: number }[];
+  comparisons?: {
+    systemMedian: number;
+    primaryLine: string | null;
+    lineMedian: number;
+    neighbors: {
+      prev: NeighborStation | null;
+      next: NeighborStation | null;
+      neighborAvg: number;
+    };
+    vsSystemMedian: number;
+    vsLineMedian: number;
+    vsNeighbors: number;
+  };
+  metrics?: {
+    ghostScore: number;
+    percentile: number;
+    systemAverage: number;
+    systemMedian?: number;
+    explanation: string;
+  };
+  // Facts + Narrative system
+  facts?: FactMap | null;
+  narrative?: StationNarrativeData | null;
+  sources?: DataSourceInfo[] | null;
 }
 
 interface MobileLayoutProps {
@@ -33,9 +68,8 @@ interface MobileLayoutProps {
   onLineToggle: (line: string) => void;
   onClearAllLines: () => void;
   onSelectAllLines: () => void;
-  mapStyle?: string;
-  stationsGeoJson?: any;
-  lineGeoJson?: any;
+  stationsGeoJson?: GeoJSON.FeatureCollection | null;
+  lineGeoJson?: GeoJSON.FeatureCollection | null;
 }
 
 export default function MobileLayout({
@@ -46,16 +80,16 @@ export default function MobileLayout({
   onLineToggle,
   onClearAllLines,
   onSelectAllLines,
-  mapStyle = "mapbox://styles/mapbox/light-v11",
   stationsGeoJson,
   lineGeoJson
 }: MobileLayoutProps) {
   const mapRef = useRef<MapRef>(null);
   const haptic = useHapticFeedback();
-  const sheet = useMobileSheet();
+  const { theme } = useTheme();
   const [selectedStation, setSelectedStation] = useState<Station | null>(null);
   const [isDetailOpen, setIsDetailOpen] = useState(false);
-  const [ridershipData, setRidershipData] = useState<{ date: string; entries: number }[] | undefined>(undefined);
+  const [stationDetail, setStationDetail] = useState<StationDetailResponse | null>(null);
+  const [isSheetHidden, setIsSheetHidden] = useState(false);
 
   // Convert selectedLines array to activeLines object for filtering
   const activeLinesObj: Record<string, boolean> = {};
@@ -63,27 +97,27 @@ export default function MobileLayout({
     activeLinesObj[line] = selectedLines.includes(line);
   });
 
-  // Filter stations by active lines
-  const filteredStations = stations.filter(station =>
+  // Filter stations by active lines, then take top 25 (stations are pre-sorted by ghost score)
+  const filteredByLine = stations.filter(station =>
     isStationActiveByLineFilter(station.lines, activeLinesObj)
   );
-
-  // Count ghost stops
-  const ghostStopCount = filteredStations.filter(s => s.ghostScore > 70).length;
-
-  // Fetch ridership data for a station
-  const fetchRidershipData = async (stationId: string) => {
+  
+  // Show top 25 ghostiest stations, matching desktop behavior
+  const topStations = filteredByLine.slice(0, 25);
+  
+  // Fetch full station detail data
+  const fetchStationDetail = async (stationId: string) => {
     try {
-      const response = await fetch(`/api/chicago/stations/${stationId}/ridership`);
+      const response = await fetch(`/api/chicago/stations/${stationId}`);
       if (response.ok) {
         const data = await response.json();
-        setRidershipData(data.series || []);
+        setStationDetail(data);
       } else {
-        setRidershipData(undefined);
+        setStationDetail(null);
       }
     } catch (error) {
-      console.error('Failed to fetch ridership data:', error);
-      setRidershipData(undefined);
+      console.error('Failed to fetch station detail:', error);
+      setStationDetail(null);
     }
   };
 
@@ -91,25 +125,20 @@ export default function MobileLayout({
     haptic.impact('medium');
     setSelectedStation(station);
     setIsDetailOpen(true);
-    sheet.close();
+    setIsSheetHidden(true); // Hide the bottom sheet while detail is open
 
-    // Fetch ridership data
-    await fetchRidershipData(station.id);
+    // Fetch full station detail
+    await fetchStationDetail(station.id);
   };
 
   const handleDetailClose = () => {
     setIsDetailOpen(false);
-    // Ensure map is interactive again
-    document.body.style.overflow = '';
-    document.body.style.touchAction = '';
+    setIsSheetHidden(false); // Show the bottom sheet again
+    // Clear station after animation completes
     setTimeout(() => {
       setSelectedStation(null);
-      setRidershipData(undefined);
+      setStationDetail(null);
     }, 300);
-  };
-
-  const handleViewListClick = () => {
-    sheet.openTo(1);
   };
 
   return (
@@ -125,8 +154,38 @@ export default function MobileLayout({
             zoom: 11
           }}
           style={{ width: '100%', height: '100%' }}
-          mapStyle={mapStyle}
+          mapStyle={theme === "dark" ? "mapbox://styles/mapbox/dark-v11" : "mapbox://styles/mapbox/light-v11"}
           reuseMaps
+          interactiveLayerIds={['stations-circle']}
+          onMouseEnter={(e) => {
+            if (e.features && e.features.length > 0 && mapRef.current) {
+              mapRef.current.getCanvas().style.cursor = 'pointer';
+            }
+          }}
+          onMouseLeave={() => {
+            if (mapRef.current) {
+              mapRef.current.getCanvas().style.cursor = '';
+            }
+          }}
+          onClick={(event) => {
+            const feature = event.features?.[0];
+            if (feature && feature.properties) {
+              const props = feature.properties;
+              // Reconstruct the station object from properties
+              const clickedStation: Station = {
+                id: props.id,
+                name: props.name,
+                latitude: props.latitude,
+                longitude: props.longitude,
+                lines: typeof props.lines === 'string' ? JSON.parse(props.lines) : props.lines || [],
+                ghostScore: props.ghostScore,
+                rolling30dAvg: props.rolling30dAvg,
+                trend: props.trend ?? null,
+                dataStatus: props.dataStatus
+              };
+              handleStationClick(clickedStation);
+            }
+          }}
         >
           {/* CTA Track Lines */}
           {lineGeoJson && (
@@ -212,7 +271,7 @@ export default function MobileLayout({
           {stationsGeoJson && (
             <Source id="stations" type="geojson" data={stationsGeoJson}>
               <Layer
-                id="stations-layer"
+                id="stations-circle"
                 type="circle"
                 paint={{
                   'circle-radius': [
@@ -247,6 +306,11 @@ export default function MobileLayout({
         placeholder="Search stations..."
       />
 
+      {/* Dark Mode Toggle */}
+      <div className="fixed top-[calc(env(safe-area-inset-top,0px)+16px)] right-4 z-[101]">
+        <ThemeToggle className="w-12 h-12 bg-background/90 backdrop-blur-sm rounded-full shadow-lg" />
+      </div>
+
       {/* Horizontal Filter Scroll */}
       <MobileFilterScroll
         selectedLines={selectedLines}
@@ -255,28 +319,34 @@ export default function MobileLayout({
         onSelectAll={onSelectAllLines}
       />
 
-      {/* View List FAB */}
-      <MobileViewListFAB
-        stationCount={filteredStations.length}
-        ghostStopCount={ghostStopCount}
-        onClick={handleViewListClick}
+      {/* Bottom Sheet - shows top 25 ghostiest stations */}
+      <MobileBottomSheet
+        stations={topStations}
+        onStationClick={handleStationClick}
+        isHidden={isSheetHidden}
       />
-
-      {/* Bottom Sheet */}
-      <div style={{ pointerEvents: isDetailOpen ? 'none' : 'auto' }}>
-        <MobileBottomSheet
-          stations={filteredStations}
-          onStationClick={handleStationClick}
-          sheetState={sheet}
-        />
-      </div>
 
       {/* Station Detail */}
       <MobileStationDetail
-        station={selectedStation}
+        station={selectedStation && stationDetail?.station ? {
+          ...selectedStation,
+          trend: stationDetail.station.trend
+        } : selectedStation}
         isOpen={isDetailOpen}
         onClose={handleDetailClose}
-        ridershipData={ridershipData}
+        ridershipData={stationDetail?.ridershipSeries}
+        comparisons={stationDetail?.comparisons}
+        metrics={stationDetail?.metrics}
+        facts={stationDetail?.facts}
+        narrative={stationDetail?.narrative}
+        sources={stationDetail?.sources}
+        onStationSelect={(stationId) => {
+          // Find and select the new station
+          const newStation = stations.find(s => s.id === stationId);
+          if (newStation) {
+            handleStationClick(newStation);
+          }
+        }}
       />
     </div>
   );

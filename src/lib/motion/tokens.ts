@@ -12,7 +12,7 @@ export const springs = {
   // Micro-interactions (buttons, hover states)
   micro: {
     type: "spring" as const,
-    stiffness: 500,
+    stiffness: 450,  // Reduced from 500 for smoother feel
     damping: 30,
   },
 
@@ -27,8 +27,8 @@ export const springs = {
   // Snappy interactions (list items)
   snappy: {
     type: "spring" as const,
-    stiffness: 400,
-    damping: 25,
+    stiffness: 380,  // Reduced from 400 for smoother feel
+    damping: 26,     // Slightly increased for more control
   },
 
   // Smooth entrances (content reveal)
@@ -113,7 +113,7 @@ export const listItemVariants: Variants = {
     x: 0,
     transition: {
       type: "spring",
-      stiffness: 500, // Snappier (was 400)
+      stiffness: 400, // Smoother feel (was 500)
       damping: 30,    // Increased damping (was 25)
     },
   },
@@ -132,7 +132,7 @@ export const panelVariants: Variants = {
     scale: 1,
     transition: {
       type: "spring",
-      stiffness: 350, // Faster (was 260)
+      stiffness: 320, // Smoother entrance (was 350)
       damping: 30,    // More damped (was 25)
       staggerChildren: 0.04, // Faster stagger (was 0.08)
       delayChildren: 0.05,   // Shorter delay (was 0.15)
@@ -153,7 +153,7 @@ export const panelItemVariants: Variants = {
     y: 0,
     transition: {
       type: "spring",
-      stiffness: 400,
+      stiffness: 360,  // Smoother child animations (was 400)
       damping: 30,
     },
   },

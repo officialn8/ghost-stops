@@ -20,6 +20,7 @@ type SyncOpts struct {
 	Days  int
 	Since string
 	Limit int
+	Backfill bool
 }
 
 type SocrataRecord struct {
@@ -84,8 +85,12 @@ func SyncRidership(dbClient *db.Client, token string, opts SyncOpts) error {
 	totalRecords := len(records)
 	insertedCount := 0
 	skippedCount := 0
+	invalidCount := 0
 	stationIDsInserted := make(map[string]bool)
 	ctaStationIDsInserted := make(map[string]bool)
+	maxEntries := 0
+	minEntries := 0
+	hasEntries := false
 
 	for _, r := range records {
 		// Check cache first
@@ -97,7 +102,7 @@ func SyncRidership(dbClient *db.Client, token string, opts SyncOpts) error {
 			if err != nil {
 				// No match found - track for CSV output with detailed reason
 				if _, exists := unmatchedStations[cacheKey]; !exists {
-					parsedDate, _ := time.Parse("2006-01-02T15:04:05.000", r.Date)
+					parsedDate, _ := parseServiceDate(r.Date)
 					unmatchedStations[cacheKey] = UnmatchedStation{
 						StationID:    r.StationID,
 						StationName:  r.StationName,
@@ -120,35 +125,82 @@ func SyncRidership(dbClient *db.Client, token string, opts SyncOpts) error {
 		}
 
 		// Parse the date string from Socrata
-		parsedDate, err := time.Parse("2006-01-02T15:04:05.000", r.Date)
+		parsedDate, err := parseServiceDate(r.Date)
 		if err != nil {
-			log.Printf("Warning: Failed to parse date %s: %v", r.Date, err)
+			log.Printf("Warning: Failed to parse date %s for %s: %v", r.Date, r.StationName, err)
+			invalidCount++
 			continue
+		}
+
+		entries, err := parseRides(r.Rides)
+		if err != nil {
+			log.Printf("Warning: Failed to parse rides %s for %s on %s: %v", r.Rides, r.StationName, r.Date, err)
+			invalidCount++
+			continue
+		}
+		if !hasEntries {
+			minEntries = entries
+			maxEntries = entries
+			hasEntries = true
+		} else {
+			if entries < minEntries {
+				minEntries = entries
+			}
+			if entries > maxEntries {
+				maxEntries = entries
+			}
 		}
 
 		dbRecords = append(dbRecords, db.RidershipRecord{
 			StationID:   stationID,
 			ServiceDate: parsedDate.Format(time.RFC3339),
-			Entries:     parseRides(r.Rides),
+			Entries:     entries,
 		})
 		stationIDsInserted[stationID] = true
 		ctaStationIDsInserted[r.StationID] = true
 		insertedCount++
 	}
 
-	// Write unmatched stations to CSV
-	if len(unmatchedStations) > 0 {
-		if err := writeUnmatchedStationsCSV(unmatchedStations); err != nil {
-			log.Printf("Warning: failed to write unmatched stations CSV: %v", err)
-		}
+	// Run upsert + prune in a single transaction
+	tx, err := dbClient.BeginTx()
+	if err != nil {
+		return fmt.Errorf("failed to begin transaction: %w", err)
 	}
 
 	if len(dbRecords) > 0 {
 		log.Printf("Upserting %d records into the database...", len(dbRecords))
-		if err := dbClient.InsertRidershipDailyBatch(dbRecords); err != nil {
+		if err := dbClient.InsertRidershipDailyBatchTx(tx, dbRecords); err != nil {
+			tx.Rollback()
 			return fmt.Errorf("failed to batch insert ridership data: %w", err)
 		}
+	}
+
+	// 4. Prune old data (skip during backfill)
+	log.Println("--- Pruning Data ---")
+	prunedCount := int64(0)
+	if opts.Backfill {
+		log.Println("Backfill mode enabled: skipping prune to preserve historical data.")
+	} else {
+		prunedCount, err = dbClient.PruneRidershipTx(tx, "chicago", opts.Days)
+		if err != nil {
+			tx.Rollback()
+			return fmt.Errorf("failed to prune old ridership data: %w", err)
+		}
+	}
+
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("failed to commit ridership sync transaction: %w", err)
+	}
+
+	if len(dbRecords) > 0 {
 		log.Printf("✅ Successfully upserted %d records.", len(dbRecords))
+	}
+
+	// Write unmatched stations to CSV after successful commit
+	if len(unmatchedStations) > 0 {
+		if err := writeUnmatchedStationsCSV(unmatchedStations); err != nil {
+			log.Printf("Warning: failed to write unmatched stations CSV: %v", err)
+		}
 	}
 
 	// Log summary statistics
@@ -156,12 +208,22 @@ func SyncRidership(dbClient *db.Client, token string, opts SyncOpts) error {
 	log.Printf("Total rows fetched: %d", totalRecords)
 	log.Printf("Rows inserted: %d", insertedCount)
 	log.Printf("Rows skipped (unmatched): %d", skippedCount)
+	log.Printf("Rows skipped (invalid): %d", invalidCount)
 	log.Printf("Distinct CTA station IDs in data: %d", len(ctaStationIDsInserted))
 	log.Printf("Distinct stations matched: %d", len(stationIDsInserted))
 	matchRate := float64(len(stationIDsInserted)) / float64(len(ctaStationIDsInserted)) * 100
 	log.Printf("Station match rate: %.1f%%", matchRate)
 	if len(unmatchedStations) > 0 {
 		log.Printf("Unmatched stations: %d (see /docs/unmatched_socrata.csv)", len(unmatchedStations))
+	}
+	if insertedCount == 0 {
+		log.Printf("⚠️  WARNING: No ridership rows inserted. Check API response and matching rules.")
+	}
+	if hasEntries {
+		log.Printf("Ridership entries range in sync batch: min=%d max=%d", minEntries, maxEntries)
+		if maxEntries > 200000 {
+			log.Printf("⚠️  WARNING: Unusually high ridership value detected (max=%d)", maxEntries)
+		}
 	}
 
 	// Additional diagnostics about station coverage
@@ -173,18 +235,12 @@ func SyncRidership(dbClient *db.Client, token string, opts SyncOpts) error {
 		}
 	}
 
-	// 4. Prune old data
-	log.Println("--- Pruning Data ---")
-	rowsBefore, err := dbClient.GetRidershipDailyCount("chicago")
+	rowsAfterSync, err := dbClient.GetRidershipDailyCount("chicago")
 	if err != nil {
-		return fmt.Errorf("could not get row count before pruning: %w", err)
+		return fmt.Errorf("could not get row count after sync: %w", err)
 	}
-	log.Printf("Rows before pruning: %d", rowsBefore)
+	log.Printf("Rows after sync: %d", rowsAfterSync)
 
-	prunedCount, err := dbClient.PruneRidership("chicago", opts.Days)
-	if err != nil {
-		return fmt.Errorf("failed to prune old ridership data: %w", err)
-	}
 	log.Printf("Rows deleted: %d", prunedCount)
 
 	rowsAfter, err := dbClient.GetRidershipDailyCount("chicago")
@@ -283,14 +339,6 @@ func fetchSocrataData(token string, sinceDate time.Time, limit int) ([]SocrataRe
 	}
 
 	return allRecords, nil
-}
-
-func parseRides(ridesStr string) int {
-	rides, err := strconv.Atoi(ridesStr)
-	if err != nil {
-		return 0 // Or handle error appropriately
-	}
-	return rides
 }
 
 // writeUnmatchedStationsCSV writes unmatched stations to a CSV file

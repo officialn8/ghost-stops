@@ -6,9 +6,7 @@ import (
 	"io"
 	"net/http"
 	"os"
-	"strconv"
 	"strings"
-	"time"
 
 	"github.com/nate/ghost-stops/go-etl/internal/db"
 )
@@ -117,27 +115,18 @@ func IngestRidership(dbClient *db.Client, source string) error {
 		serviceDateStr := record[colIndex[serviceDateCol]]
 		ridesStr := record[colIndex[ridesCol]]
 
-		// Parse date (handle both MM/DD/YYYY and YYYY-MM-DD formats)
-		var serviceDate time.Time
-		if strings.Contains(serviceDateStr, "/") {
-			parsedTime, err := time.Parse("01/02/2006", serviceDateStr)
-			if err == nil {
-				serviceDate = parsedTime
-			}
-		} else {
-			parsedTime, err := time.Parse("2006-01-02", serviceDateStr)
-			if err == nil {
-				serviceDate = parsedTime
-			}
-		}
-		if serviceDate.IsZero() {
-			continue // Skip invalid dates
+		// Parse date
+		serviceDate, err := parseServiceDate(serviceDateStr)
+		if err != nil {
+			fmt.Printf("Warning: invalid service date %q for station %s\n", serviceDateStr, stationName)
+			continue
 		}
 
 		// Parse rides
-		rides, err := strconv.Atoi(strings.TrimSpace(ridesStr))
+		rides, err := parseRides(ridesStr)
 		if err != nil {
-			continue // Skip invalid ride counts
+			fmt.Printf("Warning: invalid rides %q for station %s on %s\n", ridesStr, stationName, serviceDateStr)
+			continue
 		}
 
 		// Normalize station name for matching

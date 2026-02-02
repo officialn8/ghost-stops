@@ -2,14 +2,18 @@
 
 import { useState, useEffect, useMemo } from "react";
 import { motion } from "framer-motion";
-import { X, TrendingDown, Users, Calendar, Ghost } from "lucide-react";
+import { X, TrendingDown, TrendingUp, Users, Ghost, BarChart3 } from "lucide-react";
 import CTALineBadge from "./CTALineBadge";
 import GhostScoreGauge from "@/components/ghost/GhostScoreGauge";
 import RidershipChart from "./RidershipChart";
 import StationDetailSkeleton from "./StationDetailSkeleton";
+import NeighborPills from "./NeighborPills";
+import { StationComparison } from "@/components/comparison/ComparisonBars";
+import { StationStory } from "@/components/narrative";
 import { cn } from "@/lib/utils";
 import { normalizeStationLines } from "@/lib/cta/normalizeStationLines";
 import { panelVariants, panelItemVariants } from "@/lib/motion/tokens";
+import type { FactMap, StationNarrativeData, DataSourceInfo } from "@/types/narrative";
 
 interface Station {
   id: string;
@@ -19,8 +23,15 @@ interface Station {
   lines: string[];
   ghostScore: number;
   rolling30dAvg: number;
-  lastDayEntries: number;
+  trend: number | null;
   dataStatus?: "available" | "missing" | "zero";
+}
+
+interface NeighborStation {
+  id: string;
+  name: string;
+  rolling30dAvg: number;
+  ghostScore: number;
 }
 
 interface StationDetail {
@@ -30,19 +41,39 @@ interface StationDetail {
     ghostScore: number;
     percentile: number;
     systemAverage: number;
+    systemMedian?: number;
     explanation: string;
   };
+  comparisons?: {
+    systemMedian: number;
+    primaryLine: string | null;
+    lineMedian: number;
+    neighbors: {
+      prev: NeighborStation | null;
+      next: NeighborStation | null;
+      neighborAvg: number;
+    };
+    vsSystemMedian: number;
+    vsLineMedian: number;
+    vsNeighbors: number;
+  };
+  // Facts + Narrative system
+  facts: FactMap | null;
+  narrative: StationNarrativeData | null;
+  sources: DataSourceInfo[] | null;
 }
 
 interface StationDetailPanelProps {
   station: Station;
   onClose?: () => void;
+  onStationSelect?: (stationId: string) => void;
   className?: string;
 }
 
 export default function StationDetailPanel({
   station,
   onClose,
+  onStationSelect,
   className,
 }: StationDetailPanelProps) {
   const [detail, setDetail] = useState<StationDetail | null>(null);
@@ -56,8 +87,16 @@ export default function StationDetailPanel({
   useEffect(() => {
     setLoading(true);
     fetch(`/api/chicago/stations/${station.id}`)
-      .then((res) => res.json())
+      .then((res) => {
+        if (!res.ok) {
+          throw new Error(`Failed to load station details (${res.status})`);
+        }
+        return res.json();
+      })
       .then((data) => {
+        if (!data?.station || !data?.metrics) {
+          throw new Error("Invalid station detail response");
+        }
         if (data.station) {
           setDetail(data);
         }
@@ -65,6 +104,7 @@ export default function StationDetailPanel({
       })
       .catch((err) => {
         console.error("Failed to load station details:", err);
+        setDetail(null);
         setLoading(false);
       });
   }, [station.id]);
@@ -88,9 +128,10 @@ export default function StationDetailPanel({
           <div className="p-6 pb-4">
             <button
               onClick={onClose}
-              className="absolute right-4 top-4 p-2 rounded-ui hover:bg-white/20 transition-colors z-10"
+              className="absolute right-4 top-4 w-10 h-10 flex items-center justify-center rounded-ui hover:bg-white/20 transition-colors z-10"
+              aria-label="Close detail panel"
             >
-              <X className="w-4 h-4" />
+              <X className="w-5 h-5" />
             </button>
 
             <h2 className="text-display-3 font-display font-semibold text-text-primary pr-12">
@@ -140,7 +181,7 @@ export default function StationDetailPanel({
                     <span className="text-ui-xs">30-Day Average</span>
                   </div>
                   <div className="stat-value-text text-ui-xl">
-                    {station.dataStatus === "missing"
+                    {station.dataStatus === "missing" || station.rolling30dAvg == null
                       ? "—"
                       : Math.round(station.rolling30dAvg).toLocaleString()}
                   </div>
@@ -148,13 +189,17 @@ export default function StationDetailPanel({
 
                 <div className="glass-solid rounded-ui p-4">
                   <div className="flex items-center gap-2 text-text-tertiary mb-1">
-                    <Calendar className="w-4 h-4" />
-                    <span className="text-ui-xs">Yesterday</span>
+                    {detail.station.trend != null && detail.station.trend >= 0 ? (
+                      <TrendingUp className="w-4 h-4" />
+                    ) : (
+                      <TrendingDown className="w-4 h-4" />
+                    )}
+                    <span className="text-ui-xs">30-Day Trend</span>
                   </div>
                   <div className="stat-value-text text-ui-xl">
-                    {station.dataStatus === "missing"
+                    {station.dataStatus === "missing" || detail.station.trend == null
                       ? "—"
-                      : station.lastDayEntries.toLocaleString()}
+                      : `${detail.station.trend >= 0 ? "+" : ""}${detail.station.trend.toFixed(1)}%`}
                   </div>
                 </div>
               </div>
@@ -177,12 +222,65 @@ export default function StationDetailPanel({
                 <div className="flex items-center gap-2 text-ui-xs text-text-tertiary">
                   <TrendingDown className="w-3 h-3" />
                   <span>
-                    Bottom {100 - detail.metrics.percentile}% of all CTA
-                    stations
+                    {detail.metrics.percentile <= 50
+                      ? `Bottom ${detail.metrics.percentile || 1}% of all CTA stations`
+                      : `Top ${100 - detail.metrics.percentile}% of all CTA stations`}
                   </span>
                 </div>
               </div>
             </motion.div>
+
+            {/* How It Compares */}
+            {detail.comparisons && (
+              <motion.div variants={panelItemVariants} className="px-6 mb-6">
+                <div className="glass-solid rounded-ui p-5">
+                  <div className="flex items-center gap-2 mb-4">
+                    <div className="w-8 h-8 rounded-full bg-gradient-to-br from-blue-500/20 to-purple-500/20 flex items-center justify-center">
+                      <BarChart3 className="w-4 h-4 text-blue-500" />
+                    </div>
+                    <h3 className="font-display font-semibold text-ui-md">
+                      How It Compares
+                    </h3>
+                  </div>
+                  <StationComparison
+                    stationAvg={station.rolling30dAvg || 0}
+                    systemMedian={detail.comparisons.systemMedian}
+                    lineMedian={detail.comparisons.lineMedian}
+                    neighborAvg={detail.comparisons.neighbors.neighborAvg}
+                    primaryLine={detail.comparisons.primaryLine}
+                    vsSystemMedian={detail.comparisons.vsSystemMedian}
+                    vsLineMedian={detail.comparisons.vsLineMedian}
+                    vsNeighbors={detail.comparisons.vsNeighbors}
+                  />
+                </div>
+              </motion.div>
+            )}
+
+            {/* Story & Evidence */}
+            {detail.narrative && (
+              <motion.div variants={panelItemVariants} className="px-6 mb-6">
+                <StationStory
+                  narrative={detail.narrative}
+                  facts={detail.facts}
+                  sources={detail.sources}
+                />
+              </motion.div>
+            )}
+
+            {/* Neighbor Stations */}
+            {detail.comparisons && (detail.comparisons.neighbors.prev || detail.comparisons.neighbors.next) && (
+              <motion.div variants={panelItemVariants} className="px-6 mb-4">
+                <div className="flex items-center gap-2 mb-2">
+                  <span className="text-ui-xs text-text-tertiary">Nearby on {detail.comparisons.primaryLine}</span>
+                </div>
+                <NeighborPills
+                  primaryLine={detail.comparisons.primaryLine}
+                  prevStation={detail.comparisons.neighbors.prev}
+                  nextStation={detail.comparisons.neighbors.next}
+                  onStationClick={(id) => onStationSelect?.(id)}
+                />
+              </motion.div>
+            )}
 
             {/* Ridership Trend Chart */}
             <motion.div variants={panelItemVariants} className="px-6 mb-6">

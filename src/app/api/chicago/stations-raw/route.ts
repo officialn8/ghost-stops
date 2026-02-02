@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import sqlite3 from 'sqlite3';
 import { open } from 'sqlite';
+import { normalizeDataStatus, safeJsonParse } from "@/lib/utils";
 
 export async function GET(request: NextRequest) {
   try {
@@ -82,11 +83,11 @@ export async function GET(request: NextRequest) {
       name: station.name,
       latitude: station.latitude,
       longitude: station.longitude,
-      lines: JSON.parse(station.lines || "[]"),
-      ghostScore: station.ghostScore || 0,
-      rolling30dAvg: station.rolling30dAvg || 0,
-      lastDayEntries: station.lastDayEntries || 0,
-      dataStatus: station.dataStatus || 'missing'
+      lines: safeJsonParse<string[]>(station.lines, []),
+      ghostScore: station.ghostScore ?? 0,
+      rolling30dAvg: station.rolling30dAvg ?? 0,
+      lastDayEntries: station.lastDayEntries ?? 0,
+      dataStatus: normalizeDataStatus(station.dataStatus)
     }));
 
     return NextResponse.json({

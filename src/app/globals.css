@@ -2,6 +2,7 @@
 @import "../styles/mobile.css";
 @import "../styles/glassmorphism.css";
 @import "../styles/animations.css";
+@import "mapbox-gl/dist/mapbox-gl.css";
 
 @tailwind base;
 @tailwind components;
@@ -12,15 +13,15 @@
     /* ═══════════════════════════════════════════════════════════════
        LIGHT MODE (Default) - Glass UI Design System v2
        ═══════════════════════════════════════════════════════════════ */
-    --background: 246 247 251; /* #F6F7FB */
-    --foreground: 11 18 32; /* Text primary */
+    --background: 228 38.5% 97.5%; /* #F6F7FB */
+    --foreground: 220 48.8% 8.4%; /* Text primary #0B1220 */
 
     /* Surfaces */
     --card: 0 0% 100%;
-    --card-foreground: 11 18 32;
+    --card-foreground: 220 48.8% 8.4%;
 
     --popover: 0 0% 100%;
-    --popover-foreground: 11 18 32;
+    --popover-foreground: 220 48.8% 8.4%;
 
     /* Brand Colors - Indigo primary, Emerald secondary */
     --primary: 280 76% 27%; /* Indigo #4F1271 */
@@ -30,8 +31,8 @@
     --secondary-foreground: 0 0% 100%;
 
     /* Neutral Tints */
-    --muted: 340 20% 92%; /* Lavender Blush #EEE5E9 */
-    --muted-foreground: 11 18 32 / 0.72;
+    --muted: 0 0% 96%; /* Neutral Gray #F5F5F5 */
+    --muted-foreground: 220 48.8% 8.4% / 0.72;
 
     --accent: 197 100% 38%; /* Ocean Blue #0090C1 */
     --accent-foreground: 0 0% 100%;
@@ -40,8 +41,8 @@
     --destructive-foreground: 0 0% 100%;
 
     /* Borders - neutral by default, NOT purple-tinted */
-    --border: 11 18 32 / 0.08;
-    --input: 11 18 32 / 0.08;
+    --border: 220 48.8% 8.4% / 0.08;
+    --input: 220 48.8% 8.4% / 0.08;
     --ring: 197 100% 38%; /* Ocean Blue for focus */
 
     --radius: 16px;
@@ -76,23 +77,23 @@
      DARK MODE
      ═══════════════════════════════════════════════════════════════ */
   [data-theme="dark"] {
-    --background: 15 23 42; /* #0F172A */
-    --foreground: 248 250 252; /* #F8FAFC */
+    --background: 222.2 47.4% 11.2%; /* #0F172A */
+    --foreground: 210 40% 98%; /* #F8FAFC */
 
     /* Surfaces */
     --card: 222 47% 11%;
-    --card-foreground: 248 250 252;
+    --card-foreground: 210 40% 98%;
 
     --popover: 222 47% 11%;
-    --popover-foreground: 248 250 252;
+    --popover-foreground: 210 40% 98%;
 
     /* Neutral Tints - inverted */
     --muted: 217 33% 17%; /* Dark slate */
-    --muted-foreground: 248 250 252 / 0.72;
+    --muted-foreground: 210 40% 98% / 0.72;
 
     /* Borders */
-    --border: 248 250 252 / 0.1;
-    --input: 248 250 252 / 0.1;
+    --border: 210 40% 98% / 0.1;
+    --input: 210 40% 98% / 0.1;
 
     /* Dark mode tokens */
     --bg-primary: #0F172A;
@@ -213,6 +214,57 @@
     @apply transition-all duration-300 ease-out;
   }
 
+  /* ═══════════════════════════════════════════════════════════════
+     NOISE TEXTURE OVERLAY - Premium Depth Effect
+     ═══════════════════════════════════════════════════════════════ */
+  .noise-texture {
+    position: relative;
+  }
+
+  .noise-texture::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    opacity: 0.02;
+    background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)'/%3E%3C/svg%3E");
+    background-repeat: repeat;
+    background-size: 200px 200px;
+    mix-blend-mode: overlay;
+  }
+
+  /* Stronger noise variant */
+  .noise-texture-strong::after {
+    opacity: 0.04;
+  }
+
+  /* Subtle gradient overlays for depth */
+  .gradient-overlay-top {
+    position: relative;
+  }
+
+  .gradient-overlay-top::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    background: linear-gradient(180deg, rgba(255,255,255,0.05) 0%, transparent 30%);
+    border-radius: inherit;
+  }
+
+  .gradient-overlay-edge {
+    position: relative;
+  }
+
+  .gradient-overlay-edge::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    background: linear-gradient(135deg, rgba(255,255,255,0.08) 0%, transparent 50%, rgba(0,0,0,0.02) 100%);
+    border-radius: inherit;
+  }
+
   /* Hide scrollbar */
   .no-scrollbar::-webkit-scrollbar {
     display: none;
@@ -225,15 +277,7 @@
 }
 
 @layer components {
-  /* Glass Panel Component */
-  .glass-panel {
-    background: var(--glass-bg);
-    backdrop-filter: blur(16px);
-    -webkit-backdrop-filter: blur(16px);
-    border: 1px solid var(--glass-border);
-    box-shadow: 0 8px 24px var(--shadow-color);
-    @apply rounded-panel p-6;
-  }
+  /* NOTE: .glass-panel is defined in glassmorphism.css with enhanced depth effects */
 
   /* CTA Line Badge - Small Rounded Pills */
   .cta-line-badge {
@@ -457,6 +501,56 @@
 
 [data-theme="dark"] ::-moz-selection {
   @apply bg-emerald-800 text-emerald-100;
+}
+
+/* Prevent autofill yellow background */
+input:-webkit-autofill,
+input:-webkit-autofill:hover,
+input:-webkit-autofill:focus,
+input:-webkit-autofill:active {
+  -webkit-box-shadow: 0 0 0 30px var(--bg-primary) inset !important;
+  -webkit-text-fill-color: var(--dm-text-primary) !important;
+  transition: background-color 5000s ease-in-out 0s;
+}
+
+/* Disable iOS/Safari default styling */
+input[type="text"],
+input[type="search"],
+button {
+  -webkit-appearance: none;
+  appearance: none;
+}
+
+/* Mobile-specific: Prevent any yellow/highlight backgrounds */
+@media (max-width: 768px) {
+  /* Remove all tap highlights */
+  *, *::before, *::after {
+    -webkit-tap-highlight-color: transparent !important;
+  }
+
+  /* Prevent any background color on active states */
+  button:active,
+  a:active,
+  div[role="button"]:active {
+    background-color: inherit !important;
+  }
+
+  /* Force muted colors to be neutral */
+  .bg-muted,
+  [class*="bg-muted"] {
+    background-color: rgb(245 245 245) !important;
+  }
+
+  [data-theme="dark"] .bg-muted,
+  [data-theme="dark"] [class*="bg-muted"] {
+    background-color: rgb(30 41 59) !important;
+  }
+
+  /* Disable all text selection on interactive elements */
+  button, a, [role="button"], .cursor-pointer {
+    -webkit-user-select: none !important;
+    user-select: none !important;
+  }
 }
 
 /* ═══════════════════════════════════════════════════════════════

@@ -1,5 +1,4 @@
-import { cn } from "@/lib/utils";
-import { getGhostScoreColor } from "@/lib/utils";
+import { clampGhostScore, cn, getGhostScoreColor, normalizeDataStatus } from "@/lib/utils";
 
 interface GhostScoreBadgeProps {
   score: number;
@@ -22,8 +21,11 @@ export default function GhostScoreBadge({
     lg: "text-display-3 font-bold",
   };
 
+  const resolvedStatus = normalizeDataStatus(dataStatus);
+  const safeScore = clampGhostScore(score);
+
   // Handle missing data
-  if (dataStatus === 'missing') {
+  if (resolvedStatus === 'missing') {
     return (
       <div className={cn("flex flex-col items-center", className)}>
         <div
@@ -38,7 +40,7 @@ export default function GhostScoreBadge({
     );
   }
 
-  const color = getGhostScoreColor(score);
+  const color = getGhostScoreColor(safeScore);
 
   return (
     <div className={cn("flex flex-col items-center", className)}>
@@ -46,7 +48,7 @@ export default function GhostScoreBadge({
         className={cn("ghost-score-glow transition-all", sizeClasses[size])}
         style={{ color }}
       >
-        {score}
+        {safeScore.toFixed(0)}
       </div>
       {showLabel && (
         <div className="text-ui-xs text-text-tertiary mt-1">ghost score</div>

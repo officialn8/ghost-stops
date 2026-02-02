@@ -9,7 +9,6 @@ import GhostWatermark from "@/components/ghost/GhostWatermark";
 import { cn } from "@/lib/utils";
 import {
   listContainerVariants,
-  listItemVariants,
   hoverStates,
 } from "@/lib/motion/tokens";
 
@@ -21,8 +20,9 @@ interface Station {
   lines: string[];
   ghostScore: number;
   rolling30dAvg: number;
-  lastDayEntries: number;
+  trend: number | null;
   dataStatus?: "available" | "missing" | "zero";
+  sparkline?: number[];
 }
 
 interface StationListProps {
@@ -119,7 +119,14 @@ export default function StationList({
                 {topStations.map((station, idx) => (
                   <motion.div
                     key={station.id}
-                    variants={listItemVariants}
+                    initial={{ opacity: 0, x: -20 }}
+                    animate={{ opacity: 1, x: 0 }}
+                    transition={{
+                      type: "spring",
+                      stiffness: 400,
+                      damping: 30,
+                      delay: idx * 0.025,
+                    }}
                     whileHover={hoverStates.listItem}
                     whileTap={hoverStates.listItemTap}
                     className="cursor-pointer"
@@ -133,6 +140,7 @@ export default function StationList({
                       dailyAverage={station.rolling30dAvg}
                       dataStatus={station.dataStatus}
                       selected={selectedStationId === station.id}
+                      sparkline={station.sparkline}
                     />
                   </motion.div>
                 ))}

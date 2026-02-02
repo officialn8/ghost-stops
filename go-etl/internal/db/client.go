@@ -336,6 +336,67 @@ func (c *Client) InsertRidershipDailyBatch(records []RidershipRecord) error {
 	return tx.Commit()
 }
 
+// BeginTx starts a manual transaction for multi-step operations.
+func (c *Client) BeginTx() (*sql.Tx, error) {
+	return c.db.Begin()
+}
+
+// InsertRidershipDailyBatchTx inserts ridership records using an existing transaction.
+func (c *Client) InsertRidershipDailyBatchTx(tx *sql.Tx, records []RidershipRecord) error {
+	stmt, err := tx.Prepare(`
+		INSERT INTO RidershipDaily (id, stationId, serviceDate, entries)
+		VALUES (lower(hex(randomblob(16))), ?, ?, ?)
+		ON CONFLICT(stationId, serviceDate) DO UPDATE SET
+		entries = excluded.entries
+	`)
+	if err != nil {
+		return fmt.Errorf("failed to prepare statement: %w", err)
+	}
+	defer stmt.Close()
+
+	for _, r := range records {
+		_, err := stmt.Exec(r.StationID, r.ServiceDate, r.Entries)
+		if err != nil {
+			return fmt.Errorf("failed to execute statement for station %s on %s: %w", r.StationID, r.ServiceDate, err)
+		}
+	}
+
+	return nil
+}
+
+// PruneRidershipTx deletes ridership data older than a given number of days using an existing transaction.
+func (c *Client) PruneRidershipTx(tx *sql.Tx, cityCode string, retentionDays int) (int64, error) {
+	maxDate, err := c.getMaxServiceDateTx(tx, cityCode)
+	if err != nil {
+		return 0, fmt.Errorf("could not get max service date for pruning: %w", err)
+	}
+	if maxDate.IsZero() {
+		return 0, nil
+	}
+
+	query := `
+		DELETE FROM RidershipDaily
+		WHERE date(serviceDate) < date(?, printf('-%d day', ?))
+		AND stationId IN (
+			SELECT s.id
+			FROM Station s
+			JOIN City c ON c.id = s.cityId
+			WHERE c.code = ?
+		)`
+
+	result, err := tx.Exec(query, maxDate, retentionDays, cityCode)
+	if err != nil {
+		return 0, fmt.Errorf("failed to prune ridership data: %w", err)
+	}
+
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		return 0, fmt.Errorf("failed to get affected rows: %w", err)
+	}
+
+	return rowsAffected, nil
+}
+
 // PruneRidership deletes ridership data older than a given number of days relative to the max service date
 func (c *Client) PruneRidership(cityCode string, retentionDays int) (int64, error) {
 	// Safety check: ensure there's data to prune
@@ -465,6 +526,37 @@ func (c *Client) GetMaxServiceDate(cityCode string) (time.Time, error) {
 	}
 
 	return time.Time{}, nil // No records, return zero time
+}
+
+func (c *Client) getMaxServiceDateTx(tx *sql.Tx, cityCode string) (time.Time, error) {
+	var maxDateStr sql.NullString
+	query := `
+		SELECT MAX(datetime(rd.serviceDate))
+		FROM RidershipDaily rd
+		JOIN Station s ON s.id = rd.stationId
+		JOIN City c ON c.id = s.cityId
+		WHERE c.code = ?`
+
+	err := tx.QueryRow(query, cityCode).Scan(&maxDateStr)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return time.Time{}, nil
+		}
+		return time.Time{}, fmt.Errorf("failed to query max service date: %w", err)
+	}
+
+	if maxDateStr.Valid && maxDateStr.String != "" {
+		parsedTime, err := time.Parse("2006-01-02 15:04:05", maxDateStr.String)
+		if err != nil {
+			parsedTime, err = time.Parse(time.RFC3339, maxDateStr.String)
+			if err != nil {
+				return time.Time{}, fmt.Errorf("failed to parse max service date: %w", err)
+			}
+		}
+		return parsedTime, nil
+	}
+
+	return time.Time{}, nil
 }
 
 // GetStationMetrics retrieves metrics for all stations in a city

@@ -1,4 +1,5 @@
 import { Search } from 'lucide-react';
+import { useRef, useEffect } from 'react';
 
 interface MobileSearchBarProps {
   value: string;
@@ -11,22 +12,60 @@ export default function MobileSearchBar({
   onChange,
   placeholder = "Search stations..."
 }: MobileSearchBarProps) {
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  // Blur input on scroll to dismiss keyboard
+  useEffect(() => {
+    const handleScroll = () => {
+      if (inputRef.current && document.activeElement === inputRef.current) {
+        inputRef.current.blur();
+      }
+    };
+
+    // Add scroll listeners to various scrollable containers
+    window.addEventListener('scroll', handleScroll, true); // Capture phase
+
+    return () => {
+      window.removeEventListener('scroll', handleScroll, true);
+    };
+  }, []);
+
+  // Handle keyboard events
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'Escape') {
+      inputRef.current?.blur();
+      onChange('');
+    } else if (e.key === 'Enter') {
+      inputRef.current?.blur();
+    }
+  };
+
   return (
     <div className="mobile-search-bar">
-      <Search className="w-4 h-4 text-gray-400 flex-shrink-0" />
+      <Search className="w-4 h-4 text-muted-foreground flex-shrink-0" />
       <input
+        ref={inputRef}
         type="text"
         value={value}
         onChange={(e) => onChange(e.target.value)}
+        onKeyDown={handleKeyDown}
         placeholder={placeholder}
-        className="flex-1 bg-transparent outline-none text-gray-900 placeholder-gray-400"
+        className="flex-1 bg-transparent outline-none text-foreground placeholder-muted-foreground"
+        enterKeyHint="search"
+        inputMode="search"
+        autoCorrect="off"
+        autoCapitalize="none"
       />
       {value && (
         <button
-          onClick={() => onChange('')}
-          className="w-5 h-5 rounded-full bg-gray-200 flex items-center justify-center hover:bg-gray-300 transition-colors"
+          onClick={() => {
+            onChange('');
+            inputRef.current?.focus();
+          }}
+          className="w-5 h-5 rounded-full bg-muted flex items-center justify-center hover:bg-muted/80 transition-colors"
+          aria-label="Clear search"
         >
-          <span className="text-gray-600 text-xs">×</span>
+          <span className="text-muted-foreground text-xs">×</span>
         </button>
       )}
     </div>

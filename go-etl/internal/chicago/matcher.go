@@ -96,6 +96,7 @@ func (m *StationMatcher) MatchStation(ctaStationId string, socrataName string) (
 	// Parse the Socrata name to extract base name and suffix
 	baseName, suffix := parseSocrataName(socrataName)
 	normalizedBase := db.NormalizeStationName(baseName)
+	normalizedSocrata := db.NormalizeStationName(socrataName)
 
 	// Infer the line from the suffix
 	inferredLine := m.inferLine(suffix)
@@ -103,6 +104,8 @@ func (m *StationMatcher) MatchStation(ctaStationId string, socrataName string) (
 	// Try to find a matching station
 	var bestMatch *Station
 	var bestScore int
+	bestTieScore := -1
+	var ambiguousMatches []string
 
 	for i := range m.stations {
 		station := &m.stations[i]
@@ -115,7 +118,8 @@ func (m *StationMatcher) MatchStation(ctaStationId string, socrataName string) (
 		if normalizedBase == normalizedGtfs {
 			// Score the match based on line compatibility
 			score := 0
-			if inferredLine != "" && containsLine(station.Lines, inferredLine) {
+			lineMatch := inferredLine != "" && containsLine(station.Lines, inferredLine)
+			if lineMatch {
 				score = 3 // Perfect match with line
 			} else if len(station.Lines) == 0 {
 				score = 2 // Match with no line info (acceptable)
@@ -123,23 +127,46 @@ func (m *StationMatcher) MatchStation(ctaStationId string, socrataName string) (
 				score = 1 // No line to match against
 			}
 
-			if score > bestScore {
+			tieScore := 0
+			if lineMatch {
+				tieScore += 2
+			}
+			if len(station.Lines) > 0 {
+				tieScore++
+			}
+			if db.NormalizeStationName(station.Name) == normalizedSocrata {
+				tieScore += 3
+			}
+
+			if score > bestScore || (score == bestScore && tieScore > bestTieScore) {
 				bestScore = score
+				bestTieScore = tieScore
 				bestMatch = station
+				ambiguousMatches = []string{station.Name}
+			} else if score == bestScore && tieScore == bestTieScore && bestMatch != nil && station.ID != bestMatch.ID {
+				ambiguousMatches = append(ambiguousMatches, station.Name)
 			}
 		}
 
 		// Also check for special mappings
 		if matchesSpecialCase(socrataName, station.Name) {
 			score := 4 // Special case match
-			if score > bestScore {
+			tieScore := 5
+			if score > bestScore || (score == bestScore && tieScore > bestTieScore) {
 				bestScore = score
+				bestTieScore = tieScore
 				bestMatch = station
+				ambiguousMatches = []string{station.Name}
+			} else if score == bestScore && tieScore == bestTieScore && bestMatch != nil && station.ID != bestMatch.ID {
+				ambiguousMatches = append(ambiguousMatches, station.Name)
 			}
 		}
 	}
 
 	if bestMatch != nil {
+		if len(ambiguousMatches) > 1 {
+			fmt.Printf("Warning: ambiguous match for %s (%s); candidates=%v\n", socrataName, ctaStationId, ambiguousMatches)
+		}
 		// Update the station with the CTA station ID for future lookups
 		if err := m.dbClient.UpdateStationCtaStationId(bestMatch.ID, ctaStationId); err != nil {
 			// Log but don't fail the match

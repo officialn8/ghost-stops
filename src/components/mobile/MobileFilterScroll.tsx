@@ -1,5 +1,6 @@
-import { CTALine, CTA_LINE_ORDER, CTA_LINE_COLORS } from "@/lib/cta/explodeAndStitchSegments";
+import { CTA_LINE_ORDER, CTA_LINE_COLORS } from "@/lib/cta/explodeAndStitchSegments";
 import { useHapticFeedback } from "@/hooks/useHapticFeedback";
+import { useRef, useState, useEffect } from "react";
 
 interface MobileFilterScrollProps {
   selectedLines: string[];
@@ -15,6 +16,9 @@ export default function MobileFilterScroll({
   onSelectAll
 }: MobileFilterScrollProps) {
   const haptic = useHapticFeedback();
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const [showLeftGradient, setShowLeftGradient] = useState(false);
+  const [showRightGradient, setShowRightGradient] = useState(true);
 
   const handleLineToggle = (line: string) => {
     haptic.selection();
@@ -23,8 +27,52 @@ export default function MobileFilterScroll({
 
   const hasActiveFilters = selectedLines.length > 0 && selectedLines.length < CTA_LINE_ORDER.length;
 
+  // Update gradient visibility based on scroll position
+  const updateGradients = () => {
+    if (!scrollRef.current) return;
+
+    const { scrollLeft, scrollWidth, clientWidth } = scrollRef.current;
+    setShowLeftGradient(scrollLeft > 0);
+    setShowRightGradient(scrollLeft < scrollWidth - clientWidth - 5);
+  };
+
+  useEffect(() => {
+    const scrollElement = scrollRef.current;
+    if (!scrollElement) return;
+
+    // Initial check
+    updateGradients();
+
+    // Add scroll listener
+    scrollElement.addEventListener('scroll', updateGradients);
+
+    // Also update on resize
+    const resizeObserver = new ResizeObserver(updateGradients);
+    resizeObserver.observe(scrollElement);
+
+    return () => {
+      scrollElement.removeEventListener('scroll', updateGradients);
+      resizeObserver.disconnect();
+    };
+  }, []);
+
   return (
-    <div className="mobile-filter-scroll">
+    <div className="relative">
+      {/* Left gradient overlay */}
+      <div
+        className={`absolute left-0 top-0 bottom-0 w-8 bg-gradient-to-r from-white dark:from-gray-900 to-transparent pointer-events-none z-10 transition-opacity ${
+          showLeftGradient ? 'opacity-100' : 'opacity-0'
+        }`}
+      />
+
+      {/* Right gradient overlay */}
+      <div
+        className={`absolute right-0 top-0 bottom-0 w-8 bg-gradient-to-l from-white dark:from-gray-900 to-transparent pointer-events-none z-10 transition-opacity ${
+          showRightGradient ? 'opacity-100' : 'opacity-0'
+        }`}
+      />
+
+      <div ref={scrollRef} className="mobile-filter-scroll">
       {/* All/None toggle */}
       <button
         onClick={() => {
@@ -83,6 +131,7 @@ export default function MobileFilterScroll({
           Clear Filters
         </button>
       )}
+      </div>
     </div>
   );
 }

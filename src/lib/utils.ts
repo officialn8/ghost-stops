@@ -15,13 +15,38 @@ export function glass(opacity: number = 0.72, blur: number = 16) {
   }
 }
 
-// Ghost score color mapping
+// Ghost score color mapping (calibrated for multi-factor composite scores, max ~75)
 export function getGhostScoreColor(score: number): string {
-  if (score >= 80) return "#DC2626" // red-600
-  if (score >= 60) return "#EA580C" // orange-600
-  if (score >= 40) return "#F59E0B" // amber-500
+  if (score >= 65) return "#DC2626" // red-600 (top tier ghost)
+  if (score >= 50) return "#EA580C" // orange-600
+  if (score >= 35) return "#F59E0B" // amber-500
   if (score >= 20) return "#84CC16" // lime-500
   return "#22C55E" // green-500
+}
+
+export type DataStatus = "available" | "missing" | "zero"
+
+export function normalizeDataStatus(status?: string | null): DataStatus {
+  if (status === "available" || status === "missing" || status === "zero") {
+    return status
+  }
+  return "missing"
+}
+
+export function clampGhostScore(score?: number | null): number {
+  if (score === null || score === undefined || !Number.isFinite(score)) {
+    return 0
+  }
+  return Math.max(0, Math.min(100, score))
+}
+
+export function safeJsonParse<T>(value: string | null | undefined, fallback: T): T {
+  if (!value) return fallback
+  try {
+    return JSON.parse(value) as T
+  } catch {
+    return fallback
+  }
 }
 
 // CTA line color mapping
