@@ -34,6 +34,7 @@
     "@turf/turf": "^7.3.3",
     "@types/mapbox-gl": "^3.4.1",
     "@use-gesture/react": "^10.3.1",
+    "@vercel/analytics": "^1.6.1",
     "apache-arrow": "^19.0.0",
     "autoprefixer": "^10.4.20",
     "class-variance-authority": "^0.7.1",

@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { Inter, Fraunces, Space_Grotesk, JetBrains_Mono } from "next/font/google";
+import { Analytics } from "@vercel/analytics/react";
 import { ThemeProvider } from "@/components/theme";
 import { ResponsiveProvider } from "@/components/layout/ResponsiveProvider";
 import "./globals.css";
@@ -67,6 +68,7 @@ export default function RootLayout({
             {children}
           </ResponsiveProvider>
         </ThemeProvider>
+        <Analytics />
       </body>
     </html>
   );
