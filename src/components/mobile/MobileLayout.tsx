@@ -33,6 +33,16 @@ interface NeighborStation {
 }
 
 interface StationDetailResponse {
+  station?: {
+    id: string;
+    name: string;
+    latitude: number;
+    longitude: number;
+    lines: string[];
+    ghostScore: number;
+    rolling30dAvg: number | null;
+    trend: number | null;
+  };
   ridershipSeries?: { date: string; entries: number }[];
   comparisons?: {
     systemMedian: number;
