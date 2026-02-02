@@ -24,17 +24,29 @@ export default function TopBar({ onSearch, className }: TopBarProps) {
             {/* Ghost Logo */}
             <div className="relative w-10 h-10 rounded-full bg-gradient-to-br from-brandIndigo/20 to-emerald-500/20 flex items-center justify-center">
               <div className="absolute inset-0 rounded-full animate-ghost-pulse bg-ghost-glow blur-sm" />
+              <div className="absolute -inset-1 rounded-full border border-brandWisteria/30 opacity-60 animate-[ghost-pulse_3.2s_ease-in-out_infinite]" />
               <svg
-                className="w-6 h-6 text-brandIndigo relative z-10"
+                className="w-6 h-6 text-brandIndigo relative z-10 animate-[ghost-float_4s_ease-in-out_infinite]"
                 fill="none"
-                viewBox="0 0 24 24"
-                stroke="currentColor"
-                strokeWidth={1.5}
+                viewBox="-130 -130 260 260"
               >
                 <path
-                  strokeLinecap="round"
+                  d="M0,-120 C-66.3,-120 -120,-66.3 -120,0 L-120,80 C-120,96 -108,108 -96,108 C-84,108 -72,96 -72,80 C-72,96 -60,108 -48,108 C-36,108 -24,96 -24,80 C-24,96 -12,108 0,108 C12,108 24,96 24,80 C24,96 36,108 48,108 C60,108 72,96 72,80 C72,96 84,108 96,108 C108,108 120,96 120,80 L120,0 C120,-66.3 66.3,-120 0,-120 Z"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="10"
                   strokeLinejoin="round"
-                  d="M12 2.25c-2.486 0-4.5 2.014-4.5 4.5v5.25c0 2.761 2.239 5 5 5s5-2.239 5-5V6.75c0-2.486-2.014-4.5-4.5-4.5zm-2.5 15.5v2m5 0v2m-7.5-2h10"
+                />
+                <circle cx="-32" cy="-22" r="14" fill="rgba(255, 255, 255, 0.95)" />
+                <circle cx="32" cy="-22" r="14" fill="rgba(255, 255, 255, 0.95)" />
+                <circle cx="-32" cy="-22" r="6" fill="currentColor" />
+                <circle cx="32" cy="-22" r="6" fill="currentColor" />
+                <path
+                  d="M-18 12 Q0 26 18 12"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="8"
+                  strokeLinecap="round"
                 />
               </svg>
             </div>
@@ -53,13 +65,13 @@ export default function TopBar({ onSearch, className }: TopBarProps) {
         {/* Search and Filters */}
         <div className="flex items-center gap-4">
           {/* Search Bar */}
-          <div className="relative">
+          <div className="relative glass-card rounded-ui overflow-hidden transition-all focus-within:ring-2 focus-within:ring-palette-ocean/40">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-text-tertiary" />
             <input
               type="text"
               placeholder="Search stations..."
               onChange={(e) => onSearch?.(e.target.value)}
-              className="pl-10 pr-4 py-2 w-64 bg-white/50 dark:bg-white/10 backdrop-blur-sm border border-neutral-border rounded-ui text-ui-sm text-text-primary placeholder:text-text-tertiary focus:outline-none focus:ring-2 focus:ring-palette-ocean focus:border-transparent transition-all"
+              className="pl-10 pr-4 py-2 w-64 bg-transparent text-ui-sm text-text-primary placeholder:text-text-tertiary focus:outline-none"
             />
           </div>
 
