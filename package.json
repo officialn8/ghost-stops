@@ -11,7 +11,8 @@
     "test": "vitest",
     "migrate:data": "tsx scripts/migrate-to-postgres.ts",
     "db:push": "prisma db push",
-    "db:generate": "prisma generate"
+    "db:generate": "prisma generate",
+    "tracks:reconcile": "tsx scripts/reconcile-track-segments.ts public/data/cta/chicago_track_segments.geojson"
   },
   "dependencies": {
     "@prisma/client": "^6.19.2",
@@ -67,6 +68,7 @@
     "@types/react-map-gl": "^6.1.7",
     "eslint": "^9",
     "eslint-config-next": "15.1.6",
+    "mapshaper": "^0.6.113",
     "postcss": "^8.5.1",
     "prisma": "^6.19.2",
     "tailwindcss": "^3.4.17",

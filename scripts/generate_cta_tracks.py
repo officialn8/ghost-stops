@@ -7,7 +7,8 @@ This script:
 2. Extracts rail line shapes BY SHAPE_ID
 3. Splits into segments WITHIN each shape_id only
 4. Groups identical segments across lines
-5. Outputs GeoJSON for map rendering
+5. Runs topology cleanup + overlap reconciliation (mapshaper + Turf)
+6. Outputs GeoJSON for map rendering
 """
 
 import json
@@ -15,6 +16,7 @@ import csv
 import zipfile
 import urllib.request
 import os
+import subprocess
 from collections import defaultdict
 from typing import List, Dict, Tuple, Set
 import math
@@ -37,7 +39,21 @@ ROUTE_TO_LINE = {
 def download_gtfs(url: str, output_path: str = "cta_gtfs.zip"):
     """Download GTFS zip file"""
     print(f"Downloading GTFS from {url}...")
-    urllib.request.urlretrieve(url, output_path)
+    request = urllib.request.Request(
+        url,
+        headers={
+            # CTA/Cloudflare sometimes blocks urllib's default client fingerprint.
+            "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+                          "AppleWebKit/537.36 (KHTML, like Gecko) "
+                          "Chrome/124.0.0.0 Safari/537.36",
+            "Accept": "application/zip,application/octet-stream,*/*",
+            "Referer": "https://www.transitchicago.com/developers/gtfs/",
+        },
+    )
+
+    with urllib.request.urlopen(request) as response, open(output_path, "wb") as out:
+        out.write(response.read())
+
     print(f"Downloaded to {output_path}")
     return output_path
 
@@ -101,32 +117,14 @@ def extract_rail_shapes(zip_path: str) -> Dict[str, List[Dict]]:
 
     return result
 
-def normalize_coord(val: float, decimals: int = 5) -> float:
-    """Normalize coordinate to fixed decimals (5 = ~1.1m precision)"""
+def normalize_coord(val: float, decimals: int = 6) -> float:
+    """Normalize coordinate to fixed decimals (6 = ~0.11m precision)"""
     return round(val, decimals)
-
-def is_loop_area(lon: float, lat: float) -> bool:
-    """Check if coordinate is in the Loop area"""
-    # Rough bounds for Chicago Loop
-    return -87.64 <= lon <= -87.62 and 41.87 <= lat <= 41.89
-
-def snap_loop_coord(val: float, is_lon: bool = True) -> float:
-    """Snap Loop coordinates to coarser grid (4 decimals = ~11m)"""
-    # Use coarser snapping for Loop to improve segment matching
-    return round(val, 4)
 
 def point_key(p1: Tuple[float, float], p2: Tuple[float, float]) -> str:
     """Create direction-invariant key for segment"""
-    # Check if segment is in Loop area
-    in_loop = (is_loop_area(p1[0], p1[1]) and is_loop_area(p2[0], p2[1]))
-
-    # Use different normalization for Loop segments
-    if in_loop:
-        lon1, lat1 = snap_loop_coord(p1[0], True), snap_loop_coord(p1[1], False)
-        lon2, lat2 = snap_loop_coord(p2[0], True), snap_loop_coord(p2[1], False)
-    else:
-        lon1, lat1 = normalize_coord(p1[0]), normalize_coord(p1[1])
-        lon2, lat2 = normalize_coord(p2[0]), normalize_coord(p2[1])
+    lon1, lat1 = normalize_coord(p1[0]), normalize_coord(p1[1])
+    lon2, lat2 = normalize_coord(p2[0]), normalize_coord(p2[1])
 
     # Sort points to make key direction-invariant
     if (lon1, lat1) < (lon2, lat2):
@@ -202,8 +200,9 @@ def create_segments(shapes_by_route: Dict[str, List[Dict]]) -> Tuple[Dict[str, S
 
             total_shapes += 1
 
-            # Simplify line slightly to reduce point count while preserving shape
-            simplified = douglas_peucker(points, epsilon=0.00003)  # ~3 meters
+            # Keep more vertices to preserve corridor curves; topology cleanup and
+            # overlap reconciliation handle near-miss alignment afterward.
+            simplified = douglas_peucker(points, epsilon=0.00001)  # ~1 meter
 
             # Create segments between consecutive points WITHIN this shape
             for i in range(len(simplified) - 1):
@@ -242,14 +241,18 @@ def detect_corridors(segment_lines: Dict[str, Set[str]]) -> Dict[str, str]:
         loop_lines = {"Brown", "Green", "Orange", "Pink", "Purple"}
         if len(lines_set & loop_lines) >= 3:
             corridors[seg_key] = "Loop"
-        elif lines_set >= {"Brown", "Purple"}:
+        # North Main - any combo of Red, Brown, Purple sharing track
+        elif lines_set <= {"Red", "Brown", "Purple"} and len(lines_set) >= 2:
             corridors[seg_key] = "North Main"
-        elif lines_set >= {"Red", "Green"}:
-            corridors[seg_key] = "South Side"
-        elif lines_set == {"Blue", "Pink"}:
-            corridors[seg_key] = "Forest Park"
+        # Lake corridor - Green+Orange approach to Loop
+        elif lines_set <= {"Green", "Orange"} and len(lines_set) == 2:
+            corridors[seg_key] = "Lake"
         elif lines_set == {"Green", "Pink"}:
             corridors[seg_key] = "West Side"
+        elif lines_set == {"Blue", "Pink"}:
+            corridors[seg_key] = "Forest Park"
+        elif lines_set >= {"Red", "Green"}:
+            corridors[seg_key] = "South Side"
         elif len(lines) > 1:
             corridors[seg_key] = "Shared"
         else:
@@ -394,6 +397,16 @@ def main():
             json.dump(geojson, f, indent=2)
 
         print(f"\nSuccessfully wrote {output_path}")
+        print("\nRunning topology cleanup + overlap reconciliation...")
+        subprocess.run(
+            ["npx", "tsx", "scripts/reconcile-track-segments.ts", output_path],
+            check=True
+        )
+        print("✓ Reconciliation complete")
+
+        # Reload reconciled output for sampling
+        with open(output_path, 'r') as f:
+            geojson = json.load(f)
 
         # Print sample segments
         print("\nSample segments:")

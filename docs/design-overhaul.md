@@ -126,9 +126,9 @@ const ctaLineColors = {
 ### Core Components
 
 #### 1. TopBar
-- Fixed glass navigation with logo and search
+- Glass navigation with logo and search
 - Ghost logo with animated pulse effect
-- Integrated search with glass styling
+- Integrate search with glass styling
 
 #### 2. StationList (Left Rail)
 - Floating glass panel with collapsible state

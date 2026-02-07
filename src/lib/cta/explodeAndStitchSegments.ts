@@ -31,6 +31,238 @@ interface StitchedProperties extends ExplodedProperties {
 export { CTA_LINE_ORDER, CTA_LINE_COLORS, type CTALine, isStationActiveByLineFilter };
 
 /**
+ * Corridor configurations define the full set of lines that share each corridor
+ * and their fixed visual order (left to right / negative to positive offset).
+ * Using fixed slots prevents offset jumps when the sharing set changes between
+ * adjacent segments.
+ */
+interface CorridorConfig {
+  lines: readonly string[];
+  offsetStep: number;
+}
+
+const CORRIDOR_CONFIGS: Record<string, CorridorConfig> = {
+  "Loop":         { lines: ["Brown", "Green", "Blue", "Orange", "Pink", "Purple"], offsetStep: 2.4 },
+  "North Main":   { lines: ["Red", "Purple", "Brown"],                    offsetStep: 4.0 },
+  "Lake":         { lines: ["Green", "Orange"],                           offsetStep: 5.0 },
+  "West Side":    { lines: ["Green", "Pink"],                             offsetStep: 5.0 },
+  "Forest Park":  { lines: ["Blue", "Pink"],                              offsetStep: 5.0 },
+  "South Side":   { lines: ["Red", "Green"],                              offsetStep: 5.0 },
+};
+
+const LOOP_CORE_BBOX = {
+  minLon: -87.6342,
+  minLat: 41.8767,
+  maxLon: -87.6259,
+  maxLat: 41.8859,
+};
+
+type LoopSide = 'north' | 'south' | 'east' | 'west';
+
+function inferLoopSideFromCoords(coords: number[][]): LoopSide {
+  const start = coords[0];
+  const end = coords[coords.length - 1];
+  const midLon = (start[0] + end[0]) / 2;
+  const midLat = (start[1] + end[1]) / 2;
+  const dx = Math.abs(end[0] - start[0]);
+  const dy = Math.abs(end[1] - start[1]);
+
+  const centerLon = (LOOP_CORE_BBOX.minLon + LOOP_CORE_BBOX.maxLon) / 2;
+  const centerLat = (LOOP_CORE_BBOX.minLat + LOOP_CORE_BBOX.maxLat) / 2;
+
+  if (dx >= dy * 1.2) return midLat >= centerLat ? 'north' : 'south';
+  if (dy >= dx * 1.2) return midLon >= centerLon ? 'east' : 'west';
+
+  const edgeDistance: Record<LoopSide, number> = {
+    north: Math.abs(midLat - LOOP_CORE_BBOX.maxLat),
+    south: Math.abs(midLat - LOOP_CORE_BBOX.minLat),
+    west: Math.abs(midLon - LOOP_CORE_BBOX.minLon),
+    east: Math.abs(midLon - LOOP_CORE_BBOX.maxLon),
+  };
+
+  return (Object.entries(edgeDistance).sort((a, b) => a[1] - b[1])[0][0]) as LoopSide;
+}
+
+function normalizeLoopClockwise(coordinates: number[][]): number[][] {
+  if (coordinates.length < 2) return coordinates;
+
+  const start = coordinates[0];
+  const end = coordinates[coordinates.length - 1];
+  const midLon = (start[0] + end[0]) / 2;
+  const midLat = (start[1] + end[1]) / 2;
+  const centerLon = (LOOP_CORE_BBOX.minLon + LOOP_CORE_BBOX.maxLon) / 2;
+  const centerLat = (LOOP_CORE_BBOX.minLat + LOOP_CORE_BBOX.maxLat) / 2;
+
+  const dx = end[0] - start[0];
+  const dy = end[1] - start[1];
+  const rx = midLon - centerLon;
+  const ry = midLat - centerLat;
+
+  // Tangent for clockwise traversal around loop center.
+  const tx = ry;
+  const ty = -rx;
+  const dot = dx * tx + dy * ty;
+
+  if (Math.abs(dot) > 1e-12) {
+    return dot >= 0 ? coordinates : [...coordinates].reverse();
+  }
+
+  // Fallback for near-degenerate vectors.
+  const side = inferLoopSideFromCoords(coordinates);
+  let shouldReverse = false;
+  if (side === 'north') shouldReverse = start[0] > end[0]; // west -> east
+  if (side === 'south') shouldReverse = start[0] < end[0]; // east -> west
+  if (side === 'east') shouldReverse = start[1] < end[1]; // north -> south
+  if (side === 'west') shouldReverse = start[1] > end[1]; // south -> north
+
+  return shouldReverse ? [...coordinates].reverse() : coordinates;
+}
+
+/**
+ * Mapbox line-offset is direction-relative (positive means "right of line").
+ * Normalize segment direction so offsets stay visually stable across segments.
+ */
+function normalizeSegmentDirection(
+  coordinates: number[][],
+  corridor: string,
+  isLoop: boolean,
+  lines?: string[]
+): number[][] {
+  if (coordinates.length < 2) return coordinates;
+
+  const start = coordinates[0];
+  const end = coordinates[coordinates.length - 1];
+  const midLon = (start[0] + end[0]) / 2;
+  const midLat = (start[1] + end[1]) / 2;
+  let shouldReverse = false;
+
+  const lineSet = new Set(lines ?? []);
+  const isPureGreenOrange = lineSet.size === 2 && lineSet.has('Green') && lineSet.has('Orange');
+
+  if (isPureGreenOrange) {
+    // Force stable orientation for the Green/Orange shared spine:
+    // - Wabash/Loop south connector: north -> south
+    // - Lake approach and other strongly horizontal sections: west -> east
+    const dx = Math.abs(end[0] - start[0]);
+    const dy = Math.abs(end[1] - start[1]);
+    const inWabashConnector = midLon > -87.6298 && midLon < -87.6248 && midLat > 41.868 && midLat < 41.8795;
+    shouldReverse = (inWabashConnector || dy >= dx * 0.9)
+      ? start[1] < end[1] // north -> south
+      : start[0] > end[0]; // west -> east
+
+    return shouldReverse ? [...coordinates].reverse() : coordinates;
+  }
+
+  if (isLoop || corridor === 'Loop') {
+    return normalizeLoopClockwise(coordinates);
+  } else if (corridor === 'North Main' || corridor === 'South Side') {
+    // Prefer north->south, but avoid random flips on near-horizontal segments.
+    const dx = Math.abs(end[0] - start[0]);
+    const dy = Math.abs(end[1] - start[1]);
+    shouldReverse = dx > dy * 1.25
+      ? start[0] > end[0]  // west -> east
+      : start[1] < end[1]; // north -> south
+  } else if (corridor === 'Lake') {
+    // Lake is mostly west->east, but south Loop connectors can be vertical.
+    // Choose canonical direction by dominant axis to avoid offset sign flips.
+    const dx = Math.abs(end[0] - start[0]);
+    const dy = Math.abs(end[1] - start[1]);
+    shouldReverse = dy > dx * 1.25
+      ? start[1] < end[1] // north -> south for vertical Lake segments
+      : start[0] > end[0]; // west -> east for horizontal Lake segments
+  } else if (corridor === 'West Side' || corridor === 'Forest Park') {
+    // Canonical west -> east for west/east corridors
+    shouldReverse = start[0] > end[0];
+  } else {
+    const dx = Math.abs(end[0] - start[0]);
+    const dy = Math.abs(end[1] - start[1]);
+
+    if (dx >= dy) {
+      shouldReverse = start[0] > end[0]; // west -> east
+    } else {
+      shouldReverse = start[1] < end[1]; // north -> south
+    }
+  }
+
+  return shouldReverse ? [...coordinates].reverse() : coordinates;
+}
+
+/**
+ * Detect the corridor from the set of lines sharing a segment.
+ * This is the primary detection method — it works regardless of what
+ * corridor label is stored in the GeoJSON data.
+ */
+function detectCorridorFromLines(lines: string[]): string | null {
+  const lineSet = new Set(lines);
+
+  // North Main: any combo of Red, Brown, Purple (2+)
+  if (lineSet.size >= 2 && [...lineSet].every(l => ["Red", "Brown", "Purple"].includes(l))) {
+    return "North Main";
+  }
+
+  // Lake: Green + Orange
+  if (lineSet.size === 2 && lineSet.has("Green") && lineSet.has("Orange")) {
+    return "Lake";
+  }
+
+  // West Side: Green + Pink
+  if (lineSet.size === 2 && lineSet.has("Green") && lineSet.has("Pink")) {
+    return "West Side";
+  }
+
+  // Forest Park: Blue + Pink
+  if (lineSet.size === 2 && lineSet.has("Blue") && lineSet.has("Pink")) {
+    return "Forest Park";
+  }
+
+  // South Side: Red + Green
+  if (lineSet.size >= 2 && lineSet.has("Red") && lineSet.has("Green")) {
+    return "South Side";
+  }
+
+  // Loop fallback:
+  // Require a Brown or Purple anchor so tri-line junctions like
+  // Green+Orange+Pink don't accidentally receive Loop slot offsets.
+  const loopLines = new Set(["Brown", "Green", "Orange", "Pink", "Purple"]);
+  const loopWithBlue = new Set(["Brown", "Green", "Blue", "Orange", "Pink", "Purple"]);
+  const loopOverlap = [...lineSet].filter(l => loopLines.has(l)).length;
+  const loopWithBlueOverlap = [...lineSet].filter(l => loopWithBlue.has(l)).length;
+  const hasLoopAnchor = lineSet.has("Brown") || lineSet.has("Purple");
+  if ((loopOverlap >= 3 && hasLoopAnchor) || (loopWithBlueOverlap >= 4 && hasLoopAnchor)) {
+    return "Loop";
+  }
+
+  return null;
+}
+
+/**
+ * Get the fixed offset for a line within a corridor.
+ * First tries the corridor label from the data, then falls back to
+ * detecting the corridor from the line combination.
+ * Returns null if no matching corridor config is found.
+ */
+function getCorridorOffset(corridor: string, line: string, allLines?: string[]): number | null {
+  // Try direct corridor lookup first
+  let config = CORRIDOR_CONFIGS[corridor];
+
+  // If corridor label doesn't match a config, detect from line combination
+  if (!config && allLines && allLines.length >= 2) {
+    const detectedCorridor = detectCorridorFromLines(allLines);
+    if (detectedCorridor) {
+      config = CORRIDOR_CONFIGS[detectedCorridor];
+    }
+  }
+
+  if (!config) return null;
+
+  const lineIndex = config.lines.indexOf(line);
+  if (lineIndex === -1) return null;
+
+  const totalSlots = config.lines.length;
+  return (lineIndex - (totalSlots - 1) / 2) * config.offsetStep;
+}
+
+/**
  * Create a unique key for grouping segments by their properties
  */
 function getGroupKey(props: ExplodedProperties): string {
@@ -247,11 +479,9 @@ function mergeSegments(
     }
 
     if (!found) {
-      // Can't continue path - add remaining segments as separate features
-      if (process.env.NODE_ENV !== 'production') {
-        console.warn(`Could not connect all segments in path. Connected ${used.size} of ${indices.length}`);
-      }
-      break;
+      // Can't continue path. Abort merge so caller can safely fall back to
+      // unmerged segments instead of returning a partial geometry.
+      throw new Error(`Could not connect all segments in path. Connected ${used.size} of ${indices.length}`);
     }
   }
 
@@ -313,6 +543,12 @@ export function explodeAndStitchSegments(
 
   for (const segment of segments.features) {
     const { lines, segment_id, corridor, is_loop } = segment.properties;
+    const normalizedCoordinates = normalizeSegmentDirection(
+      segment.geometry.coordinates,
+      corridor,
+      is_loop,
+      lines
+    );
 
     // Filter to only active lines
     const activeSegmentLines = lines.filter(line => activeLines[line]);
@@ -328,16 +564,30 @@ export function explodeAndStitchSegments(
 
     const sharedCount = sortedLines.length;
 
-    // Use smaller offset for Loop segments
-    const effectiveOffsetStep = is_loop ? loopOffsetStep : offsetStep;
-
-    // Create a feature for each line with calculated offset
+    // Create a feature for each line with corridor-aware fixed offset
     sortedLines.forEach((line, index) => {
-      const offset_px = (index - (sharedCount - 1) / 2) * effectiveOffsetStep;
+      let offset_px: number;
+
+      // Prefer fixed corridor slot offsets whenever available, even if this
+      // segment currently has only one line after filtering/data mismatches.
+      const corridorOffset = getCorridorOffset(corridor, line, lines);
+      if (corridorOffset !== null) {
+        offset_px = corridorOffset;
+      } else if (sharedCount === 1) {
+        // Truly single-line, non-corridor segment
+        offset_px = 0;
+      } else {
+        // Fallback for unconfigured corridors
+        const effectiveOffsetStep = is_loop ? loopOffsetStep : offsetStep;
+        offset_px = (index - (sharedCount - 1) / 2) * effectiveOffsetStep;
+      }
 
       explodedFeatures.push({
         type: "Feature",
-        geometry: segment.geometry,
+        geometry: {
+          type: "LineString",
+          coordinates: normalizedCoordinates
+        },
         properties: {
           segment_id,
           corridor,
@@ -468,9 +718,26 @@ function stitchSegments(
             }
           });
         } else {
-          // Multiple segments to merge
-          const merged = mergeSegments(groupSegments, path);
-          stitchedFeatures.push(merged);
+          // Multiple segments to merge. If merge fails, keep originals to
+          // avoid dropping geometry from partially connected paths.
+          try {
+            const merged = mergeSegments(groupSegments, path);
+            stitchedFeatures.push(merged);
+          } catch (error) {
+            if (process.env.NODE_ENV !== 'production') {
+              console.warn('Falling back to unmerged segments for path:', error);
+            }
+
+            for (const idx of path) {
+              stitchedFeatures.push({
+                ...groupSegments[idx],
+                properties: {
+                  ...groupSegments[idx].properties,
+                  segment_count: 1
+                }
+              });
+            }
+          }
         }
       }
     }

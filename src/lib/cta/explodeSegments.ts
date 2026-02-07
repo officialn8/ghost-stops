@@ -37,6 +37,117 @@ interface ExplodedProperties {
   offset_px: number;
 }
 
+const LOOP_CORE_BBOX = {
+  minLon: -87.6342,
+  minLat: 41.8767,
+  maxLon: -87.6259,
+  maxLat: 41.8859,
+};
+
+function inLoopBbox(coordinates: number[][]): boolean {
+  if (coordinates.length === 0) return false;
+  const start = coordinates[0];
+  const end = coordinates[coordinates.length - 1];
+  const midLon = (start[0] + end[0]) / 2;
+  const midLat = (start[1] + end[1]) / 2;
+  return (
+    midLon >= LOOP_CORE_BBOX.minLon &&
+    midLon <= LOOP_CORE_BBOX.maxLon &&
+    midLat >= LOOP_CORE_BBOX.minLat &&
+    midLat <= LOOP_CORE_BBOX.maxLat
+  );
+}
+
+function normalizeLoopClockwise(coordinates: number[][]): number[][] {
+  if (coordinates.length < 2) return coordinates;
+
+  const start = coordinates[0];
+  const end = coordinates[coordinates.length - 1];
+  const midLon = (start[0] + end[0]) / 2;
+  const midLat = (start[1] + end[1]) / 2;
+  const centerLon = (LOOP_CORE_BBOX.minLon + LOOP_CORE_BBOX.maxLon) / 2;
+  const centerLat = (LOOP_CORE_BBOX.minLat + LOOP_CORE_BBOX.maxLat) / 2;
+
+  const dx = end[0] - start[0];
+  const dy = end[1] - start[1];
+  const rx = midLon - centerLon;
+  const ry = midLat - centerLat;
+
+  const tx = ry;
+  const ty = -rx;
+  const dot = dx * tx + dy * ty;
+
+  if (Math.abs(dot) > 1e-12) {
+    return dot >= 0 ? coordinates : [...coordinates].reverse();
+  }
+
+  return coordinates;
+}
+
+/**
+ * Mapbox line-offset is direction-relative; normalize segment direction so
+ * offsets don't flip side between adjacent segments.
+ */
+function normalizeSegmentDirection(coordinates: number[][], corridor?: string): number[][] {
+  if (coordinates.length < 2) return coordinates;
+
+  const start = coordinates[0];
+  const end = coordinates[coordinates.length - 1];
+  let shouldReverse: boolean;
+  if (corridor === "Loop" || inLoopBbox(coordinates)) {
+    return normalizeLoopClockwise(coordinates);
+  }
+  if (corridor === "North Main" || corridor === "South Side") {
+    const dx = Math.abs(end[0] - start[0]);
+    const dy = Math.abs(end[1] - start[1]);
+    shouldReverse = dx > dy * 1.25
+      ? start[0] > end[0] // west -> east
+      : start[1] < end[1]; // north -> south
+  } else if (corridor === "Lake") {
+    const dx = Math.abs(end[0] - start[0]);
+    const dy = Math.abs(end[1] - start[1]);
+    shouldReverse = dy > dx * 1.25
+      ? start[1] < end[1] // north -> south for vertical Lake segments
+      : start[0] > end[0]; // west -> east for horizontal Lake segments
+  } else if (corridor === "West Side" || corridor === "Forest Park") {
+    shouldReverse = start[0] > end[0]; // west -> east
+  } else {
+    const dx = Math.abs(end[0] - start[0]);
+    const dy = Math.abs(end[1] - start[1]);
+    shouldReverse = dx >= dy
+      ? start[0] > end[0] // west -> east
+      : start[1] < end[1]; // north -> south
+  }
+
+  return shouldReverse ? [...coordinates].reverse() : coordinates;
+}
+
+function normalizeSegmentDirectionWithLines(
+  coordinates: number[][],
+  corridor: string | undefined,
+  lines: string[]
+): number[][] {
+  if (coordinates.length < 2) return coordinates;
+  const lineSet = new Set(lines);
+  const isPureGreenOrange = lineSet.size === 2 && lineSet.has("Green") && lineSet.has("Orange");
+  if (!isPureGreenOrange) {
+    return normalizeSegmentDirection(coordinates, corridor);
+  }
+
+  const start = coordinates[0];
+  const end = coordinates[coordinates.length - 1];
+  const midLon = (start[0] + end[0]) / 2;
+  const midLat = (start[1] + end[1]) / 2;
+  const dx = Math.abs(end[0] - start[0]);
+  const dy = Math.abs(end[1] - start[1]);
+  const inWabashConnector = midLon > -87.6298 && midLon < -87.6248 && midLat > 41.868 && midLat < 41.8795;
+  const shouldReverse = (inWabashConnector || dy >= dx * 0.9)
+    ? start[1] < end[1] // north -> south
+    : start[0] > end[0]; // west -> east
+
+  return shouldReverse ? [...coordinates].reverse() : coordinates;
+}
+
 /**
  * Explodes multi-line segments into individual per-line features with calculated offsets
  * to render lines side-by-side without overlapping
@@ -54,6 +165,7 @@ export function explodeSegments(
 
   for (const segment of segments.features) {
     const { lines, segment_id, corridor, is_loop } = segment.properties;
+    const normalizedCoordinates = normalizeSegmentDirectionWithLines(segment.geometry.coordinates, corridor, lines);
 
     // Filter to only active lines
     const activeSegmentLines = lines.filter(line => activeLines[line]);
@@ -78,7 +190,10 @@ export function explodeSegments(
 
       explodedFeatures.push({
         type: "Feature",
-        geometry: segment.geometry,
+        geometry: {
+          type: "LineString",
+          coordinates: normalizedCoordinates
+        },
         properties: {
           segment_id,
           corridor,

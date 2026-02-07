@@ -29,6 +29,7 @@ const MAX_VIEWPORT_MARKERS_MEDIUM = 15;  // Max markers at medium zoom (12-13.5)
 const MAX_VIEWPORT_MARKERS_HIGH = 25;    // Max markers at high zoom (13.5-14.5)
 
 const MAPBOX_TOKEN = process.env.NEXT_PUBLIC_MAPBOX_TOKEN;
+const LINE_RENDER_ORDER = [...CTA_LINE_ORDER.filter(line => line !== "Red"), "Red"] as const;
 
 interface Station {
   id: string;
@@ -165,7 +166,13 @@ export default function MapContainer({ searchQuery = "" }: MapContainerProps) {
     if (!trackSegments) return null;
 
     // Only stitch Loop segments for safety (stitchOnlyLoop = true by default)
-    return explodeAndStitchSegments(trackSegments as FeatureCollection<LineString, { segment_id: string; corridor: string; is_loop: boolean; lines: string[] }>, activeLines);
+    return explodeAndStitchSegments(
+      trackSegments as FeatureCollection<LineString, { segment_id: string; corridor: string; is_loop: boolean; lines: string[] }>,
+      activeLines,
+      5.0,
+      3.0,
+      true
+    );
 
     // If stitching causes issues, uncomment this to use simple explosion:
     // return explodeSegments(trackSegments as any, activeLines);
@@ -333,15 +340,15 @@ export default function MapContainer({ searchQuery = "" }: MapContainerProps) {
             {explodedTracks && (
               <Source id="cta-tracks" type="geojson" data={explodedTracks}>
                 {/* Render casing layers first, then core layers */}
-                {CTA_LINE_ORDER.map(line => (
+                {LINE_RENDER_ORDER.map(line => (
                   <Layer
                     key={`casing-${line}`}
                     id={`cta-line-casing-${line}`}
                     type="line"
                     filter={["==", ["get", "line"], line]}
                     layout={{
-                      "line-cap": "butt",      // Cleaner line ends
-                      "line-join": "bevel",    // Cleaner corners for offset lines
+                      "line-cap": "round",
+                      "line-join": "round",
                     }}
                     paint={{
                       "line-color": "rgba(11,18,32,0.15)",
@@ -366,15 +373,15 @@ export default function MapContainer({ searchQuery = "" }: MapContainerProps) {
                     }}
                   />
                 ))}
-                {CTA_LINE_ORDER.map(line => (
+                {LINE_RENDER_ORDER.map(line => (
                   <Layer
                     key={`core-${line}`}
                     id={`cta-line-core-${line}`}
                     type="line"
                     filter={["==", ["get", "line"], line]}
                     layout={{
-                      "line-cap": "butt",      // Cleaner line ends
-                      "line-join": "bevel",    // Cleaner corners
+                      "line-cap": "round",
+                      "line-join": "round",
                     }}
                     paint={{
                       "line-color": CTA_LINE_COLORS[line],
