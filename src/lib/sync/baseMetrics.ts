@@ -4,8 +4,12 @@
  * outside any transaction; the write, which carries the score v2 columns too, is one set-based
  * statement whatever the station count (KTD10), so it fits inside the run's short transaction.
  */
-import type { Prisma, PrismaClient, StationStatus } from "@prisma/client";
+import type { Prisma, PrismaClient } from "@prisma/client";
+import type { MetricsDataStatus } from "@/lib/scoring/ranked";
 import type { ScoreColumns } from "@/lib/scoring/score";
+
+// The ranking rule and the stored data status live with scoring; existing importers keep this path.
+export { isRanked, type MetricsDataStatus } from "@/lib/scoring/ranked";
 
 export interface BaseMetricInputs {
     stationId: string;
@@ -15,21 +19,6 @@ export interface BaseMetricInputs {
     avg90d: number | null;
     avg30d: number | null;
     daysLast60: number;
-}
-
-/**
- * The stored `StationMetrics.dataStatus` (the UI's `DataStatus` in src/lib/utils.ts is another
- * vocabulary): `missing` when a station has no rows in 60 days, `zero` when its 30-day average is
- * under one rider (KTD9).
- */
-export type MetricsDataStatus = "normal" | "zero" | "missing";
-
-/**
- * Whether a station takes part in rankings and peer comparisons (R5, KTD9): open, with riders in
- * its recent data. Closed State/Lake fails both: upstream reports it at 0 riders a day.
- */
-export function isRanked(status: StationStatus, dataStatus: string): boolean {
-    return status === "ACTIVE" && dataStatus === "normal";
 }
 
 export interface BaseMetrics {

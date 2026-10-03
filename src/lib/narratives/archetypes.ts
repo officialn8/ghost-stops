@@ -318,7 +318,6 @@ const RULE_ARCHETYPES = {
   growth: ruleArchetype("growth", METRICS_STORY),
   stable: ruleArchetype("stable", METRICS_STORY),
   recent_decline: ruleArchetype("recent_decline", METRICS_STORY),
-  // The detail route's former hardcoded O'Hare story, unchanged but for its em dash.
   airport_gateway: ruleArchetype(
     "airport_gateway",
     "{{stationName}} is an airport-driven station. Local residential population doesn't explain its ridership: airport arrivals and traveler demand do. Census walkshed metrics are intentionally excluded here to avoid misleading comparisons.",

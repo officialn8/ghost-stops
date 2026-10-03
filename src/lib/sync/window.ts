@@ -39,6 +39,11 @@ export function toDay(date: Date): string {
     return date.toISOString().slice(0, 10);
 }
 
+/** `toDay` for a nullable column: null stays null. */
+export function optionalDay(date: Date | null | undefined): string | null {
+    return date ? toDay(date) : null;
+}
+
 export function addDays(date: string, days: number): string {
     const parsed = toUtcDate(date);
     parsed.setUTCDate(parsed.getUTCDate() + days);

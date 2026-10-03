@@ -1,5 +1,9 @@
 import { type ClassValue, clsx } from "clsx"
 import { twMerge } from "tailwind-merge"
+import type { DataStatus, ScoreTierName } from "@/types/station"
+
+// Defined with the API shapes in src/types/station.ts; re-exported for existing importers.
+export type { DataStatus, ScoreTierName }
 
 export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs))
@@ -23,9 +27,6 @@ export function getGhostScoreColor(score: number): string {
   if (score >= 20) return "#84CC16" // lime-500
   return "#22C55E" // green-500
 }
-
-/** Score v2 tiers (R17), from the most underused stations to the least. */
-export type ScoreTierName = "ghost" | "fading" | "quiet" | "healthy"
 
 /** How a tier is drawn: `ink` is the opacity of the station mark, `mark` its outline style. */
 export type TierMark = "hollow-dashed" | "hollow" | "solid"
@@ -56,8 +57,6 @@ export function tierName(tier?: string | null): ScoreTierName | null {
   const name = tier?.toLowerCase()
   return TIER_NAMES.find((t) => t === name) ?? null
 }
-
-export type DataStatus = "available" | "missing" | "zero"
 
 /**
  * A stored StationMetrics.dataStatus ("normal", "zero", "missing") in the UI's vocabulary; a

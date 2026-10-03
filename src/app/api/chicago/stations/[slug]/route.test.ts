@@ -73,8 +73,16 @@ type Self = {
 
 const STATION_UUID = "0b7a6f3e-5d0c-4c43-9a55-1f3d2a9c8e01";
 
-/** Stubs the station the route resolves (by slug or uuid) and the neighbor lookups by CTA station id. */
-function stubStation(ctaStationId: string | null, lines: string[], self: Self = {}) {
+/** The rows the why card names its peers from, answered to the route's `id: { in }` lookup. */
+let peerStationRows: { id: string; slug: string; name: string; displayName: string }[] = [];
+
+type StationWhere = {
+    OR?: { slug?: string; id?: string }[];
+    ctaStationId?: { in: string[] };
+};
+
+/** A station row as the route's resolution query returns it, with its metrics and closures. */
+function stationRow(ctaStationId: string | null, lines: string[], self: Self = {}) {
     const {
         id = STATION_UUID,
         slug = "under-test",
@@ -86,7 +94,7 @@ function stubStation(ctaStationId: string | null, lines: string[], self: Self = 
         closures = [],
         metrics: own = metrics(300, 67),
     } = self;
-    const row = {
+    return {
         id,
         cityId: CITY,
         ctaStationId,
@@ -102,12 +110,20 @@ function stubStation(ctaStationId: string | null, lines: string[], self: Self = 
         metrics: own && { rolling90dAvg: 320, ...own },
         closures,
     };
-    prismaMock.station.findFirst.mockImplementation((async (args: { where: { slug?: string; id?: string } }) => {
-        return args.where.slug === row.slug || args.where.id === row.id ? row : null;
+}
+
+/**
+ * Stubs the station the route resolves (by slug or uuid), and any `others` its query may also
+ * match, the neighbor lookup by CTA station id, and the peer lookup by station id.
+ */
+function stubStation(ctaStationId: string | null, lines: string[], self: Self = {}, others: Self[] = []) {
+    const rows = [stationRow(ctaStationId, lines, self), ...others.map((o) => stationRow(null, lines, o))];
+    prismaMock.station.findMany.mockImplementation((async (args: { where: StationWhere }) => {
+        const { OR, ctaStationId: byCtaId } = args.where;
+        if (OR) return rows.filter((row) => OR.some((c) => c.slug === row.slug || c.id === row.id));
+        if (byCtaId) return byCtaId.in.flatMap((cta) => (BY_CTA_ID[cta] ? [{ ctaStationId: cta, ...BY_CTA_ID[cta] }] : []));
+        return peerStationRows;
     }) as never);
-    prismaMock.station.findUnique.mockImplementation((async (args: {
-        where: { cityId_ctaStationId: { ctaStationId: string } };
-    }) => BY_CTA_ID[args.where.cityId_ctaStationId.ctaStationId] ?? null) as never);
 }
 
 function get(key: string) {
@@ -133,7 +149,7 @@ function peer(rolling30dAvg: number, lines: string[], status = "ACTIVE", dataSta
 
 /** The station rows the why card names its peers from. */
 function stubPeerStations(stations: { id: string; slug: string; name: string; displayName: string }[]) {
-    prismaMock.station.findMany.mockResolvedValue(stations as never);
+    peerStationRows = stations;
 }
 
 const component = (body: StationDetailResponse, key: WhyComponent["key"]) =>
@@ -141,6 +157,7 @@ const component = (body: StationDetailResponse, key: WhyComponent["key"]) =>
 
 beforeEach(() => {
     resetPrismaMock();
+    peerStationRows = [];
     prismaMock.$queryRaw.mockResolvedValue([] as never);
     prismaMock.stationMetrics.aggregate.mockResolvedValue({ _avg: { rolling30dAvg: 1000 } } as never);
     prismaMock.station.count.mockResolvedValue(143);
@@ -161,8 +178,8 @@ describe("GET /api/chicago/stations/[slug] resolution", () => {
         const bySlug = await detail("harlem-blue-forest-park");
         expect(bySlug.station).toMatchObject({ id: STATION_UUID, slug: "harlem-blue-forest-park", displayName: "Harlem" });
         // Slugs are unique per city, so the lookup is scoped to Chicago.
-        expect(prismaMock.station.findFirst.mock.calls[0][0]).toMatchObject({
-            where: { slug: "harlem-blue-forest-park", city: { code: "chicago" } },
+        expect(prismaMock.station.findMany.mock.calls[0][0]).toMatchObject({
+            where: { OR: [{ slug: "harlem-blue-forest-park" }, { id: "harlem-blue-forest-park" }], city: { code: "chicago" } },
         });
 
         const alias = await get("harlem-forest-park");
@@ -170,20 +187,32 @@ describe("GET /api/chicago/stations/[slug] resolution", () => {
         expect(alias.headers.get("location")).toBe("http://localhost/api/chicago/stations/harlem-blue-forest-park");
 
         // The v1 panels fetch by uuid until U21.
-        prismaMock.station.findFirst.mockClear();
+        prismaMock.station.findMany.mockClear();
         expect((await detail(STATION_UUID)).station.slug).toBe("harlem-blue-forest-park");
-        expect(prismaMock.station.findFirst.mock.calls.map(([args]) => args?.where)).toEqual([
-            { slug: STATION_UUID, city: { code: "chicago" } },
-            { id: STATION_UUID, city: { code: "chicago" } },
-        ]);
+        expect(prismaMock.station.findMany.mock.calls[0][0]?.where).toEqual({
+            OR: [{ slug: STATION_UUID }, { id: STATION_UUID }],
+            city: { code: "chicago" },
+        });
 
         const missing = await get("nowhere");
         expect(missing.status).toBe(404);
         expect(await missing.json()).toEqual({ error: "Station not found" });
     });
 
+    it("prefers a slug match to an id match, and a retired slug to an id match (KTD7)", async () => {
+        // Two other stations whose ids read as this station's slug and as a retired slug.
+        stubStation("40980", ["Blue"], { slug: "harlem-blue-forest-park", name: "Harlem" }, [
+            { id: "harlem-blue-forest-park", slug: "other-1", name: "Other 1" },
+            { id: "harlem-forest-park", slug: "other-2", name: "Other 2" },
+        ]);
+
+        expect((await detail("harlem-blue-forest-park")).station.name).toBe("Harlem");
+        expect((await get("harlem-forest-park")).status).toBe(308);
+        expect((await detail("other-1")).station.name).toBe("Other 1");
+    });
+
     it("answers 500 without the error text when the database fails", async () => {
-        prismaMock.station.findFirst.mockRejectedValue(new Error("connect ECONNREFUSED postgres://user:secret-pw@db.example.test/neondb"));
+        prismaMock.station.findMany.mockRejectedValue(new Error("connect ECONNREFUSED postgres://user:secret-pw@db.example.test/neondb"));
         const logged = vi.spyOn(console, "error").mockImplementation(() => {});
 
         const response = await get("anything");
@@ -298,7 +327,9 @@ describe("GET /api/chicago/stations/[slug] neighbors", () => {
 
         const result = await neighbors();
         expect(result).toEqual({ prev: null, next: null, neighborAvg: 0 });
-        expect(prismaMock.station.findUnique).not.toHaveBeenCalled();
+        expect(prismaMock.station.findMany).not.toHaveBeenCalledWith(
+            expect.objectContaining({ where: expect.objectContaining({ ctaStationId: expect.anything() }) }),
+        );
     });
 
     it("names a closed or no-rider neighbor without a score and leaves it out of the average", async () => {

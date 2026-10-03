@@ -23,6 +23,7 @@
  */
 
 import type { DataQuality, Prisma, PrismaClient, StationStatus } from "@prisma/client";
+import { optionalDay, toDay } from "@/lib/sync/window";
 import type {
   ArchetypeKey,
   FactKey,
@@ -41,7 +42,7 @@ export const TEMPLATE_VERSION = "v2";
 /** O'Hare by CTA station id, never by name: two other stations have "O'Hare" in theirs. */
 const OHARE_CTA_STATION_ID = "40890";
 
-/** The confidence the detail route's hardcoded O'Hare story carried, kept so the page reads the same. */
+/** The confidence an airport_gateway story carries. */
 const AIRPORT_CONFIDENCE = 0.85;
 
 /**
@@ -279,8 +280,6 @@ export interface NarrativeStationRecord {
   facts: NarrativeFacts;
 }
 
-const toDay = (date: Date) => date.toISOString().slice(0, 10);
-
 /**
  * Every station in the city with its closures and stored facts, in one read outside the run's
  * transaction. Facts and their sources are only read, never written.
@@ -305,10 +304,10 @@ export async function readNarrativeStations(
     stationId: s.id,
     ctaStationId: s.ctaStationId,
     name: s.displayName?.trim() || s.name,
-    openedAt: s.openedAt === null ? null : toDay(s.openedAt),
+    openedAt: optionalDay(s.openedAt),
     closures: s.closures.map((c) => ({
       startDate: toDay(c.startDate),
-      endDate: c.endDate === null ? null : toDay(c.endDate),
+      endDate: optionalDay(c.endDate),
       reason: c.reason,
     })),
     facts: Object.fromEntries(s.facts.map((f) => [f.factKey, { value: f.value, quality: f.quality }])) as NarrativeFacts,

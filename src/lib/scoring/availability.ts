@@ -7,7 +7,7 @@
  * opening date, all of which are stored (StationMetrics.dataThrough, StationClosure,
  * Station.openedAt), so a reader can re-derive the reason for any persisted null percentile.
  */
-import { addDays } from "@/lib/sync/window";
+import { addDays, type DateWindow } from "@/lib/sync/window";
 import type { PeerBasis } from "./peers";
 import { componentWindows, YEAR_2019, type ComponentKey } from "./windows";
 
@@ -41,21 +41,22 @@ export type NullReason =
 /** Far enough for the longest window (a year and 90 days) to clear any closure that has ended. */
 const AVAILABLE_FROM_HORIZON_DAYS = 3 * 366;
 
-const overlaps = (window: { start: string; end: string }, closure: ClosureRange) =>
+const overlaps = (window: DateWindow, closure: ClosureRange) =>
     closure.startDate <= window.end && (closure.endDate === null || closure.endDate > window.start);
 
+/** A window is blocked when one of the station's closures overlaps it or the station opened after it starts. */
+function blocksWindow(window: DateWindow, ctx: AvailabilityContext): boolean {
+    return ctx.closures.some((c) => overlaps(window, c)) || (ctx.openedAt !== null && ctx.openedAt > window.start);
+}
+
 function isBlocked(component: ComponentKey, ctx: AvailabilityContext, dataThrough: string): boolean {
-    const windows = componentWindows(component, dataThrough);
-    return windows.some(
-        (w) => ctx.closures.some((c) => overlaps(w, c)) || (ctx.openedAt !== null && ctx.openedAt > w.start),
-    );
+    return componentWindows(component, dataThrough).some((w) => blocksWindow(w, ctx));
 }
 
 /** The first data-through date after `ctx.dataThrough` at which the component is no longer blocked. */
 function availableFrom(component: ComponentKey, ctx: AvailabilityContext): string | null {
     // The 2019 window never moves: a closure in it, or an opening after it starts, blocks for good.
-    const in2019 = ctx.closures.some((c) => overlaps(YEAR_2019, c)) || (ctx.openedAt !== null && ctx.openedAt > YEAR_2019.start);
-    if (component === "longRun" && in2019) return null;
+    if (component === "longRun" && blocksWindow(YEAR_2019, ctx)) return null;
     let date = ctx.dataThrough;
     for (let i = 0; i < AVAILABLE_FROM_HORIZON_DAYS; i++) {
         date = addDays(date, 1);

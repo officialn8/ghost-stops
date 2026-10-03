@@ -6,10 +6,15 @@
  * Dates are YYYY-MM-DD calendar strings (KTD17); only `lastSuccessfulFetch` is an instant, an ISO
  * timestamp. Nothing here is computed: the server builds every value, including the sentences.
  */
-import type { DataStatus, ScoreTierName } from "@/lib/utils";
 import type { DataSourceInfo, FactKey, FactValue, StationBadge, StationNarrativeData } from "./narrative";
 
-export type { DataStatus, ScoreTierName, StationBadge };
+export type { StationBadge };
+
+/** Score v2 tiers (R17), from the most underused stations to the least. */
+export type ScoreTierName = "ghost" | "fading" | "quiet" | "healthy";
+
+/** A station's data status in the UI's vocabulary; src/lib/utils.ts maps the stored one to it. */
+export type DataStatus = "available" | "missing" | "zero";
 
 /** Station.status, derived from the station's closures by the seed and every sync run. */
 export type StationStatus = "ACTIVE" | "CLOSED" | "TEMP_CLOSED";

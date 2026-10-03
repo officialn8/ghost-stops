@@ -5,7 +5,7 @@
  */
 import type { PrismaClient } from "@prisma/client";
 import type { Freshness } from "@/types/station";
-import { toDay } from "./window";
+import { optionalDay } from "./window";
 
 export interface LastSuccessfulRun {
     finishedAt: Date | null;
@@ -24,7 +24,7 @@ export function lastSuccessfulRun(db: Pick<PrismaClient, "syncRun">): Promise<La
 /** The data-through date as YYYY-MM-DD (KTD17) and the finish time as an ISO timestamp. */
 export function freshnessOf(run: LastSuccessfulRun | null): Freshness {
     return {
-        dataThrough: run?.windowEnd ? toDay(run.windowEnd) : null,
+        dataThrough: optionalDay(run?.windowEnd),
         lastSuccessfulFetch: run?.finishedAt?.toISOString() ?? null,
     };
 }

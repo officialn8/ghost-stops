@@ -16,9 +16,12 @@
  * src/lib/cta/sequences.ts, the same branches the StationLineSequence table is seeded from, plus
  * the junctions that table does not hold.
  */
-import { getPrimaryLine, LINE_BRANCHES, linesForStation, neighborsOnLine } from "@/lib/cta/sequences";
+import { branchOf, getPrimaryLine, LINE_BRANCHES, linesForStation, neighborsOnLine } from "@/lib/cta/sequences";
 import type { CTALine } from "@/lib/ctaLineColors";
+import type { PeerBasis } from "@/types/station";
 import { median } from "./components";
+
+export type { PeerBasis };
 
 export const HUB_CTA_IDS: ReadonlySet<string> = new Set([
     "41320", // Belmont (Red/Brown/Purple)
@@ -30,8 +33,6 @@ export const HUB_CTA_IDS: ReadonlySet<string> = new Set([
 
 /** The eight elevated Loop stations, from the ring branch the four Loop lines share. */
 export const LOOP_CTA_IDS: ReadonlySet<string> = new Set(LINE_BRANCHES.find((b) => b.ring)?.stations ?? []);
-
-export type PeerBasis = "neighbors" | "loop" | "branch-median" | "none";
 
 /** A station that may serve as a peer: ranked, with a 12-month window clear of closures and its opening. */
 export interface PeerCandidate {
@@ -54,46 +55,38 @@ export interface PeerSet {
 
 type Side = "prev" | "next";
 
-/**
- * Walks one way from `start`, stopping each path at its first station that can be a peer. A hub
- * ends a path: past it the track belongs to more lines, and the stations there are not this
- * stretch's neighbors (South Boulevard would otherwise reach past Howard to Wilson).
- */
-function nearestOnSide(start: string, line: CTALine, side: Side, canPeer: (id: string) => boolean): string[] {
-    const found: string[] = [];
-    const seen = new Set([start]);
-    let frontier = [start];
-    while (frontier.length > 0) {
-        const next: string[] = [];
-        for (const id of frontier) {
-            for (const neighbor of neighborsOnLine(id, line)?.[side] ?? []) {
-                if (seen.has(neighbor)) continue;
-                seen.add(neighbor);
-                if (canPeer(neighbor)) found.push(neighbor);
-                else if (!HUB_CTA_IDS.has(neighbor)) next.push(neighbor);
-            }
-        }
-        frontier = next;
-    }
-    return found;
+interface Walk {
+    /** Keep walking a path past a peer it found, or end the path there. */
+    pastPeers: boolean;
+    /** Stop once this many peers are found. */
+    limit: number;
 }
 
+/** The nearest peer on every path one way. */
+const NEAREST_ON_EACH_PATH: Walk = { pastPeers: false, limit: Infinity };
+/** The two nearest peers one way, for a station with none on its other side. */
+const TWO_NEAREST: Walk = { pastPeers: true, limit: 2 };
+
 /**
- * Walks one way from `start`, through stations that cannot be peers but not past a hub, and
- * returns the first `count` that can.
+ * Walks one way from `start`, breadth first, through stations that cannot be peers, and returns
+ * the peers it reaches, nearest first. A hub ends a path: past it the track belongs to more lines,
+ * and the stations there are not this stretch's neighbors (South Boulevard would otherwise reach
+ * past Howard to Wilson).
  */
-function nearestN(start: string, line: CTALine, side: Side, canPeer: (id: string) => boolean, count: number): string[] {
+function walkToPeers(start: string, line: CTALine, side: Side, canPeer: (id: string) => boolean, walk: Walk): string[] {
     const found: string[] = [];
     const seen = new Set([start]);
     let frontier = [start];
-    while (frontier.length > 0 && found.length < count) {
+    while (frontier.length > 0 && found.length < walk.limit) {
         const next: string[] = [];
         for (const id of frontier) {
             for (const neighbor of neighborsOnLine(id, line)?.[side] ?? []) {
                 if (seen.has(neighbor)) continue;
                 seen.add(neighbor);
-                if (canPeer(neighbor) && found.length < count) found.push(neighbor);
-                if (!HUB_CTA_IDS.has(neighbor)) next.push(neighbor);
+                const peer = canPeer(neighbor);
+                if (peer && found.length < walk.limit) found.push(neighbor);
+                if (HUB_CTA_IDS.has(neighbor) || (peer && !walk.pastPeers)) continue;
+                next.push(neighbor);
             }
         }
         frontier = next;
@@ -128,7 +121,7 @@ function peerSet(
  */
 export function selectPeers(ctaStationId: string | null, eligible: ReadonlyMap<string, PeerCandidate>): PeerSet {
     const line = ctaStationId === null ? null : getPrimaryLine(linesForStation(ctaStationId));
-    const branch = line === null ? undefined : LINE_BRANCHES.find((b) => b.line === line && b.stations.includes(ctaStationId!));
+    const branch = line === null ? undefined : branchOf(ctaStationId!, line);
     if (ctaStationId === null || line === null || branch === undefined) {
         return { basis: "none", line: null, branch: null, ctaStationIds: [], stationIds: [], avg12m: [], baseline: null };
     }
@@ -141,12 +134,12 @@ export function selectPeers(ctaStationId: string | null, eligible: ReadonlyMap<s
     if (isHub) return peerSet("branch-median", line, branch.branch, branch.stations.filter(canPeer), eligible);
     if (inLoop) return peerSet("loop", line, branch.branch, [...LOOP_CTA_IDS].filter(canPeer), eligible);
 
-    const prev = nearestOnSide(ctaStationId, line, "prev", canPeer);
-    const next = nearestOnSide(ctaStationId, line, "next", canPeer);
+    const prev = walkToPeers(ctaStationId, line, "prev", canPeer, NEAREST_ON_EACH_PATH);
+    const next = walkToPeers(ctaStationId, line, "next", canPeer, NEAREST_ON_EACH_PATH);
     let ids: string[];
     if (prev.length > 0 && next.length > 0) ids = [...prev, ...next];
-    else if (prev.length > 0) ids = nearestN(ctaStationId, line, "prev", canPeer, 2);
-    else if (next.length > 0) ids = nearestN(ctaStationId, line, "next", canPeer, 2);
+    else if (prev.length > 0) ids = walkToPeers(ctaStationId, line, "prev", canPeer, TWO_NEAREST);
+    else if (next.length > 0) ids = walkToPeers(ctaStationId, line, "next", canPeer, TWO_NEAREST);
     else ids = [];
     return peerSet("neighbors", line, branch.branch, ids, eligible);
 }

@@ -410,6 +410,39 @@ describe("runSync", () => {
         expect(await cityNarratives()).toEqual([]);
     });
 
+    it("writes metrics and statuses but no narratives, and finalizes as partial, when the narrative read fails", async () => {
+        await run(WINDOW_ROWS);
+        await prisma.stationMetrics.deleteMany({ where: { station: { city: { code: CITY } } } });
+        await prisma.stationNarrative.deleteMany({ where: { station: { city: { code: CITY } } } });
+        await prisma.stationClosure.create({
+            data: { stationId: stationIdFor(CITY, CLOSED), startDate: new Date("2026-01-05"), reason: "Rebuild" },
+        });
+
+        // The narrative read is the one station read that selects facts. It fails at once, while the
+        // status and metric reads are still running.
+        const bound = <T extends object>(target: T, key: string | symbol) => {
+            const value = Reflect.get(target, key);
+            return typeof value === "function" ? value.bind(target) : value;
+        };
+        const station = new Proxy(prisma.station, {
+            get: (target, key) =>
+                key === "findMany"
+                    ? (args: Prisma.StationFindManyArgs) =>
+                          args?.select?.facts ? Promise.reject(new Error("narrative read exploded")) : target.findMany(args)
+                    : bound(target, key),
+        });
+        const db = new Proxy(prisma, { get: (target, key) => (key === "station" ? station : bound(target, key)) });
+        const summary = await runSync(db, fakeSource(WINDOW_ROWS).source, daily());
+        const record = await prisma.syncRun.findUniqueOrThrow({ where: { id: summary.runId } });
+
+        expect(record).toMatchObject({ status: "PARTIAL", lease: null, rowsInserted: 0, rowsRevised: 0 });
+        expect(record.error).toMatch(/narrative read exploded/);
+        expect(summary).toMatchObject({ dataThrough: "2026-07-31", narrativesWritten: 0 });
+        expect(await prisma.stationMetrics.count({ where: { station: { city: { code: CITY } } } })).toBe(2);
+        expect((await prisma.station.findUniqueOrThrow({ where: { id: stationIdFor(CITY, CLOSED) } })).status).toBe("CLOSED");
+        expect(await cityNarratives()).toEqual([]);
+    });
+
     it("logs and counts a narrative that cites a fact its station lacks, writing the others", async () => {
         await seedFact(A, "population_change", 0.03);
         const lines: string[] = [];

@@ -5,9 +5,10 @@
  * 1. Insert the SyncRun row holding the lease, or record a skipped run and stop.
  * 2. Re-fetch the trailing window (or the runner's --since range) month by month and upsert it.
  * 3. Daily: re-fetch up to three carried drift months. Weekly: reconcile and record drift months.
- * 4. Compute base metrics, station statuses, score v2, and then the narratives from the scores,
- *    outside any transaction, and write them in one, so a scoring failure leaves the previous
- *    run's metrics in place. A narrative failure does not hold back the metrics (KTD11).
+ * 4. Read the station statuses, the metric inputs, and the narrative inputs together; then compute
+ *    score v2 and the narratives from the scores, outside any transaction, and write them in one,
+ *    so a scoring failure leaves the previous run's metrics in place. A narrative failure, in its
+ *    read or its generation, does not hold back the metrics (KTD11).
  * 5. Finalize the row as ok, partial (data changed before an error, or the narratives failed), or
  *    failed, and release the lease.
  */
@@ -83,21 +84,22 @@ export interface SyncSummary {
 /**
  * Every station's metrics row for `dataThrough`: base metrics and score v2, computed from reads
  * alone. Stations with no ridership at all get no row. `statuses` are this run's derived statuses,
- * which decide who is ranked.
+ * which decide who is ranked; a run passes their pending read, so it overlaps the metric reads.
  */
 export async function computeStationMetrics(
     db: Pick<PrismaClient, "$queryRaw" | "station">,
     cityId: string,
     dataThrough: string,
-    statuses: readonly StationStatusRow[],
+    statuses: readonly StationStatusRow[] | Promise<readonly StationStatusRow[]>,
     score: typeof scoreStations = scoreStations,
 ): Promise<StationMetricsRow[]> {
-    const [inputs, windows] = await Promise.all([
+    const [inputs, windows, statusRows] = await Promise.all([
         readBaseMetricInputs(db, cityId, dataThrough),
         readScoreWindows(db, cityId, dataThrough),
+        statuses,
     ]);
     const metrics = computeBaseMetrics(inputs);
-    const statusById = new Map(statuses.map((s) => [s.stationId, s.status]));
+    const statusById = new Map(statusRows.map((s) => [s.stationId, s.status]));
     const windowsById = new Map(windows.map((w) => [w.stationId, w]));
     const scoreInputs = metrics.map((m): StationScoreInput => {
         const w = windowsById.get(m.stationId);
@@ -249,22 +251,31 @@ export async function runSync(db: PrismaClient, source: RidershipSource, options
         }
 
         const dataThrough = await storedMaxDate(db, city.id);
-        const statuses = await deriveStationStatuses(db, city.id, todayInChicago(now()));
+        // The status, metric, and narrative reads are independent, so they run together; scoring and
+        // narrative generation (CPU only) follow. A failed status or metric read aborts the run
+        // before any write. A failed narrative read becomes the narrative error when awaited below;
+        // it is marked handled now because it may fail while the metric reads are still running.
+        const statusesRead = deriveStationStatuses(db, city.id, todayInChicago(now()));
+        const narrativeStationsRead: Promise<NarrativeStationRecord[]> =
+            dataThrough === null ? Promise.resolve([]) : readNarrativeStations(db, city.id);
+        narrativeStationsRead.catch(() => {});
         const metrics =
             dataThrough === null
                 ? []
-                : await computeStationMetrics(db, city.id, dataThrough, statuses, options.scoreStations);
+                : await computeStationMetrics(db, city.id, dataThrough, statusesRead, options.scoreStations);
+        const statuses = await statusesRead;
 
-        // Narratives follow scoring and quote its numbers (KTD11). If generating them fails, the
-        // fresh metrics and statuses are still written and the run ends partial; the detail route
-        // withholds any story whose data-through date no longer matches the metrics (U14).
+        // Narratives follow scoring and quote its numbers (KTD11). If reading their inputs or
+        // generating them fails, the fresh metrics and statuses are still written and the run ends
+        // partial; the detail route withholds any story whose data-through date no longer matches
+        // the metrics (U14).
         let narratives: NarrativeRow[] = [];
         let narrativeError: unknown = null;
         if (dataThrough !== null) {
             try {
                 const generate = options.generateNarratives ?? generateNarratives;
-                const stations = await readNarrativeStations(db, city.id);
-                const generated = generate(narrativeInputs(stations, metrics, statuses), dataThrough);
+                const narrativeStations = await narrativeStationsRead;
+                const generated = generate(narrativeInputs(narrativeStations, metrics, statuses), dataThrough);
                 narratives = generated.rows;
                 summary.narrativesRejected = generated.rejected.length;
                 for (const r of generated.rejected) {

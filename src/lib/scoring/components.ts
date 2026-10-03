@@ -41,7 +41,9 @@ export function median(values: readonly number[]): number | null {
     return sorted.length % 2 === 1 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
 }
 
-const mean = (values: readonly number[]) => (values.length === 0 ? null : values.reduce((a, b) => a + b, 0) / values.length);
+export function mean(values: readonly number[]): number | null {
+    return values.length === 0 ? null : values.reduce((a, b) => a + b, 0) / values.length;
+}
 
 function madRatio(values: readonly number[]): number | null {
     const m = median(values);

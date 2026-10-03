@@ -287,7 +287,8 @@ export interface LineNeighbors {
     next: string[];
 }
 
-function branchOf(ctaStationId: string, line: CTALine): LineBranch | undefined {
+/** The branch of `line` that holds the station; undefined when the line does not serve it. */
+export function branchOf(ctaStationId: string, line: CTALine): LineBranch | undefined {
     return LINE_BRANCHES.find((b) => b.line === line && b.stations.includes(ctaStationId));
 }
 

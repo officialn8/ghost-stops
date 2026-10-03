@@ -177,13 +177,15 @@ describe("GET /api/chicago/stations", () => {
 
         // The detail route reads the same sync run.
         const { GET: detailGET } = await import("./[slug]/route");
-        prismaMock.station.findFirst.mockResolvedValue({
-            ...row("kostner", "Kostner", {}, null),
-            cityId: CITY,
-            ctaStationId: null,
-            openedAt: null,
-            closures: [],
-        } as never);
+        prismaMock.station.findMany.mockResolvedValue([
+            {
+                ...row("kostner", "Kostner", {}, null),
+                cityId: CITY,
+                ctaStationId: null,
+                openedAt: null,
+                closures: [],
+            },
+        ] as never);
         prismaMock.stationMetrics.aggregate.mockResolvedValue({ _avg: { rolling30dAvg: null } } as never);
         prismaMock.station.count.mockResolvedValue(0);
         prismaMock.stationMetrics.findMany.mockResolvedValue([]);

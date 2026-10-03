@@ -5,14 +5,13 @@ import { prisma } from "@/lib/prisma";
 import { smallStationBadge } from "@/lib/scoring/score";
 import { readSparklineRows, sparklineFor } from "@/lib/stations/ridership";
 import { readFreshness } from "@/lib/sync/freshness";
-import { toDay } from "@/lib/sync/window";
+import { optionalDay, toDay } from "@/lib/sync/window";
 import { safeJsonParse, tierName, toUiDataStatus } from "@/lib/utils";
 import type { StationListItem, StationListResponse } from "@/types/station";
 
 /**
  * GET /api/chicago/stations: every Chicago station for the map and the ledger (KTD14). It takes no
- * query parameters; the shell sorts and filters. No UI reads it until U20, which replaces
- * stations-raw with it.
+ * query parameters; the shell sorts and filters.
  */
 
 // The response is cached by unstable_cache below, never rendered at build time.
@@ -81,7 +80,7 @@ const readStationList = unstable_cache(
         name: s.name,
         lines: safeJsonParse<string[]>(s.lines, []),
         status: s.status,
-        closedAt: s.closedAt ? toDay(s.closedAt) : null,
+        closedAt: optionalDay(s.closedAt),
         latitude: s.latitude,
         longitude: s.longitude,
         tier: tierName(m?.tier),
@@ -91,14 +90,7 @@ const readStationList = unstable_cache(
         avg30d: m?.avg30d ?? null,
         dataStatus: toUiDataStatus(m?.dataStatus),
         sparkline: m ? sparklineFor(toDay(m.serviceDateMax), weeks.get(s.id) ?? new Map()) : null,
-        badge: m
-          ? smallStationBadge({
-              residualPct: m.residualPct,
-              yoyPct: m.yoyPct,
-              longRunPct: m.longRunPct,
-              yoyChangePct: m.yoyChangePct,
-            })
-          : null,
+        badge: m ? smallStationBadge(m) : null,
       };
     });
 

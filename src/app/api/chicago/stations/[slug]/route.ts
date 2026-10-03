@@ -3,13 +3,14 @@ import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { resolveSlugAlias } from "@/lib/cta/slug";
 import { getPrimaryLine, primaryLineNeighbors } from "@/lib/cta/sequences";
-import { formatValue, getFactLabel, ARCHETYPE_TITLES, ARCHETYPE_EMOJIS } from "@/lib/narratives";
+import { formatValue, getArchetypeInfo, getFactLabel } from "@/lib/narratives";
+import { mean, median } from "@/lib/scoring/components";
 import { scoreWindows } from "@/lib/scoring/windows";
 import { buildWhyCard, parsePeerRecord } from "@/lib/scoring/whyCard";
 import { readStationDays, seriesFor, SERIES_DAYS_BEFORE_END } from "@/lib/stations/ridership";
 import { isRanked } from "@/lib/sync/baseMetrics";
 import { readFreshness } from "@/lib/sync/freshness";
-import { addDays, toDay } from "@/lib/sync/window";
+import { addDays, optionalDay, toDay } from "@/lib/sync/window";
 import { safeJsonParse, tierName, toUiDataStatus } from "@/lib/utils";
 import type { FactKey, ArchetypeKey, DataSourceInfo } from "@/types/narrative";
 import type { NeighborEntry, StationDetailFacts, StationDetailNarrative, StationDetailResponse } from "@/types/station";
@@ -21,29 +22,21 @@ const STATION_INCLUDE = {
   closures: { select: { startDate: true, endDate: true } },
 } satisfies Prisma.StationInclude;
 
-const optionalDay = (date: Date | null | undefined) => (date ? toDay(date) : null);
-
-// Helper to calculate median from an array of numbers
-function calculateMedian(values: number[]): number {
-  if (values.length === 0) return 0;
-  const sorted = [...values].sort((a, b) => a - b);
-  const mid = Math.floor(sorted.length / 2);
-  return sorted.length % 2 !== 0
-    ? sorted[mid]
-    : (sorted[mid - 1] + sorted[mid]) / 2;
-}
-
 /**
  * The station a path segment names, in KTD7's order: its slug, a retired slug (answered with a
- * redirect to the current one), its uuid (the v1 panels fetch by uuid until U21), else nothing.
+ * redirect to the current one), its id (the v1 panels fetch by id until U21), else nothing. One
+ * query finds both the slug match and the id match; the order is applied here.
  */
 async function resolveStation(key: string) {
-  const inChicago = { city: { code: CITY_CODE } };
-  const bySlug = await prisma.station.findFirst({ where: { slug: key, ...inChicago }, include: STATION_INCLUDE });
+  const matches = await prisma.station.findMany({
+    where: { OR: [{ slug: key }, { id: key }], city: { code: CITY_CODE } },
+    include: STATION_INCLUDE,
+  });
+  const bySlug = matches.find((s) => s.slug === key);
   if (bySlug) return { station: bySlug };
   const canonical = resolveSlugAlias(key);
   if (canonical !== undefined) return { redirectTo: canonical };
-  const byId = await prisma.station.findFirst({ where: { id: key, ...inChicago }, include: STATION_INCLUDE });
+  const byId = matches.find((s) => s.id === key);
   return byId ? { station: byId } : null;
 }
 
@@ -77,39 +70,11 @@ export async function GET(
     const trailingStart = metricsDataThrough ? scoreWindows(metricsDataThrough).trailing90.start : null;
     const peerRecord = parsePeerRecord(station.metrics?.peerStationIds);
 
-    // Neighbor stations on the primary line, looked up by CTA station id. Closed and no-data
-    // neighbors are named (State/Lake on the Brown Line Loop) but carry no score.
+    // Neighbor stations on the primary line, looked up by CTA station id in one query. Closed and
+    // no-data neighbors are named (State/Lake on the Brown Line Loop) but carry no score.
     type Neighbor = { entry: NeighborEntry; ranked: boolean };
     const neighborIds = station.ctaStationId ? primaryLineNeighbors(station.ctaStationId, stationLines) : null;
-    const neighbor = async (ctaStationId: string | null | undefined): Promise<Neighbor | null> => {
-      if (!ctaStationId) return null;
-      const found = await prisma.station.findUnique({
-        where: { cityId_ctaStationId: { cityId: station.cityId, ctaStationId } },
-        select: {
-          id: true,
-          name: true,
-          slug: true,
-          displayName: true,
-          status: true,
-          metrics: { select: { rolling30dAvg: true, ghostScore: true, dataStatus: true, tier: true } }
-        }
-      });
-      if (!found) return null;
-      const ranked = found.metrics != null && isRanked(found.status, found.metrics.dataStatus);
-      return {
-        ranked,
-        entry: {
-          id: found.id,
-          slug: found.slug ?? null,
-          name: found.name,
-          displayName: found.displayName ?? found.name,
-          status: found.status,
-          rolling30dAvg: found.metrics?.rolling30dAvg ?? 0,
-          ghostScore: ranked ? found.metrics!.ghostScore : null,
-          tier: ranked ? tierName(found.metrics!.tier) : null
-        }
-      };
-    };
+    const neighborCtaIds = [neighborIds?.prev, neighborIds?.next].filter((id): id is string => !!id);
 
     // Peer comparisons (average, percentile, medians) use ranked stations only, the isRanked rule:
     // closed State/Lake's metrics row reports 0 riders and would drag every comparison down.
@@ -119,8 +84,7 @@ export async function GET(
       totalStations,
       stationsWithLowerRidership,
       allMetrics,
-      prevNeighbor,
-      nextNeighbor,
+      neighborStations,
       facts,
       narrative,
       peerStations,
@@ -160,8 +124,20 @@ export async function GET(
           station: true
         }
       }),
-      neighbor(neighborIds?.prev),
-      neighbor(neighborIds?.next),
+      neighborCtaIds.length > 0
+        ? prisma.station.findMany({
+            where: { cityId: station.cityId, ctaStationId: { in: neighborCtaIds } },
+            select: {
+              ctaStationId: true,
+              id: true,
+              name: true,
+              slug: true,
+              displayName: true,
+              status: true,
+              metrics: { select: { rolling30dAvg: true, ghostScore: true, dataStatus: true, tier: true } }
+            }
+          })
+        : Promise.resolve([]),
       prisma.stationFact.findMany({
         where: { stationId },
         include: { source: true },
@@ -178,6 +154,28 @@ export async function GET(
       readFreshness(prisma),
     ]);
 
+    const neighborByCtaId = new Map(neighborStations.map(n => [n.ctaStationId, n]));
+    const neighbor = (ctaStationId: string | null | undefined): Neighbor | null => {
+      const found = ctaStationId ? neighborByCtaId.get(ctaStationId) : undefined;
+      if (!found) return null;
+      const ranked = found.metrics != null && isRanked(found.status, found.metrics.dataStatus);
+      return {
+        ranked,
+        entry: {
+          id: found.id,
+          slug: found.slug,
+          name: found.name,
+          displayName: found.displayName ?? found.name,
+          status: found.status,
+          rolling30dAvg: found.metrics?.rolling30dAvg ?? 0,
+          ghostScore: ranked ? found.metrics!.ghostScore : null,
+          tier: ranked ? tierName(found.metrics!.tier) : null
+        }
+      };
+    };
+    const prevNeighbor = neighbor(neighborIds?.prev);
+    const nextNeighbor = neighbor(neighborIds?.next);
+
     const systemAverage = systemStats._avg.rolling30dAvg ?? 0;
 
     const percentile = totalStations > 0
@@ -190,7 +188,7 @@ export async function GET(
     const allRolling30dAvg = rankedMetrics
       .map(m => m.rolling30dAvg)
       .filter((v): v is number => v !== null);
-    const systemMedian = calculateMedian(allRolling30dAvg);
+    const systemMedian = median(allRolling30dAvg) ?? 0;
 
     // Calculate line median for primary line
     let lineMedian = 0;
@@ -201,16 +199,15 @@ export async function GET(
       const lineValues = lineStationMetrics
         .map(m => m.rolling30dAvg)
         .filter((v): v is number => v !== null);
-      lineMedian = calculateMedian(lineValues);
+      lineMedian = median(lineValues) ?? 0;
     }
 
     // Calculate neighbor average over ranked neighbors only
-    const neighborValues = [prevNeighbor, nextNeighbor]
-      .filter((n): n is Neighbor => n !== null && n.ranked)
-      .map(n => n.entry.rolling30dAvg);
-    const neighborAvg = neighborValues.length > 0
-      ? neighborValues.reduce((a, b) => a + b, 0) / neighborValues.length
-      : 0;
+    const neighborAvg = mean(
+      [prevNeighbor, nextNeighbor]
+        .filter((n): n is Neighbor => n !== null && n.ranked)
+        .map(n => n.entry.rolling30dAvg)
+    ) ?? 0;
 
     // Calculate percentage differences
     const stationAvg = station.metrics?.rolling30dAvg ?? 0;
@@ -269,11 +266,7 @@ export async function GET(
     const narrativeResponse: StationDetailNarrative | null =
       narrative && narrativeDataThrough !== null && narrativeDataThrough === metricsDataThrough
         ? {
-            archetype: {
-              key: narrative.archetypeKey as ArchetypeKey,
-              title: ARCHETYPE_TITLES[narrative.archetypeKey as ArchetypeKey],
-              emoji: ARCHETYPE_EMOJIS[narrative.archetypeKey as ArchetypeKey],
-            },
+            archetype: getArchetypeInfo(narrative.archetypeKey as ArchetypeKey),
             story: narrative.renderedStory,
             evidenceFactKeys: JSON.parse(narrative.evidenceFactKeys) as FactKey[],
             templateVersion: narrative.templateVersion,
@@ -409,7 +402,7 @@ export async function GET(
         ghostScore: station.metrics?.ghostScore ?? 0,
         rolling30dAvg: station.metrics?.rolling30dAvg ?? null,
         trend: trend,
-        slug: station.slug ?? null,
+        slug: station.slug,
         displayName: station.displayName ?? station.name,
         status: station.status,
         closedAt: optionalDay(station.closedAt),

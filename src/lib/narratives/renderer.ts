@@ -17,6 +17,7 @@
  * This is a deterministic, no-AI renderer for journalism-grade trust.
  */
 
+import { formatCalendarDate } from "@/lib/format";
 import type { FactKey, NarrativeContext } from "@/types/narrative";
 import { formatChange, formatNumber, formatPercent } from "./formatters";
 
@@ -83,18 +84,11 @@ function withoutEmDash(text: string): string {
   return text.replace(/\s*\u2014\s*/g, ", ");
 }
 
-function formatMonthYear(date: string): string {
-  return new Date(`${date}T00:00:00Z`).toLocaleDateString("en-US", { month: "long", year: "numeric", timeZone: "UTC" });
-}
+/** "January 2026". */
+const formatMonthYear = (date: string) => formatCalendarDate(date, { month: "long", year: "numeric" });
 
-function formatFullDate(date: string): string {
-  return new Date(`${date}T00:00:00Z`).toLocaleDateString("en-US", {
-    month: "long",
-    day: "numeric",
-    year: "numeric",
-    timeZone: "UTC",
-  });
-}
+/** "March 15, 2026". */
+const formatFullDate = (date: string) => formatCalendarDate(date, { month: "long", day: "numeric", year: "numeric" });
 
 /**
  * A closure reason worded "Closed for ..." reads as a purpose after "has been closed since

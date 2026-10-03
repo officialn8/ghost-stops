@@ -12,13 +12,14 @@
  * station still gets its raw inputs, but no percentile, tier, or rank.
  */
 import type { ScoreTier, StationStatus } from "@prisma/client";
-import { isRanked } from "@/lib/sync/baseMetrics";
-import { getTier } from "@/lib/utils";
+import { getTier, type ScoreTierName } from "@/lib/utils";
+import type { StationBadge } from "@/types/station";
 import { missingDataReason, windowBlock, type ClosureRange, type NullReason } from "./availability";
 import { erraticness, residualLog, vs2019Pct, yoyChangePct, type WindowSummary } from "./components";
 import { selectPeers, type PeerBasis, type PeerCandidate, type PeerSet } from "./peers";
 import { midrankPercentiles } from "./percentile";
-import { COMPONENT_KEYS, type ComponentKey } from "./windows";
+import { isRanked, type MetricsDataStatus } from "./ranked";
+import { byComponent, COMPONENT_KEYS, type ComponentKey } from "./windows";
 
 export const SCORE_VERSION = 2;
 
@@ -43,8 +44,8 @@ export interface StationScoreInput {
     ctaStationId: string | null;
     /** Derived for this run from the closures (src/lib/sync/status.ts). */
     status: StationStatus;
-    /** StationMetrics.dataStatus: "normal", "zero", or "missing". */
-    dataStatus: string;
+    /** StationMetrics.dataStatus. */
+    dataStatus: MetricsDataStatus;
     openedAt: string | null;
     closures: readonly ClosureRange[];
     /** The base metrics' 12-month average, the ledger's number (R25). */
@@ -67,7 +68,7 @@ export interface ComponentScore {
     nullReason: NullReason | null;
 }
 
-export type SmallStationBadge = "small-but-steady" | "small-but-growing";
+export type SmallStationBadge = StationBadge;
 
 export interface StationScore {
     stationId: string;
@@ -91,8 +92,16 @@ export interface StationScore {
     badge: SmallStationBadge | null;
 }
 
-export function tierFor(score: number): ScoreTier {
-    return getTier(score).tier.toUpperCase() as ScoreTier;
+/** The stored tier (StationMetrics.tier) for each tier the UI names. */
+const STORED_TIERS: Readonly<Record<ScoreTierName, ScoreTier>> = {
+    ghost: "GHOST",
+    fading: "FADING",
+    quiet: "QUIET",
+    healthy: "HEALTHY",
+};
+
+function tierFor(score: number): ScoreTier {
+    return STORED_TIERS[getTier(score).tier];
 }
 
 /**
@@ -111,11 +120,6 @@ export function smallStationBadge(fields: {
     if (residualPct === null || yoyPct === null || longRunPct === null) return null;
     if (residualPct < 75 || yoyPct >= 50 || longRunPct >= 50) return null;
     return yoyChangePct !== null && yoyChangePct > 0 ? "small-but-growing" : "small-but-steady";
-}
-
-/** One value per component, built by `fn`. */
-function byComponent<T>(fn: (component: ComponentKey) => T): Record<ComponentKey, T> {
-    return Object.fromEntries(COMPONENT_KEYS.map((k) => [k, fn(k)])) as Record<ComponentKey, T>;
 }
 
 /** Scores every station, returning one result per input in input order. Pure. */

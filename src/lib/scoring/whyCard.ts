@@ -9,21 +9,22 @@
  * re-derived exactly as scoring derived them: the residual from the 12-month average and the
  * peers' baseline, the erraticness from the trailing 90 days of rows.
  *
- * Changes are worded with the narratives' formatter so the card and the story quote one number.
+ * Changes are worded with the formatter the narratives use (src/lib/format.ts), so the card and
+ * the story quote one number.
  */
 import type { StationStatus } from "@prisma/client";
-import { formatChange } from "@/lib/narratives/formatters";
-import { isRanked } from "@/lib/sync/baseMetrics";
+import { formatCalendarDate, formatChange } from "@/lib/format";
 import { addDays } from "@/lib/sync/window";
 import { tierName } from "@/lib/utils";
 import type { Chip, PeerBasis, WhyCard, WhyComponent, WhyNullReason, WhyPeer } from "@/types/station";
 import { explainMissingComponent, windowBlock, type ClosureRange, type NullReason } from "./availability";
 import { erraticness, residualLog, summarizeWindow, type DayRow } from "./components";
+import { isRanked } from "./ranked";
 import { COMPONENT_WEIGHTS, smallStationBadge, type PeerRecord } from "./score";
-import { COMPONENT_KEYS, scoreWindows, type ComponentKey } from "./windows";
+import { byComponent, COMPONENT_KEYS, scoreWindows, type ComponentKey } from "./windows";
 
 /** A station whose last service date trails the city's by more than this is stale (R18). */
-export const STALE_AFTER_DAYS = 14;
+export const STATION_STALE_AFTER_DAYS = 14;
 
 const LABELS: Readonly<Record<ComponentKey, string>> = {
     residual: "Riders against peers",
@@ -71,7 +72,8 @@ export interface WhyCardInput {
     days: readonly DayRow[];
 }
 
-const PEER_BASES: readonly PeerBasis[] = ["neighbors", "loop", "branch-median", "none"];
+const PEER_BASES: readonly unknown[] = ["neighbors", "loop", "branch-median", "none"] satisfies PeerBasis[];
+const isPeerBasis = (v: unknown): v is PeerBasis => PEER_BASES.includes(v);
 
 /** StationMetrics.peerStationIds as scoring wrote it (score.ts `PeerRecord`); null for anything else. */
 export function parsePeerRecord(json: unknown): PeerRecord | null {
@@ -79,12 +81,12 @@ export function parsePeerRecord(json: unknown): PeerRecord | null {
     const r = json as Record<string, unknown>;
     const strings = (v: unknown): v is string[] => Array.isArray(v) && v.every((x) => typeof x === "string");
     const numbers = (v: unknown): v is number[] => Array.isArray(v) && v.every((x) => typeof x === "number");
-    if (!PEER_BASES.includes(r.basis as PeerBasis)) return null;
+    if (!isPeerBasis(r.basis)) return null;
     if (!strings(r.stationIds) || !strings(r.ctaStationIds) || !numbers(r.avg12m)) return null;
     if (r.stationIds.length !== r.avg12m.length) return null;
     return {
-        basis: r.basis as PeerBasis,
-        line: typeof r.line === "string" ? (r.line as PeerRecord["line"]) : null,
+        basis: r.basis,
+        line: typeof r.line === "string" ? r.line : null,
         branch: typeof r.branch === "string" ? r.branch : null,
         stationIds: r.stationIds,
         ctaStationIds: r.ctaStationIds,
@@ -94,7 +96,7 @@ export function parsePeerRecord(json: unknown): PeerRecord | null {
 
 /** "Jul 2025", in UTC so a calendar date never shifts a month (KTD17). */
 export function monthLabel(date: string): string {
-    return new Date(`${date}T00:00:00Z`).toLocaleDateString("en-US", { month: "short", year: "numeric", timeZone: "UTC" });
+    return formatCalendarDate(date, { month: "short", year: "numeric" });
 }
 
 const capitalize = (text: string) => text.charAt(0).toUpperCase() + text.slice(1);
@@ -110,21 +112,23 @@ function changeSize(changePct: number): string {
     return formatChange(Math.abs(changePct) / 100).replace(/^\+/, "");
 }
 
+/** The phrases a station-level chip and a component's null reason share: "reopened Jul 2025". */
+const closedSince = (date: string) => `closed since ${monthLabel(date)}`;
+const reopenedOn = (date: string) => `reopened ${monthLabel(date)}`;
+const openedOn = (date: string) => `opened ${monthLabel(date)}`;
+
 /** The chip text for a null component: "reopened Jul 2025, year-over-year available from Oct 2026". */
-export function nullReasonText(component: ComponentKey, reason: NullReason): string {
+function nullReasonText(component: ComponentKey, reason: NullReason): string {
     const name = CHIP_NAMES[component];
-    const unavailable = component === "longRun" ? "no 2019 comparison" : `no ${name} yet`;
+    const availability = (from: string | null) =>
+        from ? `${name} available from ${monthLabel(from)}` : component === "longRun" ? "no 2019 comparison" : `no ${name} yet`;
     switch (reason.kind) {
         case "closed":
-            return `closed since ${monthLabel(reason.closedFrom)}`;
+            return closedSince(reason.closedFrom);
         case "reopened":
-            return `reopened ${monthLabel(reason.reopenedOn)}, ${
-                reason.availableFrom ? `${name} available from ${monthLabel(reason.availableFrom)}` : unavailable
-            }`;
+            return `${reopenedOn(reason.reopenedOn)}, ${availability(reason.availableFrom)}`;
         case "new":
-            return `opened ${monthLabel(reason.openedAt)}, ${
-                reason.availableFrom ? `${name} available from ${monthLabel(reason.availableFrom)}` : unavailable
-            }`;
+            return `${openedOn(reason.openedAt)}, ${availability(reason.availableFrom)}`;
         case "no-peers":
             return "no station on the line to compare with";
         case "no-data":
@@ -165,21 +169,26 @@ function erraticSentence(ratio: number): string {
     return percent === 0 ? "Ridership holds steady day to day." : `Ridership swings about ${percent}% day to day.`;
 }
 
+type ComponentBlocks = Readonly<Record<ComponentKey, NullReason | null>>;
+
+/** The first window block of `kind`, in component order. */
+function firstBlock<K extends NullReason["kind"]>(blocks: ComponentBlocks, kind: K): Extract<NullReason, { kind: K }> | undefined {
+    return COMPONENT_KEYS.map((k) => blocks[k]).find((b): b is Extract<NullReason, { kind: K }> => b?.kind === kind);
+}
+
 /** The station-level chips: closed, reopened, new, stale, in that order, at most one of each. */
-function stationChips(input: WhyCardInput, blocks: readonly (NullReason | null)[]): Chip[] {
+function stationChips(input: WhyCardInput, blocks: ComponentBlocks): Chip[] {
     const chips: Chip[] = [];
     const openClosure = input.closures.find((c) => c.endDate === null || c.endDate > input.dataThrough);
     const closedFrom =
-        input.status !== "ACTIVE"
-            ? (input.closedAt ?? openClosure?.startDate ?? null)
-            : (blocks.find((b) => b?.kind === "closed") as Extract<NullReason, { kind: "closed" }> | undefined)?.closedFrom;
+        input.status !== "ACTIVE" ? (input.closedAt ?? openClosure?.startDate ?? null) : firstBlock(blocks, "closed")?.closedFrom;
     if (input.status !== "ACTIVE" || closedFrom) {
-        chips.push({ kind: "closed", text: closedFrom ? `closed since ${monthLabel(closedFrom)}` : "closed" });
+        chips.push({ kind: "closed", text: closedFrom ? closedSince(closedFrom) : "closed" });
     }
-    const reopened = blocks.find((b) => b?.kind === "reopened") as Extract<NullReason, { kind: "reopened" }> | undefined;
-    if (reopened) chips.push({ kind: "reopened", text: `reopened ${monthLabel(reopened.reopenedOn)}` });
-    const opened = blocks.find((b) => b?.kind === "new") as Extract<NullReason, { kind: "new" }> | undefined;
-    if (opened) chips.push({ kind: "new", text: `opened ${monthLabel(opened.openedAt)}` });
+    const reopened = firstBlock(blocks, "reopened");
+    if (reopened) chips.push({ kind: "reopened", text: reopenedOn(reopened.reopenedOn) });
+    const opened = firstBlock(blocks, "new");
+    if (opened) chips.push({ kind: "new", text: openedOn(opened.openedAt) });
 
     // A closed station has no riders by definition; the closed chip already says why.
     if (chips[0]?.kind !== "closed") {
@@ -188,23 +197,40 @@ function stationChips(input: WhyCardInput, blocks: readonly (NullReason | null)[
             chips.push({ kind: "stale", text: "no ridership data in the last 60 days" });
         } else if (dataStatus === "zero") {
             chips.push({ kind: "stale", text: "under one rider a day in the last 30 days" });
-        } else if (serviceDateMax !== null && serviceDateMax < addDays(input.dataThrough, -STALE_AFTER_DAYS)) {
+        } else if (serviceDateMax !== null && serviceDateMax < addDays(input.dataThrough, -STATION_STALE_AFTER_DAYS)) {
             chips.push({ kind: "stale", text: `data ends ${serviceDateMax}` });
         }
     }
     return chips;
 }
 
+/** A component's sentence with its real numbers, for a component that has a value. */
+function componentSentence(key: ComponentKey, value: number, peers: PeerRecord | null, peerList: readonly WhyPeer[]): string {
+    switch (key) {
+        case "residual":
+            return residualSentence(value, peers, peerList.map((p) => p.displayName));
+        case "yoy":
+            return yoySentence(value);
+        case "longRun":
+            return longRunSentence(value);
+        case "erratic":
+            return erraticSentence(value);
+    }
+}
+
 export function buildWhyCard(input: WhyCardInput): WhyCard {
     const { metrics, peers } = input;
     const ctx = { dataThrough: input.dataThrough, openedAt: input.openedAt, closures: input.closures };
-    const blocks = COMPONENT_KEYS.map((k) => windowBlock(k, ctx));
-    const blocked = (k: ComponentKey) => blocks[COMPONENT_KEYS.indexOf(k)] !== null;
+    const blocks = byComponent((k) => windowBlock(k, ctx));
+    const blocked = (k: ComponentKey) => blocks[k] !== null;
 
-    const peerList: WhyPeer[] = (peers?.stationIds ?? []).map((id, i) => {
-        const station = input.peerStations.get(id);
-        return { id, slug: station?.slug ?? null, displayName: station?.displayName ?? id, avg12m: peers!.avg12m[i] };
-    });
+    const peerList: WhyPeer[] =
+        peers === null
+            ? []
+            : peers.stationIds.map((id, i) => {
+                  const station = input.peerStations.get(id);
+                  return { id, slug: station?.slug ?? null, displayName: station?.displayName ?? id, avg12m: peers.avg12m[i] };
+              });
 
     const { trailing90 } = scoreWindows(input.dataThrough);
     const trailing = input.days.filter((d) => d.serviceDate >= trailing90.start && d.serviceDate <= trailing90.end);
@@ -230,14 +256,7 @@ export function buildWhyCard(input: WhyCardInput): WhyCard {
             const nullReason: WhyNullReason = { kind: reason.kind, text: nullReasonText(key, reason) };
             return { key, label: LABELS[key], weight: COMPONENT_WEIGHTS[key], pct: null, value, sentence: `${capitalize(nullReason.text)}.`, nullReason };
         }
-        const sentence =
-            key === "residual"
-                ? residualSentence(value, peers, peerList.map((p) => p.displayName))
-                : key === "yoy"
-                  ? yoySentence(value)
-                  : key === "longRun"
-                    ? longRunSentence(value)
-                    : erraticSentence(value);
+        const sentence = componentSentence(key, value, peers, peerList);
         return { key, label: LABELS[key], weight: COMPONENT_WEIGHTS[key], pct: pcts[key], value, sentence, nullReason: null };
     });
 
@@ -247,12 +266,7 @@ export function buildWhyCard(input: WhyCardInput): WhyCard {
         tier: tierName(metrics.tier),
         rank: metrics.rank,
         rankedCount: metrics.rankedCount,
-        badge: smallStationBadge({
-            residualPct: metrics.residualPct,
-            yoyPct: metrics.yoyPct,
-            longRunPct: metrics.longRunPct,
-            yoyChangePct: metrics.yoyChangePct,
-        }),
+        badge: smallStationBadge(metrics),
         components,
         chips: stationChips(input, blocks),
         peers: {

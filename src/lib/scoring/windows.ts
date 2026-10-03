@@ -9,12 +9,18 @@
  * - 2019: the pre-pandemic year the long-run change compares against.
  */
 import type { PrismaClient } from "@prisma/client";
-import { addDays, toDay, toUtcDate, type DateWindow } from "@/lib/sync/window";
+import { addDays, optionalDay, toDay, toUtcDate, type DateWindow } from "@/lib/sync/window";
+import type { ScoreComponentKey } from "@/types/station";
 import type { ClosureRange } from "./availability";
 import type { DayRow } from "./components";
 
-export type ComponentKey = "residual" | "yoy" | "longRun" | "erratic";
+export type ComponentKey = ScoreComponentKey;
 export const COMPONENT_KEYS: readonly ComponentKey[] = ["residual", "yoy", "longRun", "erratic"];
+
+/** One value per component, built by `fn`, in COMPONENT_KEYS order. */
+export function byComponent<T>(fn: (component: ComponentKey) => T): Record<ComponentKey, T> {
+    return Object.fromEntries(COMPONENT_KEYS.map((k) => [k, fn(k)])) as Record<ComponentKey, T>;
+}
 
 export interface ScoreWindowSet {
     twelveMonth: DateWindow;
@@ -117,10 +123,10 @@ export async function readScoreWindows(db: ScoreDb, cityId: string, dataThrough:
         return {
             stationId: station.id,
             ctaStationId: station.ctaStationId,
-            openedAt: station.openedAt === null ? null : toDay(station.openedAt),
+            openedAt: optionalDay(station.openedAt),
             closures: station.closures.map((c) => ({
                 startDate: toDay(c.startDate),
-                endDate: c.endDate === null ? null : toDay(c.endDate),
+                endDate: optionalDay(c.endDate),
             })),
             trailing: days.filter((d) => d.serviceDate >= trailing90.start),
             yearAgo: days.filter((d) => d.serviceDate <= yearAgo90.end),
