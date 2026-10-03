@@ -1,235 +1,103 @@
-# Ghost Stops Deployment Guide
+# Deploying Ghost Stops
 
-This guide covers deploying Ghost Stops to production using Vercel (frontend) and Railway (Go ETL pipeline).
-
-## Architecture
+Ghost Stops runs on Vercel (Next.js app, API routes, and the daily sync as a Vercel Cron job)
+against a Neon Postgres database. Nothing else runs it: the Go ETL and its Railway service were
+retired on 2026-10-03 (revival plan U11).
 
 ```
-┌─────────────────┐         ┌─────────────────┐
-│   Vercel        │         │   Railway       │
-│   (Next.js)     │◄────────┤   (Go ETL)      │
-│   - Frontend    │  DB     │   - Daily sync  │
-│   - API routes  │         │   - Ghost scores│
-└────────┬────────┘         └─────────────────┘
-         │
-    ┌────┴────┐
-    │ PostgreSQL │  (Vercel Postgres or Neon)
-    │  (shared)  │
-    └────────────┘
+Socrata (CTA ridership) ──> /api/cron/sync-ridership ──> Neon Postgres <── API routes <── browser
+                              (Vercel Cron, daily)         (pooled host at runtime,
+                                                            direct host for migrations)
 ```
 
-## Prerequisites
+Operational history, rehearsals, and go-live records live in
+[`docs/runbooks/history-load.md`](docs/runbooks/history-load.md).
 
-- [Vercel CLI](https://vercel.com/cli) installed
-- [Railway CLI](https://docs.railway.app/reference/cli) installed
-- PostgreSQL database (Vercel Postgres, Neon, or Railway)
-- Mapbox API token
+## Vercel project
 
-## Step 1: Database Setup
+- **Build:** `vercel.json` runs `prisma generate && next build` (Next 16, Turbopack). `npm install`
+  also generates the Prisma client through `postinstall`. The client is generated into
+  `src/generated/prisma` and is not committed.
+- **Runtime:** Node 22 (`engines` in `package.json`), with Fluid compute on (`"fluid": true`), which
+  the cron route's 300-second limit depends on.
+- **Previews:** every push to a branch deploys a preview. The Neon integration gives each preview
+  its own database branch, copied from production, with branch-scoped `DATABASE_URL` and
+  `DATABASE_URL_UNPOOLED`. Delete those Neon branches once the PR merges.
 
-### Option A: Vercel Postgres (Recommended)
+### Environment variables
+
+| Name | Production | Preview | Used by |
+|---|---|---|---|
+| `DATABASE_URL` | Neon pooled host (`-pooler`), runtime role `ghost_stops_app` | set by the Neon integration per preview branch | the app's pg pool (`src/lib/prisma.ts`), the local runner, the seed |
+| `DATABASE_URL_UNPOOLED` | Neon direct host, runtime role | set by the Neon integration per preview branch | the Prisma CLI through `prisma.config.ts` |
+| `CRON_SECRET` | set (sensitive) | set (sensitive) | the bearer token Vercel Cron sends to the sync route |
+| `CHICAGO_DATA_APP_TOKEN` | set (sensitive) | set (sensitive) | Socrata requests, sent only in the `X-App-Token` header |
+| `NEXT_PUBLIC_MAPBOX_TOKEN` | set | set | the map |
+
+`.env.example` lists the same names. Prisma 7 does not read `.env`, so commands run from a shell
+need the variables exported in that shell.
+
+## Schema migrations
+
+Migrations never run in the Vercel build. An operator runs them from their own machine as the
+owner role, `neondb_owner`, over the direct host, because the runtime role cannot run DDL:
+
 ```bash
-# Install Vercel CLI
-npm i -g vercel
-
-# Create Vercel Postgres database
-vercel postgres create ghost-stops-db
-```
-
-### Option B: Neon PostgreSQL
-1. Sign up at [neon.tech](https://neon.tech)
-2. Create a new database
-3. Copy the connection string
-
-### Migrate Database Schema
-
-1. Update your `.env` with the PostgreSQL connection string:
-```env
-DATABASE_URL="postgresql://user:password@host:5432/database?sslmode=require"
-```
-
-2. Run migrations:
-```bash
+export DATABASE_URL_UNPOOLED='<neondb_owner direct URL>'   # never commit or paste this
+npx prisma migrate status
 npx prisma migrate deploy
-npx prisma generate
+npx prisma migrate diff --from-config-datasource --to-schema prisma/schema.prisma --exit-code
 ```
 
-## Step 2: Export Local Data
+The last command prints `No difference detected` when the database matches the schema. Take a
+manual Neon snapshot before any migration that changes or drops data; the runbook names each one
+taken so far.
 
-If you have existing data in SQLite:
+## The daily sync
+
+`vercel.json` schedules `/api/cron/sync-ridership` twice:
+
+| Schedule (UTC) | Mode | Does |
+|---|---|---|
+| `0 10 * * *` | daily | refetches the trailing 60 days from Socrata plus up to three months the weekly run flagged as drifted, upserts changed rows, and recomputes scores and narratives |
+| `0 14 * * 0` | weekly | refetches the trailing 60 days, then compares each month's counts and sums with Socrata and records the months that differ for the daily runs to refetch |
+
+Vercel may start a run up to 59 minutes late. The route checks `CRON_SECRET`, records a `SyncRun`
+row, and expires the `stations` cache tag after an OK or partial run, so the station list shows
+the new data on the next request.
+
+## Health and alerting
+
+`/api/health` answers 200 with the last successful run and data-through date, or 503 when:
+
+- no run has succeeded in 10 days (`stale`);
+- a run has been marked running for over an hour (`stuck`);
+- no weekly reconciliation has succeeded in 15 days (`reconcile-stale`).
+
+`.github/workflows/health.yml` requests the route daily at 12:30 UTC and fails on anything but 200,
+after one retry a minute later. GitHub then emails whoever last changed the workflow's schedule (Nate). To rehearse a failure,
+run the workflow by hand with its `url` input pointed at a URL that answers non-200.
+
+## Local runner
+
+Wide backfills and per-station refetches run from an operator machine, never in the cron, because
+they can take minutes:
 
 ```bash
-# Export stations and metrics
-sqlite3 prisma/dev.db <<EOF
-.headers on
-.mode csv
-.output stations.csv
-SELECT * FROM Station;
-.output metrics.csv
-SELECT * FROM StationMetrics;
-.output ridership.csv
-SELECT * FROM RidershipDaily ORDER BY serviceDate DESC LIMIT 10000;
-.quit
-EOF
+export DATABASE_URL='<ghost_stops_app pooled URL>'
+npx tsx scripts/run-sync.ts                                   # the daily window, as the cron runs it
+npx tsx scripts/run-sync.ts --reconcile                       # the weekly reconciliation
+npx tsx scripts/run-sync.ts --since 2001-01-01                # a wide backfill (about five minutes)
+npx tsx scripts/run-sync.ts --since 2001-01-01 --station-id 40670 --station-id 40310
 ```
 
-## Step 3: Deploy Frontend to Vercel
+The runner refuses to start without `DATABASE_URL` and prints the run summary as JSON. It does not
+expire the `stations` cache tag (only the cron route can), so after a local run invalidate the tag
+in Vercel (Project, Settings, Caches, or the API's invalidate-by-tags with tag `stations`, target
+production).
 
-1. Install dependencies:
-```bash
-npm install
-```
+## Rollback
 
-2. Deploy to Vercel:
-```bash
-vercel --prod
-```
-
-3. Add environment variables in Vercel dashboard:
-   - `DATABASE_URL`: Your PostgreSQL connection string
-   - `NEXT_PUBLIC_MAPBOX_TOKEN`: Your Mapbox token
-
-4. Configure domain (optional):
-```bash
-vercel domains add your-domain.com
-```
-
-## Step 4: Deploy Go ETL to Railway
-
-1. Navigate to ETL directory:
-```bash
-cd go-etl
-```
-
-2. Initialize Railway project:
-```bash
-railway login
-railway init
-```
-
-3. Deploy:
-```bash
-railway up
-```
-
-4. Set environment variables:
-```bash
-railway variables set DATABASE_URL="your-postgres-url"
-railway variables set CHICAGO_DATA_APP_TOKEN="your-token" # Optional
-```
-
-5. Verify deployment:
-```bash
-railway logs
-```
-
-## Step 5: Initial Data Load
-
-### Import Existing Data
-
-If you exported data from SQLite:
-
-```bash
-# Connect to PostgreSQL and import CSVs
-psql $DATABASE_URL
-
-# Import stations
-\copy "Station" FROM 'stations.csv' CSV HEADER;
-
-# Import metrics
-\copy "StationMetrics" FROM 'metrics.csv' CSV HEADER;
-
-# Import ridership
-\copy "RidershipDaily" FROM 'ridership.csv' CSV HEADER;
-```
-
-### Or Fetch Fresh Data
-
-Run the ETL manually:
-
-```bash
-railway run ./etl sync-ridership --city chicago --days 365
-railway run ./etl compute --city chicago
-```
-
-## Step 6: Verify Deployment
-
-1. Check frontend:
-   - Visit your Vercel URL
-   - Verify map loads
-   - Check station list populates
-   - Test station details
-
-2. Check ETL:
-   - View Railway logs: `railway logs`
-   - Verify cron schedules are set
-   - Check database for recent data
-
-## Environment Variables Reference
-
-### Vercel (Frontend)
-- `DATABASE_URL`: PostgreSQL connection string
-- `NEXT_PUBLIC_MAPBOX_TOKEN`: Mapbox GL JS token
-
-### Railway (Go ETL)
-- `DATABASE_URL`: Same PostgreSQL connection string
-- `CHICAGO_DATA_APP_TOKEN`: Optional Socrata API token for higher rate limits
-
-## Monitoring
-
-### Frontend (Vercel)
-- View logs: `vercel logs`
-- Analytics: Vercel dashboard
-- Errors: Vercel Functions tab
-
-### ETL (Railway)
-- View logs: `railway logs`
-- Metrics: Railway dashboard
-- Cron status: Railway deployments tab
-
-## Troubleshooting
-
-### Database Connection Issues
-```bash
-# Test connection
-psql $DATABASE_URL -c "SELECT COUNT(*) FROM \"Station\";"
-```
-
-### ETL Not Running
-```bash
-# Run manually to debug
-railway run ./etl sync-ridership --city chicago --days 1
-```
-
-### Missing Data
-```bash
-# Check latest ridership date
-psql $DATABASE_URL -c "SELECT MAX(\"serviceDate\") FROM \"RidershipDaily\";"
-```
-
-## Production Checklist
-
-- [ ] PostgreSQL database created and accessible
-- [ ] Prisma schema migrated to PostgreSQL
-- [ ] Environment variables set in Vercel
-- [ ] Environment variables set in Railway
-- [ ] Frontend deployed and accessible
-- [ ] ETL deployed and running
-- [ ] Cron jobs scheduled correctly
-- [ ] Initial data loaded
-- [ ] Map displays correctly
-- [ ] Station data loading
-- [ ] Custom domain configured (optional)
-
-## Cost Estimates
-
-- **Vercel**: Free tier covers most use cases
-  - Pro ($20/mo) for team features
-- **Railway**: $5/mo for hobby tier
-  - Includes cron jobs
-- **Database**:
-  - Vercel Postgres: Free tier (60 hours compute)
-  - Neon: Free tier (0.5GB storage)
-  - Railway Postgres: ~$5-10/mo
-
-Total: ~$5-10/month for a production deployment
+The app keeps no state outside Neon. To undo a bad deploy, promote the previous production
+deployment in Vercel (instant rollback). To undo a bad data change, restore the Neon snapshot taken
+before it.
