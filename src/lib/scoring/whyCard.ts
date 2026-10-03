@@ -16,7 +16,7 @@
  * the story quote one number, and read as level by the same band (`isLevelChange`), so they agree
  * on its direction.
  */
-import type { StationStatus } from "@prisma/client";
+import type { StationStatus } from "@/generated/prisma/client";
 import { formatCalendarDate, formatChange, isLevelChange } from "@/lib/format";
 import { addDays } from "@/lib/sync/window";
 import { tierName } from "@/lib/utils";

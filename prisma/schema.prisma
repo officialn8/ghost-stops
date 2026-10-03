@@ -1,11 +1,13 @@
+// Generated into src/ and imported from "@/generated/prisma/client" (relative paths in scripts/).
 generator client {
-  provider = "prisma-client-js"
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
 }
 
+// Connection strings live outside the schema: the CLI reads the direct URL from
+// prisma.config.ts, and src/lib/prisma.ts hands the pooled URL to the pg adapter.
 datasource db {
-  provider  = "postgresql"
-  url       = env("DATABASE_URL")
-  directUrl = env("DATABASE_URL_UNPOOLED")
+  provider = "postgresql"
 }
 
 enum DataQuality {

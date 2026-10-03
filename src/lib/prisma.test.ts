@@ -4,12 +4,40 @@ import { fileURLToPath } from "node:url";
 import ts from "typescript";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-// Count constructions across module re-evaluations; vi.resetModules() re-runs the mock factory.
-const constructed = vi.hoisted(() => ({ count: 0 }));
+// Count constructions across module re-evaluations, and keep what each one was given.
+const constructed = vi.hoisted(() => ({
+    count: 0,
+    pools: [] as unknown[],
+    poolConfigs: [] as Record<string, unknown>[],
+    attached: [] as unknown[],
+    adapters: [] as { pool: unknown; options: unknown }[],
+    clientOptions: [] as { adapter?: unknown }[],
+}));
 
-vi.mock("@prisma/client", () => ({
-    PrismaClient: vi.fn(function PrismaClient(this: object) {
+vi.mock("@/generated/prisma/client", () => ({
+    PrismaClient: vi.fn(function PrismaClient(this: object, options: { adapter?: unknown }) {
         constructed.count += 1;
+        constructed.clientOptions.push(options);
+    }),
+}));
+
+vi.mock("pg", () => ({
+    Pool: vi.fn(function Pool(this: object, config: Record<string, unknown>) {
+        constructed.pools.push(this);
+        constructed.poolConfigs.push(config);
+    }),
+}));
+
+vi.mock("@prisma/adapter-pg", () => ({
+    PrismaPg: vi.fn(function PrismaPg(this: { pool?: unknown }, pool: unknown, options: unknown) {
+        this.pool = pool;
+        constructed.adapters.push({ pool, options });
+    }),
+}));
+
+vi.mock("@vercel/functions", () => ({
+    attachDatabasePool: vi.fn((pool: unknown) => {
+        constructed.attached.push(pool);
     }),
 }));
 
@@ -32,14 +60,17 @@ const display = (file: string) => relative(repoRoot, file);
 /** Tests and the src/test helpers they share may use the client freely: the db tests disconnect it. */
 const isTestCode = (file: string) => /\.test\.tsx?$/.test(file) || relative(srcDir, file).startsWith(`test${sep}`);
 
+/** The client `prisma generate` writes; it defines `$disconnect` and `PrismaClient` itself. */
+const isGeneratedCode = (file: string) => relative(srcDir, file).startsWith(`generated${sep}`);
+
 /**
- * Every non-test source file under src/, so a helper outside the route handlers cannot
- * hide a violation. Each file is read once.
+ * Every non-test source file under src/ we write, so a helper outside the route handlers
+ * cannot hide a violation. Each file is read once.
  */
 const serverSource = readdirSync(srcDir, { recursive: true, withFileTypes: true })
     .filter((entry) => entry.isFile() && /\.[cm]?[jt]sx?$/.test(entry.name))
     .map((entry) => join(entry.parentPath, entry.name))
-    .filter((file) => !isTestCode(file))
+    .filter((file) => !isTestCode(file) && !isGeneratedCode(file))
     .map((file) => ({ file, ast: parse(file, readFileSync(file, "utf8")) }));
 
 /**
@@ -69,6 +100,12 @@ describe("prisma singleton", () => {
     afterEach(() => {
         delete globalForPrisma.prisma;
         constructed.count = 0;
+        constructed.pools.length = 0;
+        constructed.poolConfigs.length = 0;
+        constructed.attached.length = 0;
+        constructed.adapters.length = 0;
+        constructed.clientOptions.length = 0;
+        vi.unstubAllEnvs();
         vi.resetModules();
     });
 
@@ -89,6 +126,53 @@ describe("prisma singleton", () => {
 
         expect(prisma).toBe(cached);
         expect(constructed.count).toBe(0);
+        expect(constructed.pools).toEqual([]); // no pool is opened beside the cached client
+    });
+});
+
+describe("prisma connection", () => {
+    afterEach(() => {
+        delete globalForPrisma.prisma;
+        constructed.count = 0;
+        constructed.pools.length = 0;
+        constructed.poolConfigs.length = 0;
+        constructed.attached.length = 0;
+        constructed.adapters.length = 0;
+        constructed.clientOptions.length = 0;
+        vi.unstubAllEnvs();
+        vi.resetModules();
+    });
+
+    it("opens one pool on the pooled DATABASE_URL, with an explicit size and connection timeout", async () => {
+        vi.stubEnv("DATABASE_URL", "postgresql://app@pooled.example/db");
+        vi.stubEnv("DATABASE_URL_UNPOOLED", "postgresql://owner@direct.example/db");
+
+        await import("./prisma");
+
+        expect(constructed.poolConfigs).toHaveLength(1);
+        const [config] = constructed.poolConfigs;
+        expect(config.connectionString).toBe("postgresql://app@pooled.example/db");
+        // pg waits forever when connectionTimeoutMillis is 0 or absent, which hangs on a cold compute.
+        expect(config.connectionTimeoutMillis).toBeGreaterThan(0);
+        expect(config.max).toBeGreaterThan(0);
+        expect(config.idleTimeoutMillis).toBeGreaterThan(0);
+    });
+
+    it("attaches the pool to Fluid compute and hands the same pool to the client through the pg adapter", async () => {
+        await import("./prisma");
+
+        const [pool] = constructed.pools;
+        expect(constructed.attached).toEqual([pool]);
+        expect(constructed.adapters).toHaveLength(1);
+        expect(constructed.adapters[0].pool).toBe(pool);
+        expect(constructed.clientOptions).toHaveLength(1);
+        expect((constructed.clientOptions[0].adapter as { pool?: unknown }).pool).toBe(pool);
+    });
+
+    it("closes the pool when a script disconnects, so the process can exit", async () => {
+        await import("./prisma");
+
+        expect(constructed.adapters[0].options).toEqual({ disposeExternalPool: true });
     });
 });
 

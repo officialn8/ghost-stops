@@ -5,7 +5,7 @@
  *
  * Server code: the routes call these with the Prisma client. Dates are YYYY-MM-DD (KTD17).
  */
-import type { PrismaClient } from "@prisma/client";
+import type { PrismaClient } from "@/generated/prisma/client";
 import type { DayRow } from "@/lib/scoring/components";
 import { addDays } from "@/lib/sync/window";
 import type { StationSeries, StationSparkline } from "@/types/station";

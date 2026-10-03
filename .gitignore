@@ -42,6 +42,9 @@ yarn-error.log*
 *.tsbuildinfo
 next-env.d.ts
 
+# Prisma client, written by `prisma generate` (postinstall, CI, and the Vercel build command)
+/src/generated/
+
 # database
 *.db
 *.db-journal

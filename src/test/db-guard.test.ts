@@ -16,7 +16,7 @@ describe("assertLocalDatabaseUrl", () => {
         ).toThrow(/Refusing to run database tests against ep-example-123456-pooler\.us-east-2\.aws\.neon\.tech/);
     });
 
-    it("rejects an unset URL, because Prisma would fall back to .env", () => {
+    it("rejects an unset URL, because the pg driver would fall back to its defaults", () => {
         expect(() => assertLocalDatabaseUrl(undefined)).toThrow(/must be set explicitly/);
         expect(() => assertLocalDatabaseUrl("")).toThrow(/must be set explicitly/);
     });

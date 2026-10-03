@@ -1,7 +1,7 @@
 import { execFileSync } from "node:child_process";
 import { readdirSync, readFileSync } from "node:fs";
 import path from "node:path";
-import { Prisma } from "@prisma/client";
+import { Prisma } from "@/generated/prisma/client";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { prisma } from "@/lib/prisma";
 
@@ -135,19 +135,16 @@ describe("SyncRun lease", () => {
 
 describe("migration drift", () => {
     it("reports no difference between the migrated database and schema.prisma", () => {
+        // Prisma 7 diffs against the datasource in prisma.config.ts, which reads
+        // DATABASE_URL_UNPOOLED; point it at the guarded test database.
         const output = execFileSync(
             "npx",
-            [
-                "prisma",
-                "migrate",
-                "diff",
-                "--from-url",
-                process.env.DATABASE_URL as string,
-                "--to-schema-datamodel",
-                "prisma/schema.prisma",
-                "--exit-code",
-            ],
-            { encoding: "utf8", stdio: "pipe" },
+            ["prisma", "migrate", "diff", "--from-config-datasource", "--to-schema", "prisma/schema.prisma", "--exit-code"],
+            {
+                encoding: "utf8",
+                stdio: "pipe",
+                env: { ...process.env, DATABASE_URL_UNPOOLED: process.env.DATABASE_URL },
+            },
         );
         expect(output).toMatch(/No difference detected/);
     });

@@ -12,11 +12,12 @@
  * a station whose CTA id is not in the roster, which is what an unmigrated database looks like.
  */
 import { parseArgs } from "node:util";
-import { Prisma, PrismaClient } from "@prisma/client";
+import { Prisma, type PrismaClient } from "../src/generated/prisma/client";
 import { STATION_CLOSURES, closuresFor, deriveStatus, todayInChicago } from "../src/lib/cta/closures";
 import { CTA_ROSTER } from "../src/lib/cta/roster";
 import { linesForStation, sequenceRows } from "../src/lib/cta/sequences";
 import { displayNameFor, generateSlugs } from "../src/lib/cta/slug";
+import { prisma } from "../src/lib/prisma";
 import { isCliEntry } from "./cli";
 import { isCalendarDate } from "./dates";
 
@@ -289,7 +290,6 @@ function parseOptions(argv: string[]): SeedOptions {
 }
 
 if (isCliEntry(import.meta.url)) {
-    const prisma = new PrismaClient();
     Promise.resolve()
         .then(() => seedReferenceData(prisma, parseOptions(process.argv.slice(2))))
         .then((report) => console.log(JSON.stringify(report, null, 2)))

@@ -12,7 +12,7 @@
  * 5. Finalize the row as ok, partial (data changed before an error, or the narratives failed), or
  *    failed, and release the lease.
  */
-import type { PrismaClient, SyncRunStatus } from "@prisma/client";
+import type { PrismaClient, SyncRunStatus } from "@/generated/prisma/client";
 import { todayInChicago } from "@/lib/cta/closures";
 import {
     generateNarratives,

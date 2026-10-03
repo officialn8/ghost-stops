@@ -1,4 +1,4 @@
-import type { Prisma } from "@prisma/client";
+import type { Prisma } from "@/generated/prisma/client";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import { generateNarratives } from "@/lib/narratives/generate";
 import { prisma } from "@/lib/prisma";

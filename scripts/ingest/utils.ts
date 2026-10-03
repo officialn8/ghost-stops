@@ -1,9 +1,9 @@
-import { PrismaClient } from "@prisma/client";
+import { prisma } from "../../src/lib/prisma";
 import type { IngestionResult } from "./types";
 
-const DEFAULT_TIMEOUT_MS = 8000;
+export { prisma };
 
-export const prisma = new PrismaClient();
+const DEFAULT_TIMEOUT_MS = 8000;
 
 type FetchOutcome = {
   ok: boolean;

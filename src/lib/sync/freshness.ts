@@ -3,7 +3,7 @@
  * data-through date, its finish time the last successful fetch. The station list, the station
  * detail, and /api/health all read it here, so the three can never disagree.
  */
-import type { PrismaClient } from "@prisma/client";
+import type { PrismaClient } from "@/generated/prisma/client";
 import type { Freshness } from "@/types/station";
 import { optionalDay } from "./window";
 

@@ -4,7 +4,7 @@
  * outside any transaction; the write, which carries the score v2 columns too, is one set-based
  * statement whatever the station count (KTD10), so it fits inside the run's short transaction.
  */
-import type { Prisma, PrismaClient } from "@prisma/client";
+import type { Prisma, PrismaClient } from "@/generated/prisma/client";
 import type { MetricsDataStatus } from "@/lib/scoring/ranked";
 import type { ScoreColumns } from "@/lib/scoring/score";
 

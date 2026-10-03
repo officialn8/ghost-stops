@@ -1,4 +1,4 @@
-import type { PrismaClient } from "@prisma/client";
+import type { PrismaClient } from "@/generated/prisma/client";
 import type { RidershipRow } from "./match";
 
 /** Rows per statement: a 60-day window is about 8,800 rows, so two statements. */

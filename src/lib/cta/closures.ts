@@ -6,7 +6,7 @@
  * and null means the station is still closed. Dates are the first and last days the ridership
  * data shows the station shut, not announcement dates.
  */
-import type { StationStatus } from "@prisma/client";
+import type { StationStatus } from "@/generated/prisma/client";
 
 export interface StationClosureDef {
     ctaStationId: string;
