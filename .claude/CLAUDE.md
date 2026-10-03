@@ -54,7 +54,10 @@ src/
 │       └── MobileStationDetail.tsx # Mobile detail view
 └── lib/
     ├── cta/
-    │   ├── stationSequences.ts    # CTA line station order
+    │   ├── roster.ts              # The 144 stations by CTA station id
+    │   ├── sequences.ts           # Branch-aware line order, neighbors, primary line
+    │   ├── slug.ts                # Station slugs (stored on Station.slug)
+    │   ├── closures.ts            # Closures that drive Station.status
     │   ├── normalizeStationLines.ts
     │   └── explodeAndStitchSegments.ts
     ├── motion/
@@ -212,27 +215,25 @@ List item with:
 
 ## CTA Station Sequences
 
-Station order is hardcoded in `src/lib/cta/stationSequences.ts` for neighbor lookups:
+Line order lives in `src/lib/cta/sequences.ts`, keyed by CTA station id (never by name). Each line
+is a set of branches: Blue is one branch from O'Hare to Forest Park; Green's Ashland/63rd and
+Cottage Grove branches join its trunk at Garfield; the Loop is a ring branch on Brown, Orange,
+Pink, and Purple. `Station.lines` is derived from these branches, and
+`scripts/seed-reference-data.ts` writes them to the `StationLineSequence` table.
 
 ```typescript
-export const CTA_STATION_SEQUENCES: Record<string, string[]> = {
-  Red: ['Howard', 'Jarvis', 'Morse', /* ... */, '95th/Dan Ryan'],
-  Blue: ["O'Hare", 'Rosemont', /* ... */, 'Forest Park'],
-  // ... all 8 lines
-};
+// Adjacent stations on one line, in travel order (two at a fork or a Loop entry)
+neighborsOnLine(ctaStationId: string, line: CTALine): { prev: string[]; next: string[] } | null
+
+// The prev/next pair on a station's primary line, used by the detail route's neighbor pills
+primaryLineNeighbors(ctaStationId: string, lines: readonly string[]): PrimaryLineNeighbors | null
+
+// First line in canonical CTA order (Red, Blue, Brown, Green, Orange, Purple, Pink, Yellow)
+getPrimaryLine(lines: readonly string[]): CTALine | null
 ```
 
-**Design Decision**: Hardcoded instead of GTFS parsing because CTA has 8 lines with stable station order.
-
-### Utilities
-
-```typescript
-// Find adjacent stations
-findNeighbors(stationName: string, stationLines: string[]): NeighborInfo[]
-
-// Get primary line for multi-line stations (alphabetical first)
-getPrimaryLine(lines: string[]): string | null
-```
+**Design Decision**: Hardcoded instead of GTFS parsing because CTA has 8 lines with stable station
+order; a unit test checks the sequences against CTA's official stop list.
 
 ---
 
@@ -328,7 +329,7 @@ DATABASE_URL="file:../prisma/dev.db" go run cmd/etl/main.go ghost-scores chicago
 
 ### Adding a New CTA Line
 
-1. Add station sequence to `src/lib/cta/stationSequences.ts`
+1. Add the line's branches to `src/lib/cta/sequences.ts` and re-run `scripts/seed-reference-data.ts`
 2. Add color to `src/lib/cta/explodeAndStitchSegments.ts` CTA_LINE_COLORS
 3. Add color to `src/lib/utils.ts` ctaLineColors
 4. Update terminal stations in `go-etl/internal/compute/ghost_score.go`
