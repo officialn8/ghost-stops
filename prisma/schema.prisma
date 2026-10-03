@@ -139,7 +139,7 @@ model StationMetrics {
   ghostScore     Int // 0-100, higher = more "ghost"
   lastUpdated    DateTime
   serviceDateMax DateTime // Latest data date
-  dataStatus     String   @default("normal") // "normal" or "missing"
+  dataStatus     String   @default("normal") // "normal", "zero", or "missing" (src/lib/sync/baseMetrics.ts)
 
   // Score v2: component percentiles, their raw inputs, and the peers used
   scoreVersion   Int        @default(1)
