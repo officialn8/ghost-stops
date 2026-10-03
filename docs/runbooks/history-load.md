@@ -364,6 +364,26 @@ equal across 49 stations.
 The dry-run branches and the stale Phase 0 preview branch were deleted afterwards with Nate's
 approval. The production snapshot `pre-revival-v2-rehearsal-2026-10-03` remains.
 
+### 4.8 Rehearsal at the merge commit
+
+After the code review, the whole of section 5.2 steps 2 to 5 ran on a fresh branch from
+production (`dry-run/revival-v2-final-head`, `br-jolly-queen-aei0jer5`) at commit `0c5d313`,
+whose code is what merges (later commits on the branch change only this runbook):
+
+- Step 2 guard: 143 stations and 39,142 ridership rows before; CSV SHA-256 as in section 4.7;
+  migration SHA-256 `b1b054de8857661f...`, matched afterwards by `_prisma_migrations.checksum`.
+- Migration applied, no drift. Seed: dry run 345 changes, real run 345 (same breakdown as
+  section 3.2), second run 0.
+- Load with the emptiness guard: 1,242,528 rows, `sum(entries)` 3,550,614,440, day types
+  A 177,528 / U 177,520 / W 887,480, the three expected stations without rows, all 299 months equal
+  to the CSV, facts and narratives unchanged, 144 stations with 144 slugs and 1 closed, 183 MB.
+  The whole procedure took 56 seconds. A second run of the guard refused the non-empty table.
+- Old code on the migrated, seeded, and loaded branch: `stations-raw` 200 with 144 stations but
+  State/Lake listed first; the detail route 200 with Harlem's 91-day chart (and the old wrong
+  neighbor, Cumberland); `/api/chicago/stations` 500 as section 2 says.
+- Phase 1 code on the same branch: `stations-raw` 200 starting with Halsted (Green), Harlem's
+  neighbors Oak Park (Blue) and Forest Park, chart ending 2025-11-30 at 149 riders, all routes 200.
+
 ### 4.7 Backups and artifacts (all under the gitignored `exports/`)
 
 | File | Contents |
