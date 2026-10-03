@@ -1,11 +1,13 @@
+import type { Prisma } from "@prisma/client";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import { prisma } from "@/lib/prisma";
 import { clearSyncRuns, createSyncTestCity, deleteSyncTestCity, stationIdFor } from "./__fixtures__/db";
 import { fakeSource, upstreamDays, UPDATED_AT } from "./__fixtures__/fake-source";
-import { acquireLease } from "./lease";
+import { acquireLease, latestCompletedRun } from "./lease";
 import { runSync, type SyncOptions } from "./run";
 import type { UpstreamDay } from "./socrata";
 import { upsertRidership } from "./upsert";
+import { monthChunks } from "./window";
 
 // Runs in the `db` Vitest project against the local or CI Postgres.
 const CITY = "test-sync-run";
@@ -33,6 +35,13 @@ async function run(days: UpstreamDay[], options: Partial<SyncOptions> = {}, fail
 const rowCount = () => prisma.ridershipDaily.count({ where: { station: { city: { code: CITY } } } });
 const fetchedWindows = (calls: ReturnType<typeof fakeSource>["calls"]) =>
     calls.filter((c) => c.method === "fetchDays").map((c) => `${c.window!.start}..${c.window!.end}`);
+const WINDOW_FETCHES = ["2026-06-01..2026-06-30", "2026-07-01..2026-07-31"];
+
+/** A finished run that started and ended `hoursAgo` before NOW, so seeded runs sort as a test orders them. */
+async function seedRun(hoursAgo: number, data: Omit<Prisma.SyncRunCreateInput, "startedAt" | "finishedAt">) {
+    const at = new Date(NOW.getTime() - hoursAgo * 60 * 60 * 1000);
+    await prisma.syncRun.create({ data: { ...data, startedAt: at, finishedAt: at } });
+}
 
 beforeEach(async () => {
     await clearSyncRuns();
@@ -151,6 +160,50 @@ describe("runSync", () => {
         expect(record).toMatchObject({ trigger: "local --since 2026-07-01 --station-id 40020", rowsInserted: 31, driftMonths: ["2025-03"] });
     });
 
+    it("carries the drift backlog past later skipped and failed runs", async () => {
+        await seedRun(3, { trigger: "cron-weekly", status: "OK", driftMonths: ["2025-03"] });
+        await seedRun(2, { trigger: "cron-daily", status: "SKIPPED", durationMs: 0 });
+        await seedRun(1, { trigger: "cron-daily", status: "FAILED", error: "Error: Socrata request failed" });
+        expect((await latestCompletedRun(prisma))?.driftMonths).toEqual(["2025-03"]);
+
+        const { record, calls } = await run(WINDOW_ROWS);
+        expect(fetchedWindows(calls)).toEqual([...WINDOW_FETCHES, "2025-03-01..2025-03-31"]);
+        expect(record).toMatchObject({ status: "OK", driftMonths: [] });
+    });
+
+    it("carries the backlog a later partial run recorded: a partial run counts as completed", async () => {
+        await seedRun(170, { trigger: "cron-weekly", status: "OK", driftMonths: ["2025-03"] });
+        // A weekly run that reconciled, then failed writing metrics after the window had changed rows.
+        await seedRun(2, { trigger: "cron-weekly", status: "PARTIAL", driftMonths: ["2024-11"] });
+        await seedRun(1, { trigger: "cron-daily", status: "FAILED" });
+        expect((await latestCompletedRun(prisma))?.driftMonths).toEqual(["2024-11"]);
+
+        const { record, calls } = await run(WINDOW_ROWS);
+        expect(fetchedWindows(calls)).toEqual([...WINDOW_FETCHES, "2024-11-01..2024-11-30"]);
+        expect(record.driftMonths).toEqual([]);
+    });
+
+    it("keeps every drift month not yet fetched when a drift fetch fails partway", async () => {
+        await seedRun(1, { trigger: "cron-weekly", status: "OK", driftMonths: ["2019-05", "2024-12", "2025-01", "2025-04"] });
+
+        const { record, calls } = await run(WINDOW_ROWS, {}, (call) => call.window?.start === "2024-12-01");
+        expect(fetchedWindows(calls)).toEqual([...WINDOW_FETCHES, "2019-05-01..2019-05-31", "2024-12-01..2024-12-31"]);
+        expect(record).toMatchObject({ status: "PARTIAL", lease: null, rowsInserted: 122 });
+        // 2019-05 was fetched before the failure; it may stay listed, since a re-fetch is harmless.
+        expect(record.driftMonths).toEqual(expect.arrayContaining(["2024-12", "2025-01", "2025-04"]));
+    });
+
+    it("drops drift months a wide --since run fetched in full, and fetches those it did not", async () => {
+        await seedRun(1, { trigger: "cron-weekly", status: "OK", driftMonths: ["2018-11", "2019-01", "2019-05", "2025-03"] });
+
+        const { record, calls } = await run(WINDOW_ROWS, { trigger: "local --since 2019-01-15", since: "2019-01-15" });
+        const windowFetches = monthChunks({ start: "2019-01-15", end: "2026-07-31" }).map((w) => `${w.start}..${w.end}`);
+        // 2019-05 and 2025-03 lie inside the window, so each is fetched once, with it. 2018-11 is
+        // older than --since and 2019-01 only partly inside, so both are fetched as drift months.
+        expect(fetchedWindows(calls)).toEqual([...windowFetches, "2018-11-01..2018-11-30", "2019-01-01..2019-01-31"]);
+        expect(record).toMatchObject({ status: "OK", rowsInserted: 122, driftMonths: [] });
+    });
+
     it("writes base metrics for every station with rows, keeping an existing v1 score", async () => {
         await prisma.stationMetrics.create({
             data: { stationId: stationIdFor(CITY, A), ghostScore: 55, lastUpdated: NOW, serviceDateMax: new Date("2025-11-30") },
@@ -194,5 +247,48 @@ describe("runSync", () => {
             closedAt: new Date("2026-01-05"),
         });
         expect((await prisma.station.findUniqueOrThrow({ where: { id: stationIdFor(CITY, A) } })).status).toBe("ACTIVE");
+    });
+
+    it("reopens a station whose closure has ended, and keeps one with an open closure closed", async () => {
+        const reopened = stationIdFor(CITY, B);
+        const closed = stationIdFor(CITY, CLOSED);
+        await prisma.station.update({ where: { id: reopened }, data: { status: "CLOSED", closedAt: new Date("2026-03-01") } });
+        await prisma.station.update({ where: { id: closed }, data: { status: "CLOSED", closedAt: new Date("2026-01-05") } });
+        await prisma.stationClosure.createMany({
+            data: [
+                { stationId: reopened, startDate: new Date("2026-03-01"), endDate: new Date("2026-07-15"), reason: "Track work" },
+                { stationId: closed, startDate: new Date("2026-01-05"), reason: "Rebuild" },
+            ],
+        });
+
+        await run(WINDOW_ROWS); // 2026-08-02 in Chicago
+
+        expect(await prisma.station.findUniqueOrThrow({ where: { id: reopened } })).toMatchObject({ status: "ACTIVE", closedAt: null });
+        expect(await prisma.station.findUniqueOrThrow({ where: { id: closed } })).toMatchObject({
+            status: "CLOSED",
+            closedAt: new Date("2026-01-05"),
+        });
+    });
+
+    it("writes no base metrics when the station status write fails in the same transaction", async () => {
+        const closing = stationIdFor(CITY, CLOSED);
+        await prisma.stationClosure.create({ data: { stationId: closing, startDate: new Date("2026-01-05"), reason: "Rebuild" } });
+        // A trigger scoped to this scratch station makes the status update fail, with no change to the code under test.
+        await prisma.$executeRawUnsafe(`
+            CREATE OR REPLACE FUNCTION sync_test_refuse_station_update() RETURNS trigger AS $$
+            BEGIN RAISE EXCEPTION 'sync test: station update refused'; END $$ LANGUAGE plpgsql`);
+        await prisma.$executeRawUnsafe(`DROP TRIGGER IF EXISTS sync_test_refuse_station_update ON "Station"`);
+        await prisma.$executeRawUnsafe(`
+            CREATE TRIGGER sync_test_refuse_station_update BEFORE UPDATE ON "Station"
+            FOR EACH ROW WHEN (OLD."id" = '${closing}') EXECUTE FUNCTION sync_test_refuse_station_update()`);
+        const { record } = await run(WINDOW_ROWS).finally(async () => {
+            await prisma.$executeRawUnsafe(`DROP TRIGGER IF EXISTS sync_test_refuse_station_update ON "Station"`);
+            await prisma.$executeRawUnsafe(`DROP FUNCTION IF EXISTS sync_test_refuse_station_update()`);
+        });
+
+        expect(record).toMatchObject({ status: "PARTIAL", rowsInserted: 122 });
+        expect(record.error).toMatch(/station update refused/);
+        expect(await prisma.stationMetrics.count({ where: { station: { city: { code: CITY } } } })).toBe(0);
+        expect((await prisma.station.findUniqueOrThrow({ where: { id: closing } })).status).toBe("ACTIVE");
     });
 });

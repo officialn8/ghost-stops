@@ -103,4 +103,16 @@ describe("GET /api/health", () => {
 
         expect((await (await GET()).json()).warnings).toEqual([]);
     });
+
+    it("returns 503 with no error text when the health inputs cannot be read", async () => {
+        prismaMock.syncRun.findFirst.mockRejectedValue(new Error("connect ECONNREFUSED postgres://user:secret-pw@db.example.test/neondb"));
+
+        const response = await GET();
+        const body = await response.json();
+        expect(response.status).toBe(503);
+        expect(response.headers.get("cache-control")).toBe("no-store");
+        expect(body).toEqual({ status: "error" });
+        expect(JSON.stringify(body)).not.toContain("secret-pw");
+        expect(JSON.stringify(body)).not.toContain("ECONNREFUSED");
+    });
 });
