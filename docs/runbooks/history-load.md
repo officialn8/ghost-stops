@@ -744,3 +744,87 @@ the merged `main` (`9dbca56`).
   State/Lake's new metrics row (0 riders, score -1), which then leads the ascending sorts and appears
   as a 0-rider neighbor. Cosmetic; removing that row is an owner write that needs Nate's go.
 - **A failed deploy:** Vercel Instant Rollback, then revert the merge. No schema changed.
+
+## 7. Phase 3: score v2, narratives, API v2 (U12 to U14)
+
+Phase 3 changes what the sync writes, not the schema: every run now fills the score v2 columns of
+`StationMetrics` (`ghostScore` becomes a 0 to 100 percentile, -1 for unranked stations) and
+regenerates every `StationNarrative` with `templateVersion` v2 and the run's `dataThrough`. The seed
+gains `Station.openedAt` for the six stations opened since 2001. No migration.
+
+Until the first v2 run after the deploy, the detail route withholds every narrative (none carries a
+matching `dataThrough`) and returns `whyCard: null` (rows are still `scoreVersion` 1). Steps 2 and 3
+close that window within minutes.
+
+### 7.1 Steps
+
+Same connection as section 6.1 (the runtime role over production's pooled host), and the same
+10:00 to 11:00 UTC cron caveat as section 6.4.
+
+0. Baseline: production still holds 1,316,974 `RidershipDaily` rows through 2026-07-31, 144
+   `StationMetrics` rows all `scoreVersion` 1, and no `Station.openedAt`. Take a manual Neon snapshot
+   (for example `pre-u12-score-v2-<date>`) and note its id.
+1. Seed the opening dates from this branch before merging (the Phase 2 code ignores `openedAt`):
+   `npx tsx scripts/seed-reference-data.ts --dry-run` must report exactly six `openedAt` updates and
+   nothing else; then run it without `--dry-run`, and a second run reports 0 changes.
+2. Merge the Phase 3 PR and wait for the production deployment.
+3. Run the sync once: `npx tsx scripts/run-sync.ts`. Expect status OK, `narrativesWritten` 144,
+   `narrativesRejected` 0.
+4. Verify against section 7.2: the tier counts, the top and bottom 15, all 144 narratives v2 with
+   matching `dataThrough`, Logan Square's story reading as growth, and no em dash in any story.
+5. Live site: `/api/chicago/stations` returns 144 stations with `dataThrough` "2026-07-31";
+   `/api/chicago/stations/logan-square` and the same station by uuid return 200; the map's detail
+   panel shows the v2 narrative.
+
+### 7.2 Rehearsal (2026-10-03, branch `rehearsal-phase-3-score`)
+
+On `rehearsal-phase-3-score` (`br-fragrant-water-aeef6q9n`), a copy of production taken at 19:48
+UTC, as the runtime role over the pooled host, at commit `5a59384`. Production was only read.
+
+| Step | Result |
+|---|---|
+| Baseline | 1,316,974 rows to 2026-07-31, 144 stations, 144 metrics rows all `scoreVersion` 1, no `openedAt` |
+| Seed | six `openedAt` updates (Conservatory 2001-06-30, Oakton-Skokie 2012-04-30, Morgan 2012-05-18, Cermak-McCormick Place 2015-02-08, Washington/Wabash 2017-08-31, Damen (Green) 2024-08-05); a second run 0 changes |
+| Daily run | OK in 4.1 s; fetched 8,784, inserted 0, revised 0; 144 narratives written, 0 rejected |
+| Tiers | 143 ranked, scores 0 to 100: ghost 15, fading 22, quiet 35, healthy 71; State/Lake unranked at -1 with the closed story |
+| Narratives | 144 of 144 v2 with `dataThrough` equal to the metrics; no em dash; Logan Square "has grown to 4,306, a +13% change" |
+| Routes (local `next dev` on the branch) | list 200 with 144 stations, `dataThrough` "2026-07-31", sparkline 2026-07-25 to 2026-07-31; slug and uuid 200, unknown 404; Washington/Wabash keeps v1 `neighbors.prev` null and names State/Lake CLOSED in `lineNeighbors`; Lawrence's year-over-year row "reopened Jul 2025, year-over-year available from Oct 2026" |
+| v1 UI | the map's list and detail panel render v2 scores and the v2 narrative through the renamed route by uuid; no console errors |
+
+Hand review of the production ranking (component percentiles in the order residual, year-over-year,
+long-run, erraticness). Every placement follows from its rows:
+
+| Rank | Station | Score | Why |
+|---|---|---|---|
+| 1 | Oak Park (Green) | 100 | 703 a day against Harlem/Lake 1,935 and Ridgeland 673 (88); -10% year over year (97); -45% since 2019 (89) |
+| 2 | Monroe (Red) | 99 | 3,723 against Lake 9,879 and Jackson 3,970 (89); -53% since 2019 (94) |
+| 3 | Monroe (Blue) | 99 | 3,047 against Washington 7,402 and Jackson 3,794 (87); -5% (93); -51% since 2019 (92) |
+| 4 | Chicago (Blue) | 98 | 1,920 against Division and Grand (81); -27% year over year (99) |
+| 5 | 87th | 97 | 1,850 against 79th and 95th (94); -43% since 2019 (87) |
+| 6 | Kostner | 96 | 242 against Cicero and Pulaski (Pink) (98); -39% since 2019 (78) |
+| 7 | Racine | 96 | 643 against UIC-Halsted and Illinois Medical District (100); -62% since 2019 (98) |
+| 8 | Montrose (Blue) | 95 | 1,436 against Jefferson Park and Irving Park (94); -4% (91) |
+| 9 | Thorndale | 94 | 1,580 against Granville and Bryn Mawr (79); -5% (94); -38% since 2019 (76) |
+| 10 | Harlem (Forest Park) | 94 | 330 against Oak Park (Blue) and Forest Park (95); -65% since 2019 (100) |
+| 11 | Harrison | 93 | 2,302 against Jackson and Monroe (83); -4% (91); erratic (87) |
+| 12 | Western (Forest Park) | 92 | 527 against Illinois Medical District and Kedzie-Homan (89); -61% since 2019 (97) |
+| 13 | Harlem (O'Hare) | 92 | 1,367 against Cumberland and Jefferson Park (93); -41% since 2019 (83) |
+| 14 | LaSalle/Van Buren | 91 | 1,565 against the Loop median 4,160 (97); growing +6%, so it carries "small but growing" |
+| 15 | Austin (Green) | 90 | -9% year over year (96); -46% since 2019 (91) |
+| 129 to 143 | Roosevelt, 95th/Dan Ryan, Garfield (Green), Addison (Red), Washington (Blue), Davis, Fullerton, Morgan, Clark/Lake, Belmont, Cermak-McCormick Place, Washington/Wabash, O'Hare, Cermak-Chinatown, 54th/Cermak | 10 to 0 | each carries two to five times its peers' riders (residual 0 to 17); hubs compare with their branch median; Washington/Wabash (+47%) and Clark/Lake (+25%) absorbed State/Lake's riders after it closed |
+
+On production data the snapshot's ghosts shift: Kostner stays a ghost; King Drive (88) and Halsted
+(Green) (83) are fading; Indiana (58) is quiet because it grew 19% year over year. Wilson is
+healthy (27): it carries about twice its neighbors' riders, although its year-over-year decline
+(-13%, percentile 98) is among the steepest, and its story opens "holding its own" because healthy
+stations get growth or stability stories.
+
+### 7.3 Rollback
+
+- **Code:** Vercel Instant Rollback to the Phase 2 deployment. Its routes read `ghostScore`, which
+  now holds the v2 percentile, so the v1 colors stay miscalibrated (as they are until U18), and its
+  detail route shows the v2 narratives (it never checked `dataThrough`). Nothing breaks.
+- **Data:** the Phase 2 sync leaves `ghostScore` and the narratives alone, so the v1 scores do not
+  come back on their own. Restore the step 0 snapshot (or Neon instant restore within six hours) if
+  they must.
+- **Opening dates:** harmless to every version of the code; leave them.
