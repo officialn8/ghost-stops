@@ -336,6 +336,56 @@ approval. The production snapshot `pre-revival-v2-rehearsal-2026-10-03` remains.
 Production checksums taken with the backups: facts 625 rows, `ea912a2122fd460cbf5a4fde9d9970e0`;
 narratives 143 rows, max `lastComputed` 2026-02-02 19:50:52.465.
 
-## 5. Production run
+## 5. Production run (U8)
 
-Recorded by U8.
+The most dangerous step in the plan: `migrate deploy` drops `RidershipDaily` in production.
+Run it in a quiet window, with Nate's go at that moment.
+
+### 5.1 Gates (all required)
+
+| Gate | Evidence |
+|---|---|
+| Restore rehearsed | section 4.5 |
+| Upstream sample passed | section 4.4 and 4.6 (60 of 60) |
+| Facts, narratives, and every other table exported locally | section 4.7 |
+| CSV passes the distinct-count and station-id checks | the export refuses to write otherwise (section 3.3) |
+| Projected size acceptable | 183 MB measured (section 4.3); Nate lifted the 800 MB cap |
+| Phase 1 PR open, not merged | the PR link |
+| Railway autodeploy off, so the merge does not start a failing build | Railway service settings |
+| Nate confirms at that moment | his reply |
+
+### 5.2 Steps
+
+Record the UTC time and result of each step in section 5.4.
+
+1. Take a manual snapshot of the production branch and note its id and time. The rehearsal
+   snapshot from section 4.5 is also a valid pre-migration snapshot as long as step 2 passes.
+2. Confirm production is unchanged since the backups: `Station` 143, `RidershipDaily` 39,142,
+   and the fact and narrative checksums in section 4.7.
+3. Section 3.1 against production's direct URL as `neondb_owner`.
+4. Section 3.2: `--dry-run`, then the real run (345 changes), then a second run (0 changes).
+5. Section 3.3: export already on disk (check its SHA-256 against section 4.7), load, `ANALYZE`,
+   and every verification query.
+6. Check that production still serves with the old code: `GET /api/chicago/stations-raw` returns
+   200 and 144 stations, and a station detail returns 200 with a chart ending 2025-11-30.
+7. Merge the Phase 1 PR and wait for the production deployment.
+8. Check the new deployment: list and detail return 200; Harlem
+   (`/api/chicago/stations/088ea428fedd5ac895912b99bd633067`) names Oak Park (Blue) and Forest Park;
+   30 concurrent detail requests return no 500s; the site still shows November 2025 data.
+
+### 5.3 Rollback
+
+- **Before the merge, within six hours of step 3:** restore the production branch to a time
+  before step 3 (Neon instant restore). Connection strings keep working; Neon keeps the replaced
+  state as a separate branch.
+- **Later:** restore the step 1 snapshot onto the production branch with finalize (rehearsed in
+  section 4.5). The branch id changes; anything that refers to the production branch by id needs
+  the new one.
+- **Partial:** the load is idempotent (TRUNCATE plus COPY in one transaction), so a failed or
+  suspect load is re-run as is. Facts and narratives can be reloaded from the section 4.7 CSVs.
+- **The deployment fails after the merge:** revert the merge commit. The old code serves the
+  new schema (section 4.1), so no database rollback is needed for that.
+
+### 5.4 Record
+
+Filled in during the production run.
