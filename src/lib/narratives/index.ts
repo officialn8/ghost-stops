@@ -4,7 +4,8 @@
  * Journalism-grade storytelling backed by cited facts.
  */
 
-// Archetypes
+// Archetypes. The narrative job (./generate) is server-only and deliberately not re-exported
+// here (KTD21): components import this index.
 export {
   ARCHETYPES,
   ARCHETYPE_TITLES,
@@ -18,6 +19,7 @@ export {
   formatNumber,
   formatPercent,
   formatPercentChange,
+  formatChange,
   formatCurrency,
   formatValue,
   formatValueWithUnit,

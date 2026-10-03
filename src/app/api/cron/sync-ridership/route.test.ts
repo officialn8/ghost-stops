@@ -23,6 +23,8 @@ const summary = (overrides: Partial<SyncSummary> = {}): SyncSummary => ({
     rowsRevised: 3,
     unmatchedStationIds: [],
     driftMonths: [],
+    narrativesWritten: 144,
+    narrativesRejected: 0,
     durationMs: 12_000,
     error: null,
     ...overrides,
@@ -64,7 +66,14 @@ describe("GET /api/cron/sync-ridership", () => {
         expect(response.status).toBe(200);
         expect(runSync).toHaveBeenCalledWith({}, expect.anything(), expect.objectContaining({ trigger: "cron-daily", mode: "daily" }));
         expect(revalidateTag).toHaveBeenCalledWith(STATIONS_CACHE_TAG);
-        expect(await response.json()).toMatchObject({ status: "OK", mode: "daily", rowsInserted: 61, rowsRevised: 3 });
+        expect(await response.json()).toMatchObject({
+            status: "OK",
+            mode: "daily",
+            rowsInserted: 61,
+            rowsRevised: 3,
+            narrativesWritten: 144,
+            narrativesRejected: 0,
+        });
     });
 
     it("selects reconciliation when the weekly schedule fires", async () => {

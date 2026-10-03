@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getPrimaryLine, primaryLineNeighbors } from "@/lib/cta/sequences";
 import { isRanked } from "@/lib/sync/baseMetrics";
-import { formatValue, ARCHETYPE_TITLES, ARCHETYPE_EMOJIS } from "@/lib/narratives";
+import { formatValue, getFactLabel, ARCHETYPE_TITLES, ARCHETYPE_EMOJIS } from "@/lib/narratives";
 import type { FactKey, ArchetypeKey } from "@/types/narrative";
 
 // Helper to calculate median from an array of numbers
@@ -182,25 +182,13 @@ export async function GET(
       where: { stationId },
     });
 
-    // Fact key to display label mapping
-    const factLabels: Record<string, string> = {
-      ridership_2001_avg: "Ridership Average (2001)",
-      ridership_2012_avg: "Ridership Average (2012)",
-      ridership_latest_avg: "Ridership Average (Latest)",
-      ridership_decline_pct: "Ridership Decline",
-      population_change: "Population Change",
-      vehicle_ownership_pct: "Vehicle Ownership",
-      jobs_walkshed_change: "Jobs in Walkshed",
-      il_lane_miles_change: "IL Lane Miles Added",
-    };
-
     // Build facts response object
     const factsResponse = facts.length > 0
       ? Object.fromEntries(
           facts.map((f) => [
             f.factKey,
             {
-              label: factLabels[f.factKey] || f.factKey.replace(/_/g, " ").replace(/\b\w/g, (l) => l.toUpperCase()),
+              label: getFactLabel(f.factKey),
               value: f.value,
               displayValue: formatValue(
                 f.value,
@@ -226,8 +214,8 @@ export async function GET(
         )
       : null;
 
-    // Build narrative response object
-    let narrativeResponse = narrative
+    // Build narrative response object; every station's story, O'Hare's included, comes from the narrative job
+    const narrativeResponse = narrative
       ? {
           archetype: {
             key: narrative.archetypeKey as ArchetypeKey,
@@ -243,26 +231,6 @@ export async function GET(
           evidenceMeta: narrative.evidenceMeta ?? undefined,
         }
       : null;
-
-    const isOhare = /o['’]?hare/i.test(station.name);
-    const hasAirportArrivals = Boolean(factsResponse?.airport_arrivals);
-    if (isOhare && hasAirportArrivals) {
-      narrativeResponse = {
-        archetype: {
-          key: "airport_gateway",
-          title: ARCHETYPE_TITLES.airport_gateway,
-          emoji: ARCHETYPE_EMOJIS.airport_gateway,
-        },
-        story:
-          "O'Hare is an airport-driven station. Local residential population doesn't explain its ridership—airport arrivals and traveler demand do. Census walkshed metrics are intentionally excluded here to avoid misleading comparisons.",
-        evidenceFactKeys: ["airport_arrivals"],
-        templateVersion: "airport_v1",
-        confidence: 0.85,
-        quality: "MEDIUM",
-        qualityNote: "Airport arrivals are the primary driver; Census facts excluded.",
-        evidenceMeta: { override: true },
-      };
-    }
 
     // Get unique sources for citation
     const sourcesResponse = facts.length > 0

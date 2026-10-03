@@ -7,7 +7,7 @@
  * All formatters handle this convention consistently.
  */
 
-import type { ValueType } from "@/types/narrative";
+import type { FactKey, ValueType } from "@/types/narrative";
 
 // ═══════════════════════════════════════════════════════════════
 // CORE FORMATTERS
@@ -31,17 +31,22 @@ export function formatNumber(value: number, decimals = 0): string {
  * CONVENTION: Input is a decimal (0.52 = 52%), output is "52%"
  */
 export function formatPercent(value: number, decimals = 0): string {
-  const percentage = value * 100;
-  const formatted = Math.abs(percentage).toLocaleString("en-US", {
+  const { formatted, sign } = roundPercent(value, decimals);
+  return sign < 0 ? `-${formatted}%` : `${formatted}%`;
+}
+
+/**
+ * A decimal as a rounded, unsigned percentage, and the sign of what is shown: a value that
+ * rounds to zero has sign 0, so it never prints as "-0%" or "+0%".
+ */
+function roundPercent(value: number, decimals: number): { formatted: string; sign: -1 | 0 | 1 } {
+  const factor = 10 ** decimals;
+  const rounded = Math.round(Math.abs(value * 100) * factor) / factor;
+  const formatted = rounded.toLocaleString("en-US", {
     minimumFractionDigits: decimals,
     maximumFractionDigits: decimals,
   });
-
-  // Always show sign for non-zero values (except when it's positive change displayed positively)
-  if (percentage < 0) {
-    return `-${formatted}%`;
-  }
-  return `${formatted}%`;
+  return { formatted, sign: rounded === 0 ? 0 : value < 0 ? -1 : 1 };
 }
 
 /**
@@ -51,18 +56,21 @@ export function formatPercent(value: number, decimals = 0): string {
  * Use this for change metrics where direction matters.
  */
 export function formatPercentChange(value: number, decimals = 0): string {
-  const percentage = value * 100;
-  const formatted = Math.abs(percentage).toLocaleString("en-US", {
-    minimumFractionDigits: decimals,
-    maximumFractionDigits: decimals,
-  });
-
-  if (percentage > 0) {
-    return `+${formatted}%`;
-  } else if (percentage < 0) {
-    return `-${formatted}%`;
-  }
+  const { formatted, sign } = roundPercent(value, decimals);
+  if (sign > 0) return `+${formatted}%`;
+  if (sign < 0) return `-${formatted}%`;
   return `${formatted}%`;
+}
+
+/**
+ * A change as narratives and the score card show it: always signed, in whole percents, with one
+ * decimal when a whole percent would read as zero, so a small rise still shows as one.
+ * Examples: 0.0398 → "+4%", -0.384 → "-38%", 0.003 → "+0.3%", 0.0004 → "0%"
+ */
+export function formatChange(value: number): string {
+  const percent = Math.abs(value * 100);
+  if (Math.round(percent * 10) === 0) return "0%";
+  return formatPercentChange(value, Math.round(percent) >= 1 ? 0 : 1);
 }
 
 /**
@@ -186,22 +194,30 @@ export function formatTimeframe(
 // FACT LABEL GENERATION
 // ═══════════════════════════════════════════════════════════════
 
+/** The one label table for fact keys, shared by the detail route and the fact cards. */
+const FACT_LABELS: Record<FactKey, string> = {
+  ridership_2001_avg: "2001 Ridership",
+  ridership_2006_avg: "2006 Ridership",
+  ridership_2012_avg: "2012 Ridership",
+  ridership_latest_avg: "Current Ridership",
+  ridership_decline_pct: "Ridership Change",
+  population_change: "Population Change",
+  vehicle_ownership_pct: "Vehicle Ownership",
+  jobs_walkshed_change: "Jobs Change",
+  il_lane_miles_change: "IL Lane-Miles Added",
+  airport_arrivals: "Airport Arrivals",
+  station_opened: "Station Opened",
+};
+
 /**
- * Generate a human-readable label for a fact key.
+ * Generate a human-readable label for a fact key; a key the table lacks is title-cased
+ * ("bus_routes_cut" → "Bus Routes Cut").
  */
 export function getFactLabel(factKey: string): string {
-  const labels: Record<string, string> = {
-    ridership_2001_avg: "2001 Ridership",
-    ridership_latest_avg: "Current Ridership",
-    ridership_decline_pct: "Ridership Change",
-    population_change: "Population Change",
-    vehicle_ownership_pct: "Vehicle Ownership",
-    jobs_walkshed_change: "Jobs Change",
-    il_lane_miles_change: "IL Lane-Miles Added",
-    airport_arrivals: "Airport Arrivals",
-  };
-
-  return labels[factKey] || factKey;
+  return (
+    FACT_LABELS[factKey as FactKey] ??
+    factKey.replace(/_/g, " ").replace(/\b\w/g, (letter) => letter.toUpperCase())
+  );
 }
 
 /**

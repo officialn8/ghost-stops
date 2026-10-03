@@ -49,6 +49,8 @@ export async function GET(request: NextRequest) {
             rowsRevised: summary.rowsRevised,
             unmatchedStationIds: summary.unmatchedStationIds.length,
             driftMonths: summary.driftMonths.length,
+            narrativesWritten: summary.narrativesWritten,
+            narrativesRejected: summary.narrativesRejected,
             durationMs: summary.durationMs,
         };
         console.info("sync-ridership", JSON.stringify(body));

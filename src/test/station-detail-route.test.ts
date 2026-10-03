@@ -23,9 +23,9 @@ const BY_CTA_ID: Record<string, Neighbor> = {
 function stubStation(
     ctaStationId: string | null,
     lines: string[],
-    self: { status?: string; metrics?: ReturnType<typeof metrics> | null } = {},
+    self: { status?: string; metrics?: ReturnType<typeof metrics> | null; name?: string } = {},
 ) {
-    const { status = "ACTIVE", metrics: own = metrics(300, 67) } = self;
+    const { status = "ACTIVE", metrics: own = metrics(300, 67), name = "Station under test" } = self;
     prismaMock.station.findUnique.mockImplementation((async (args: {
         where: { id?: string; cityId_ctaStationId?: { ctaStationId: string } };
     }) => {
@@ -34,7 +34,7 @@ function stubStation(
                 id: args.where.id,
                 cityId: CITY,
                 ctaStationId,
-                name: "Station under test",
+                name,
                 status,
                 latitude: 41.88,
                 longitude: -87.63,
@@ -190,5 +190,49 @@ describe("GET /api/chicago/stations/[id] peer comparisons", () => {
         expect(prismaMock.station.count).toHaveBeenCalledWith({
             where: { cityId: CITY, status: "ACTIVE", metrics: { dataStatus: "normal", rolling30dAvg: { lt: 300 } } },
         });
+    });
+});
+
+describe("GET /api/chicago/stations/[id] narrative and facts", () => {
+    it("returns O'Hare's stored narrative as the job wrote it, and labels facts from the shared table", async () => {
+        stubStation("40890", ["Blue"], { name: "O'Hare" });
+        prismaMock.stationFact.findMany.mockResolvedValue([
+            {
+                factKey: "airport_arrivals",
+                value: 0,
+                valueType: "number",
+                unit: "arrivals/day",
+                geography: "station",
+                timeframeStart: null,
+                timeframeEnd: null,
+                methodology: "Placeholder until airport arrivals ingestion is implemented.",
+                sourceNote: null,
+                quality: "LOW",
+                qualityNote: null,
+                evidenceMeta: null,
+                source: { code: "ohare_arrivals", name: "O'Hare Airport Arrivals", url: "https://example.test", status: "ACTIVE" },
+            },
+        ] as never);
+        prismaMock.stationNarrative.findUnique.mockResolvedValue({
+            archetypeKey: "airport_gateway",
+            renderedStory: "Stored story.",
+            evidenceFactKeys: '["airport_arrivals"]',
+            templateVersion: "v2",
+            confidence: 0.85,
+            quality: "LOW",
+            qualityNote: null,
+            evidenceMeta: null,
+        } as never);
+
+        const body = (await detail("ohare")) as unknown as {
+            narrative: { archetype: { key: string; title: string }; story: string; templateVersion: string };
+            facts: Record<string, { label: string }>;
+        };
+        expect(body.narrative).toMatchObject({
+            archetype: { key: "airport_gateway", title: "Airport Gateway" },
+            story: "Stored story.",
+            templateVersion: "v2",
+        });
+        expect(body.facts.airport_arrivals.label).toBe("Airport Arrivals");
     });
 });

@@ -1,5 +1,6 @@
 import type { Prisma } from "@prisma/client";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
+import { generateNarratives } from "@/lib/narratives/generate";
 import { prisma } from "@/lib/prisma";
 import { clearSyncRuns, createSyncTestCity, deleteSyncTestCity, stationIdFor } from "./__fixtures__/db";
 import { fakeSource, upstreamDays, UPDATED_AT } from "./__fixtures__/fake-source";
@@ -43,6 +44,32 @@ async function seedRun(hoursAgo: number, data: Omit<Prisma.SyncRunCreateInput, "
     await prisma.syncRun.create({ data: { ...data, startedAt: at, finishedAt: at } });
 }
 
+/** A stored fact for a scratch station, from a scratch source that outlives the city. */
+async function seedFact(cta: string, factKey: string, value: number) {
+    const source = await prisma.dataSource.upsert({
+        where: { code: FACT_SOURCE },
+        create: { code: FACT_SOURCE, name: "Sync test facts", url: "https://example.test/facts" },
+        update: {},
+    });
+    await prisma.stationFact.create({
+        data: {
+            stationId: stationIdFor(CITY, cta),
+            factKey,
+            value,
+            valueType: "number",
+            unit: "riders/day",
+            geography: "station",
+            methodology: "Sync test fact",
+            sourceId: source.id,
+            quality: "HIGH",
+        },
+    });
+}
+const FACT_SOURCE = "test-sync-run-facts";
+
+const cityNarratives = () =>
+    prisma.stationNarrative.findMany({ where: { station: { city: { code: CITY } } }, orderBy: { stationId: "asc" } });
+
 beforeEach(async () => {
     await clearSyncRuns();
     await createSyncTestCity(CITY, [A, B, CLOSED]);
@@ -51,6 +78,7 @@ beforeEach(async () => {
 afterAll(async () => {
     await clearSyncRuns();
     await deleteSyncTestCity(CITY);
+    await prisma.dataSource.deleteMany({ where: { code: FACT_SOURCE } });
     await prisma.$disconnect();
 });
 
@@ -284,6 +312,7 @@ describe("runSync", () => {
     it("writes no metrics and no statuses, and finalizes as failed, when scoring throws", async () => {
         await run(WINDOW_ROWS);
         await prisma.stationMetrics.deleteMany({ where: { station: { city: { code: CITY } } } });
+        await prisma.stationNarrative.deleteMany({ where: { station: { city: { code: CITY } } } });
         await prisma.stationClosure.create({
             data: { stationId: stationIdFor(CITY, CLOSED), startDate: new Date("2026-01-05"), reason: "Rebuild" },
         });
@@ -297,7 +326,111 @@ describe("runSync", () => {
         expect(record).toMatchObject({ status: "FAILED", lease: null, rowsInserted: 0, rowsRevised: 0 });
         expect(record.error).toMatch(/scoring exploded/);
         expect(await prisma.stationMetrics.count({ where: { station: { city: { code: CITY } } } })).toBe(0);
+        expect(await cityNarratives()).toEqual([]);
         expect((await prisma.station.findUniqueOrThrow({ where: { id: stationIdFor(CITY, CLOSED) } })).status).toBe("ACTIVE");
+    });
+
+    it("writes a v2 narrative for every station with metrics, stamped with the metrics' data-through date", async () => {
+        await seedFact(A, "ridership_2001_avg", 1_800);
+
+        const { summary } = await run(WINDOW_ROWS);
+        expect(summary).toMatchObject({ status: "OK", narrativesWritten: 2, narrativesRejected: 0 });
+
+        const metrics = await prisma.stationMetrics.findMany({ where: { station: { city: { code: CITY } } } });
+        const narratives = await cityNarratives();
+        // The station with no ridership has no metrics, so no story either.
+        expect(narratives.map((n) => n.stationId)).toEqual([stationIdFor(CITY, A), stationIdFor(CITY, B)]);
+        for (const narrative of narratives) {
+            expect(narrative.templateVersion).toBe("v2");
+            expect(narrative.lastComputed).toEqual(NOW);
+            const own = metrics.find((m) => m.stationId === narrative.stationId)!;
+            expect(narrative.dataThrough?.toISOString().slice(0, 10)).toBe("2026-07-31");
+            expect(narrative.dataThrough).toEqual(own.dataThrough);
+        }
+
+        // A quiet station with a stored 2001 average: the fact story, told from the 12-month average.
+        expect(narratives[0]).toMatchObject({
+            archetypeKey: "service_erosion",
+            evidenceFactKeys: '["ridership_2001_avg"]',
+            confidence: 0.7,
+            quality: "HIGH",
+            qualityNote: null,
+            evidenceMeta: {
+                metrics: { avg12m: 900, yoyChangePct: null, vs2019Pct: null, dataThrough: "2026-07-31" },
+                tier: "QUIET",
+                badge: null,
+                selectedBy: "facts",
+            },
+        });
+        expect(narratives[0].renderedStory).toContain("has fallen to **900**, a **-50%** change");
+        // No facts and no year-ago or 2019 rows: the card's numbers alone, with no direction claimed.
+        expect(narratives[1]).toMatchObject({
+            archetypeKey: "stable",
+            renderedStory: "Station 40020 ranks as a quiet station. Over the last 12 months it averaged **450** riders a day.",
+            evidenceFactKeys: "[]",
+            quality: "UNKNOWN",
+        });
+    });
+
+    it("regenerates narratives idempotently: a second run with unchanged metrics changes only lastComputed", async () => {
+        await seedFact(A, "ridership_2001_avg", 1_800);
+        await run(WINDOW_ROWS);
+        const first = await cityNarratives();
+
+        const later = new Date(NOW.getTime() + 60 * 60 * 1000);
+        await run(WINDOW_ROWS, { now: () => later });
+        const second = await cityNarratives();
+
+        const exceptLastComputed = (rows: typeof first) => rows.map((n) => ({ ...n, lastComputed: null }));
+        expect(second).toHaveLength(2);
+        expect(exceptLastComputed(second)).toEqual(exceptLastComputed(first));
+        expect(second.map((n) => n.lastComputed)).toEqual([later, later]);
+    });
+
+    it("writes metrics and statuses but no narratives, and finalizes as partial, when narrative generation throws", async () => {
+        await run(WINDOW_ROWS);
+        await prisma.stationMetrics.deleteMany({ where: { station: { city: { code: CITY } } } });
+        await prisma.stationNarrative.deleteMany({ where: { station: { city: { code: CITY } } } });
+        await prisma.stationClosure.create({
+            data: { stationId: stationIdFor(CITY, CLOSED), startDate: new Date("2026-01-05"), reason: "Rebuild" },
+        });
+
+        const { summary, record } = await run(WINDOW_ROWS, {
+            generateNarratives: () => {
+                throw new Error("narratives exploded");
+            },
+        });
+
+        // Nothing upstream changed, so only the narrative failure makes this run partial.
+        expect(record).toMatchObject({ status: "PARTIAL", lease: null, rowsInserted: 0, rowsRevised: 0 });
+        expect(record.error).toMatch(/narratives exploded/);
+        expect(summary).toMatchObject({ dataThrough: "2026-07-31", narrativesWritten: 0 });
+        expect(await prisma.stationMetrics.count({ where: { station: { city: { code: CITY } } } })).toBe(2);
+        expect((await prisma.station.findUniqueOrThrow({ where: { id: stationIdFor(CITY, CLOSED) } })).status).toBe("CLOSED");
+        expect(await cityNarratives()).toEqual([]);
+    });
+
+    it("logs and counts a narrative that cites a fact its station lacks, writing the others", async () => {
+        await seedFact(A, "population_change", 0.03);
+        const lines: string[] = [];
+
+        const { summary, record } = await run(WINDOW_ROWS, {
+            log: (line) => lines.push(line),
+            // Both stations get the stable story; this one cites population, which only A has.
+            generateNarratives: (stations, dataThrough) =>
+                generateNarratives(stations, dataThrough, {
+                    templates: { stable: "{{stationName}} saw a **{{population_change|change}}** change in population." },
+                }),
+        });
+
+        expect(record.status).toBe("OK");
+        expect(summary).toMatchObject({ narrativesWritten: 1, narrativesRejected: 1 });
+        expect(lines.filter((line) => line.includes("narrative"))).toEqual([
+            `narrative rejected for station ${stationIdFor(CITY, B)} (stable): missing population_change`,
+        ]);
+        expect((await cityNarratives()).map((n) => [n.stationId, n.renderedStory, n.evidenceFactKeys])).toEqual([
+            [stationIdFor(CITY, A), "Station 40010 saw a **+3%** change in population.", '["population_change"]'],
+        ]);
     });
 
     it("recomputes station status from closures", async () => {
@@ -353,6 +486,7 @@ describe("runSync", () => {
         expect(record).toMatchObject({ status: "PARTIAL", rowsInserted: 122 });
         expect(record.error).toMatch(/station update refused/);
         expect(await prisma.stationMetrics.count({ where: { station: { city: { code: CITY } } } })).toBe(0);
+        expect(await cityNarratives()).toEqual([]);
         expect((await prisma.station.findUniqueOrThrow({ where: { id: closing } })).status).toBe("ACTIVE");
     });
 });
