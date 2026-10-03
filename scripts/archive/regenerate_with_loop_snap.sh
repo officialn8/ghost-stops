@@ -2,7 +2,7 @@
 # Regenerate CTA tracks with improved Loop segment matching
 
 echo "Regenerating CTA track segments with Loop endpoint snapping..."
-python3 scripts/generate_cta_tracks.py
+python3 scripts/archive/generate_cta_tracks.py
 
 echo ""
 echo "Track segments regenerated. The map will automatically use the new data."

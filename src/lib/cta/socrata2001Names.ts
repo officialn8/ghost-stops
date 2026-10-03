@@ -5,7 +5,7 @@
  * to the station name the CTA "L" daily ridership dataset (Socrata 5neh-572f) uses
  * for calendar year 2001. The 2001 facts in StationFact were built with this table.
  *
- * Preserved verbatim from scripts/fetch-all-2001.ts (R37). The original object literal
+ * Preserved verbatim from scripts/fetch-all-2001.ts, now scripts/archive/ (R37). The original object literal
  * had 156 entry lines; 9 repeated an earlier key with the same value, so
  * 147 unique pairs remain and no mapping changed. Several display names share
  * a Socrata name on purpose (line-qualified aliases of one station).

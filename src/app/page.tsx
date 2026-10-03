@@ -5,7 +5,7 @@ import dynamic from "next/dynamic";
 import TopBar from "@/components/layout/TopBar";
 
 // Dynamic import for map to avoid SSR issues
-const GhostStopsMap = dynamic(() => import("@/components/map/map"), {
+const GhostStopsMap = dynamic(() => import("@/components/map/MapContainer"), {
   ssr: false,
   loading: () => (
     <div className="w-full h-full bg-neutral-bg flex items-center justify-center">

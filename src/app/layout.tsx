@@ -39,7 +39,7 @@ const jetbrainsMono = JetBrains_Mono({
 
 export const metadata: Metadata = {
   title: "Ghost Stops | Chicago CTA Rail Analytics",
-  description: "Explore Chicago's emptiest CTA rail stations. Premium transit analytics with ghost scores, ridership trends, and real-time arrivals.",
+  description: "Explore Chicago's emptiest CTA rail stations. Premium transit analytics with ghost scores and ridership trends.",
   keywords: ["Chicago", "CTA", "transit", "ghost stations", "ridership", "analytics"],
   authors: [{ name: "Ghost Stops" }],
   openGraph: {

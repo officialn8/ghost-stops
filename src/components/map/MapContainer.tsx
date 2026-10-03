@@ -87,9 +87,7 @@ export default function MapContainer({ searchQuery = "" }: MapContainerProps) {
         return res.json();
       })
       .then((data) => {
-        console.log("API Response:", data); // Debug log
         if (Array.isArray(data.stations)) {
-          console.log(`Loaded ${data.stations.length} stations`); // Debug log
           setStations(data.stations);
           setDataAsOf(data.dataAsOf);
         } else if (data.error) {
@@ -113,7 +111,6 @@ export default function MapContainer({ searchQuery = "" }: MapContainerProps) {
         return res.json();
       })
       .then(data => {
-        console.log("Loaded track segments:", data);
         setTrackSegments(data);
       })
       .catch(err => {

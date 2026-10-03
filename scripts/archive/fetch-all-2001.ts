@@ -1,5 +1,5 @@
 import { PrismaClient } from '@prisma/client';
-import { SOCRATA_2001_NAMES } from '../src/lib/cta/socrata2001Names';
+import { SOCRATA_2001_NAMES } from '../../src/lib/cta/socrata2001Names';
 
 // One-off backfill of the ridership_2001_avg station fact from the CTA Socrata dataset.
 // Reads the database connection from DATABASE_URL; never hardcode a connection string.
