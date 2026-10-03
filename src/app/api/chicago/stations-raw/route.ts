@@ -45,6 +45,13 @@ export async function GET(request: NextRequest) {
       orderBy
     });
 
+    // Postgres sorts a missing metrics row first in a descending order, which would rank an
+    // unscored station (State/Lake, closed) as the ghostiest. Keep unscored stations last; the
+    // sort is stable, so the database order holds otherwise.
+    if (sort !== "name") {
+      stations.sort((a, b) => Number(a.metrics === null) - Number(b.metrics === null));
+    }
+
     // Get max service date
     const latestMetric = await prisma.stationMetrics.findFirst({
       where: {

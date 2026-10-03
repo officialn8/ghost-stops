@@ -54,3 +54,6 @@ prisma/prisma/dev.db
 # go-etl build output
 go-etl/etl
 go-etl/go-etl
+
+# history export and backup CSVs (docs/runbooks/history-load.md)
+/exports/

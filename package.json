@@ -39,7 +39,7 @@
   "devDependencies": {
     "@eslint/eslintrc": "^3",
     "@turf/turf": "^7.3.3",
-    "@types/node": "^20",
+    "@types/node": "^22.20.5",
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "autoprefixer": "^10.4.20",
