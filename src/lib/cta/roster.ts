@@ -6,10 +6,18 @@
  *
  * Line membership is not repeated here: it is derived from the sequences in ./sequences.ts so the
  * two can never disagree.
+ *
+ * `openedAt` is the first day of passenger service for the six stations that opened after the
+ * ridership data begins (2001-01-02); every other station was open before it, and the seed leaves
+ * their Station.openedAt null. Each date is the published opening date, and the CTA's daily
+ * ridership agrees: before it each station shows zero or a handful of entries a day. Score v2
+ * nulls any comparison whose window starts before a station opened (src/lib/scoring/availability.ts).
  */
 export interface RosterStation {
     ctaStationId: string;
     name: string;
+    /** YYYY-MM-DD; only for stations opened on or after 2001-01-01. */
+    openedAt?: string;
 }
 
 export const CTA_ROSTER: readonly RosterStation[] = [
@@ -48,7 +56,8 @@ export const CTA_ROSTER: readonly RosterStation[] = [
     { ctaStationId: "41250", name: "Central (Purple)" },
     { ctaStationId: "40780", name: "Central Park" },
     { ctaStationId: "41000", name: "Cermak-Chinatown" },
-    { ctaStationId: "41690", name: "Cermak-McCormick Place" },
+    // Opened 8 Feb 2015 (en.wikipedia.org/wiki/Cermak–McCormick_Place_station).
+    { ctaStationId: "41690", name: "Cermak-McCormick Place", openedAt: "2015-02-08" },
     { ctaStationId: "41410", name: "Chicago (Blue)" },
     { ctaStationId: "40710", name: "Chicago (Brown/Purple)" },
     { ctaStationId: "41450", name: "Chicago (Red)" },
@@ -59,12 +68,14 @@ export const CTA_ROSTER: readonly RosterStation[] = [
     { ctaStationId: "40380", name: "Clark/Lake" },
     { ctaStationId: "40430", name: "Clinton (Blue)" },
     { ctaStationId: "41160", name: "Clinton (Green/Pink)" },
-    { ctaStationId: "41670", name: "Conservatory-Central Park Drive" },
+    // Opened 30 Jun 2001, replacing Homan (en.wikipedia.org/wiki/Conservatory–Central_Park_Drive_station).
+    { ctaStationId: "41670", name: "Conservatory-Central Park Drive", openedAt: "2001-06-30" },
     { ctaStationId: "40720", name: "Cottage Grove" },
     { ctaStationId: "40230", name: "Cumberland" },
     { ctaStationId: "40590", name: "Damen (Blue)" },
     { ctaStationId: "40090", name: "Damen (Brown)" },
-    { ctaStationId: "41710", name: "Damen (Green)" },
+    // Opened 5 Aug 2024 (en.wikipedia.org/wiki/Damen_station_(CTA_Green_Line)).
+    { ctaStationId: "41710", name: "Damen (Green)", openedAt: "2024-08-05" },
     { ctaStationId: "40210", name: "Damen (Pink)" },
     { ctaStationId: "40050", name: "Davis" },
     { ctaStationId: "40690", name: "Dempster" },
@@ -119,14 +130,16 @@ export const CTA_ROSTER: readonly RosterStation[] = [
     { ctaStationId: "41090", name: "Monroe (Red)" },
     { ctaStationId: "41330", name: "Montrose (Blue)" },
     { ctaStationId: "41500", name: "Montrose (Brown)" },
-    { ctaStationId: "41510", name: "Morgan (Green/Pink)" },
+    // Opened 18 May 2012; the ceremony was 24 May (en.wikipedia.org/wiki/Morgan_station).
+    { ctaStationId: "41510", name: "Morgan (Green/Pink)", openedAt: "2012-05-18" },
     { ctaStationId: "40100", name: "Morse" },
     { ctaStationId: "40650", name: "North/Clybourn" },
     { ctaStationId: "40400", name: "Noyes" },
     { ctaStationId: "40890", name: "O'Hare" },
     { ctaStationId: "40180", name: "Oak Park (Blue)" },
     { ctaStationId: "41350", name: "Oak Park (Green)" },
-    { ctaStationId: "41680", name: "Oakton-Skokie" },
+    // Opened 30 Apr 2012 (en.wikipedia.org/wiki/Oakton–Skokie_station).
+    { ctaStationId: "41680", name: "Oakton-Skokie", openedAt: "2012-04-30" },
     { ctaStationId: "41310", name: "Paulina" },
     { ctaStationId: "41030", name: "Polk" },
     { ctaStationId: "40920", name: "Pulaski (Blue)" },
@@ -148,7 +161,8 @@ export const CTA_ROSTER: readonly RosterStation[] = [
     { ctaStationId: "40880", name: "Thorndale" },
     { ctaStationId: "40350", name: "UIC-Halsted" },
     { ctaStationId: "40370", name: "Washington" },
-    { ctaStationId: "41700", name: "Washington/Wabash" },
+    // Opened 31 Aug 2017 (en.wikipedia.org/wiki/Washington/Wabash_station).
+    { ctaStationId: "41700", name: "Washington/Wabash", openedAt: "2017-08-31" },
     { ctaStationId: "40730", name: "Washington/Wells" },
     { ctaStationId: "41210", name: "Wellington (Brown/Purple)" },
     { ctaStationId: "40220", name: "Western" },

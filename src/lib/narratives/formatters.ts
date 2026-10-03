@@ -7,7 +7,11 @@
  * All formatters handle this convention consistently.
  */
 
-import type { ValueType } from "@/types/narrative";
+import { formatChange, formatPercent, formatPercentChange } from "@/lib/format";
+import type { FactKey, ValueType } from "@/types/narrative";
+
+// The percent formatters live in src/lib/format.ts, which the score card shares; re-exported here.
+export { formatChange, formatPercent, formatPercentChange };
 
 // ═══════════════════════════════════════════════════════════════
 // CORE FORMATTERS
@@ -22,47 +26,6 @@ export function formatNumber(value: number, decimals = 0): string {
     minimumFractionDigits: decimals,
     maximumFractionDigits: decimals,
   });
-}
-
-/**
- * Format a decimal as a percentage.
- * Examples: 0.52 → "52%", -0.12 → "-12%", 0.1567 → "16%"
- *
- * CONVENTION: Input is a decimal (0.52 = 52%), output is "52%"
- */
-export function formatPercent(value: number, decimals = 0): string {
-  const percentage = value * 100;
-  const formatted = Math.abs(percentage).toLocaleString("en-US", {
-    minimumFractionDigits: decimals,
-    maximumFractionDigits: decimals,
-  });
-
-  // Always show sign for non-zero values (except when it's positive change displayed positively)
-  if (percentage < 0) {
-    return `-${formatted}%`;
-  }
-  return `${formatted}%`;
-}
-
-/**
- * Format a change percentage with explicit sign.
- * Examples: 0.12 → "+12%", -0.12 → "-12%", 0 → "0%"
- *
- * Use this for change metrics where direction matters.
- */
-export function formatPercentChange(value: number, decimals = 0): string {
-  const percentage = value * 100;
-  const formatted = Math.abs(percentage).toLocaleString("en-US", {
-    minimumFractionDigits: decimals,
-    maximumFractionDigits: decimals,
-  });
-
-  if (percentage > 0) {
-    return `+${formatted}%`;
-  } else if (percentage < 0) {
-    return `-${formatted}%`;
-  }
-  return `${formatted}%`;
 }
 
 /**
@@ -186,22 +149,30 @@ export function formatTimeframe(
 // FACT LABEL GENERATION
 // ═══════════════════════════════════════════════════════════════
 
+/** The one label table for fact keys, shared by the detail route and the fact cards. */
+const FACT_LABELS: Record<FactKey, string> = {
+  ridership_2001_avg: "2001 Ridership",
+  ridership_2006_avg: "2006 Ridership",
+  ridership_2012_avg: "2012 Ridership",
+  ridership_latest_avg: "Current Ridership",
+  ridership_decline_pct: "Ridership Change",
+  population_change: "Population Change",
+  vehicle_ownership_pct: "Vehicle Ownership",
+  jobs_walkshed_change: "Jobs Change",
+  il_lane_miles_change: "IL Lane-Miles Added",
+  airport_arrivals: "Airport Arrivals",
+  station_opened: "Station Opened",
+};
+
 /**
- * Generate a human-readable label for a fact key.
+ * Generate a human-readable label for a fact key; a key the table lacks is title-cased
+ * ("bus_routes_cut" → "Bus Routes Cut").
  */
 export function getFactLabel(factKey: string): string {
-  const labels: Record<string, string> = {
-    ridership_2001_avg: "2001 Ridership",
-    ridership_latest_avg: "Current Ridership",
-    ridership_decline_pct: "Ridership Change",
-    population_change: "Population Change",
-    vehicle_ownership_pct: "Vehicle Ownership",
-    jobs_walkshed_change: "Jobs Change",
-    il_lane_miles_change: "IL Lane-Miles Added",
-    airport_arrivals: "Airport Arrivals",
-  };
-
-  return labels[factKey] || factKey;
+  return (
+    FACT_LABELS[factKey as FactKey] ??
+    factKey.replace(/_/g, " ").replace(/\b\w/g, (letter) => letter.toUpperCase())
+  );
 }
 
 /**

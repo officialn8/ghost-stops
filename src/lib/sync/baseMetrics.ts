@@ -1,10 +1,15 @@
 /**
  * Base metrics for every station with ridership: the 12-month, 90-day, and 30-day averages, the
  * latest day, and a data status, all as of the city's data-through date. Reads and computation run
- * outside any transaction; the write is one set-based statement whatever the station count
- * (KTD10), so it fits inside the run's short transaction.
+ * outside any transaction; the write, which carries the score v2 columns too, is one set-based
+ * statement whatever the station count (KTD10), so it fits inside the run's short transaction.
  */
-import type { Prisma, PrismaClient, StationStatus } from "@prisma/client";
+import type { Prisma, PrismaClient } from "@prisma/client";
+import type { MetricsDataStatus } from "@/lib/scoring/ranked";
+import type { ScoreColumns } from "@/lib/scoring/score";
+
+// The ranking rule and the stored data status live with scoring; existing importers keep this path.
+export { isRanked, type MetricsDataStatus } from "@/lib/scoring/ranked";
 
 export interface BaseMetricInputs {
     stationId: string;
@@ -14,21 +19,6 @@ export interface BaseMetricInputs {
     avg90d: number | null;
     avg30d: number | null;
     daysLast60: number;
-}
-
-/**
- * The stored `StationMetrics.dataStatus` (the UI's `DataStatus` in src/lib/utils.ts is another
- * vocabulary): `missing` when a station has no rows in 60 days, `zero` when its 30-day average is
- * under one rider (KTD9).
- */
-export type MetricsDataStatus = "normal" | "zero" | "missing";
-
-/**
- * Whether a station takes part in rankings and peer comparisons (R5, KTD9): open, with riders in
- * its recent data. Closed State/Lake fails both: upstream reports it at 0 riders a day.
- */
-export function isRanked(status: StationStatus, dataStatus: string): boolean {
-    return status === "ACTIVE" && dataStatus === "normal";
 }
 
 export interface BaseMetrics {
@@ -103,36 +93,65 @@ export function computeBaseMetrics(inputs: readonly BaseMetricInputs[]): BaseMet
     }));
 }
 
+/** A station's full StationMetrics row: the base metrics and its score v2 columns. */
+export type StationMetricsRow = BaseMetrics & ScoreColumns;
+
 /**
- * Upserts every station's base metrics in one statement. `ghostScore` is left alone: the v1 score
- * stays until score v2 (U12) writes it. A station's first metrics row gets -1, the Go ETL's marker
- * for no score, which sorts it last.
+ * Upserts every station's metrics, base and score v2 together, in one statement (KTD10), so the
+ * ranking and the averages behind it always change in the same commit. `ghostScore` carries the
+ * v2 score, or -1 for an unranked station, the Go ETL's marker for no score, which sorts it last.
+ * The rows travel as one jsonb parameter: Prisma 6 rejects arrays holding nulls (Postgres 22P03),
+ * which rules out `unnest` for the nullable columns.
  */
-export async function writeBaseMetrics(
+export async function writeStationMetrics(
     tx: Pick<Prisma.TransactionClient, "$executeRaw">,
-    metrics: readonly BaseMetrics[],
+    rows: readonly StationMetricsRow[],
     dataThrough: string,
     now: Date,
 ): Promise<number> {
     return tx.$executeRaw`
         INSERT INTO "StationMetrics" (
             "id", "stationId", "lastDayEntries", "rolling30dAvg", "rolling90dAvg", "ghostScore",
-            "lastUpdated", "serviceDateMax", "dataStatus", "avg12m", "avg30d", "dataThrough"
+            "lastUpdated", "serviceDateMax", "dataStatus", "avg12m", "avg30d", "dataThrough",
+            "scoreVersion", "tier", "rank", "rankedCount", "residualPct", "yoyPct", "longRunPct", "erraticPct",
+            "baselineAvg", "peerStationIds", "yoyChangePct", "vs2019Pct", "weekdayAvg", "weekendAvg"
         )
-        SELECT gen_random_uuid()::text, m."stationId", m."lastDayEntries", m."rolling30dAvg", m."rolling90dAvg", -1,
-               ${now}, m."serviceDateMax"::date, m."dataStatus", m."avg12m", m."avg30d", ${dataThrough}::date
-        FROM jsonb_to_recordset(${JSON.stringify(metrics)}::jsonb) AS m(
+        SELECT gen_random_uuid()::text, m."stationId", m."lastDayEntries", m."rolling30dAvg", m."rolling90dAvg", m."ghostScore",
+               ${now}, m."serviceDateMax"::date, m."dataStatus", m."avg12m", m."avg30d", ${dataThrough}::date,
+               m."scoreVersion", m."tier"::"ScoreTier", m."rank", m."rankedCount",
+               m."residualPct", m."yoyPct", m."longRunPct", m."erraticPct",
+               m."baselineAvg", m."peerStationIds", m."yoyChangePct", m."vs2019Pct", m."weekdayAvg", m."weekendAvg"
+        FROM jsonb_to_recordset(${JSON.stringify(rows)}::jsonb) AS m(
             "stationId" text, "serviceDateMax" text, "lastDayEntries" int, "avg12m" float8, "avg30d" float8,
-            "rolling30dAvg" float8, "rolling90dAvg" float8, "dataStatus" text
+            "rolling30dAvg" float8, "rolling90dAvg" float8, "dataStatus" text, "ghostScore" int,
+            "scoreVersion" int, "tier" text, "rank" int, "rankedCount" int,
+            "residualPct" float8, "yoyPct" float8, "longRunPct" float8, "erraticPct" float8,
+            "baselineAvg" float8, "peerStationIds" jsonb, "yoyChangePct" float8, "vs2019Pct" float8,
+            "weekdayAvg" float8, "weekendAvg" float8
         )
         ON CONFLICT ("stationId") DO UPDATE SET
             "lastDayEntries" = EXCLUDED."lastDayEntries",
             "rolling30dAvg" = EXCLUDED."rolling30dAvg",
             "rolling90dAvg" = EXCLUDED."rolling90dAvg",
+            "ghostScore" = EXCLUDED."ghostScore",
             "lastUpdated" = EXCLUDED."lastUpdated",
             "serviceDateMax" = EXCLUDED."serviceDateMax",
             "dataStatus" = EXCLUDED."dataStatus",
             "avg12m" = EXCLUDED."avg12m",
             "avg30d" = EXCLUDED."avg30d",
-            "dataThrough" = EXCLUDED."dataThrough"`;
+            "dataThrough" = EXCLUDED."dataThrough",
+            "scoreVersion" = EXCLUDED."scoreVersion",
+            "tier" = EXCLUDED."tier",
+            "rank" = EXCLUDED."rank",
+            "rankedCount" = EXCLUDED."rankedCount",
+            "residualPct" = EXCLUDED."residualPct",
+            "yoyPct" = EXCLUDED."yoyPct",
+            "longRunPct" = EXCLUDED."longRunPct",
+            "erraticPct" = EXCLUDED."erraticPct",
+            "baselineAvg" = EXCLUDED."baselineAvg",
+            "peerStationIds" = EXCLUDED."peerStationIds",
+            "yoyChangePct" = EXCLUDED."yoyChangePct",
+            "vs2019Pct" = EXCLUDED."vs2019Pct",
+            "weekdayAvg" = EXCLUDED."weekdayAvg",
+            "weekendAvg" = EXCLUDED."weekendAvg"`;
 }

@@ -23,6 +23,8 @@ const summary = (overrides: Partial<SyncSummary> = {}): SyncSummary => ({
     rowsRevised: 3,
     unmatchedStationIds: [],
     driftMonths: [],
+    narrativesWritten: 144,
+    narrativesRejected: 0,
     durationMs: 12_000,
     error: null,
     ...overrides,
@@ -64,7 +66,14 @@ describe("GET /api/cron/sync-ridership", () => {
         expect(response.status).toBe(200);
         expect(runSync).toHaveBeenCalledWith({}, expect.anything(), expect.objectContaining({ trigger: "cron-daily", mode: "daily" }));
         expect(revalidateTag).toHaveBeenCalledWith(STATIONS_CACHE_TAG);
-        expect(await response.json()).toMatchObject({ status: "OK", mode: "daily", rowsInserted: 61, rowsRevised: 3 });
+        expect(await response.json()).toMatchObject({
+            status: "OK",
+            mode: "daily",
+            rowsInserted: 61,
+            rowsRevised: 3,
+            narrativesWritten: 144,
+            narrativesRejected: 0,
+        });
     });
 
     it("selects reconciliation when the weekly schedule fires", async () => {
@@ -121,6 +130,17 @@ describe("GET /api/cron/sync-ridership", () => {
             expect(text).not.toContain("db.example.test");
             expect(text).not.toContain("ECONNREFUSED");
         }
+    });
+
+    it("passes the run a log that writes each line, a rejected narrative's included, to the function log", async () => {
+        const info = vi.spyOn(console, "info").mockImplementation(() => {});
+
+        await GET(request({ authorization: "Bearer test-cron-secret" }));
+
+        const options = runSync.mock.calls[0][2] as { log?: (message: string) => void };
+        expect(typeof options.log).toBe("function");
+        options.log!("narrative rejected for station s-1 (stable): missing population_change");
+        expect(info).toHaveBeenCalledWith("sync-ridership", "narrative rejected for station s-1 (stable): missing population_change");
     });
 
     it("gives the run a drift deadline 240 seconds from the start of the request", async () => {

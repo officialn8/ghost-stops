@@ -29,6 +29,8 @@ export async function deleteSyncTestCity(code: string): Promise<void> {
     const station = { cityId: city.id };
     await prisma.ridershipDaily.deleteMany({ where: { station } });
     await prisma.stationMetrics.deleteMany({ where: { station } });
+    await prisma.stationNarrative.deleteMany({ where: { station } });
+    await prisma.stationFact.deleteMany({ where: { station } });
     await prisma.stationClosure.deleteMany({ where: { station } });
     await prisma.station.deleteMany({ where: station });
     await prisma.city.delete({ where: { id: city.id } });

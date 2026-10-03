@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
-import { computeBaseMetrics, dataStatusFor, writeBaseMetrics, type BaseMetricInputs } from "./baseMetrics";
+import type { ScoreColumns } from "@/lib/scoring/score";
+import { computeBaseMetrics, dataStatusFor, writeStationMetrics, type BaseMetricInputs } from "./baseMetrics";
 import { writeStationStatuses } from "./status";
 
 const input = (overrides: Partial<BaseMetricInputs> = {}): BaseMetricInputs => ({
@@ -45,13 +46,33 @@ describe("computeBaseMetrics", () => {
     });
 });
 
+/** The score columns of a station left out of the ranking. */
+const UNRANKED: ScoreColumns = {
+    ghostScore: -1,
+    scoreVersion: 2,
+    tier: null,
+    rank: null,
+    rankedCount: 0,
+    residualPct: null,
+    yoyPct: null,
+    longRunPct: null,
+    erraticPct: null,
+    baselineAvg: null,
+    peerStationIds: { basis: "none", line: null, branch: null, stationIds: [], ctaStationIds: [], avg12m: [] },
+    yoyChangePct: null,
+    vs2019Pct: null,
+    weekdayAvg: null,
+    weekendAvg: null,
+};
+
 describe("the write path", () => {
     it("issues one statement per table whether there are 3 stations or 300", async () => {
         for (const stations of [3, 300]) {
             const tx = { $executeRaw: vi.fn().mockResolvedValue(stations) };
             const ids = Array.from({ length: stations }, (_, i) => `s${i}`);
 
-            await writeBaseMetrics(tx, computeBaseMetrics(ids.map((stationId) => input({ stationId }))), "2026-07-31", new Date());
+            const metrics = computeBaseMetrics(ids.map((stationId) => input({ stationId })));
+            await writeStationMetrics(tx, metrics.map((m) => ({ ...m, ...UNRANKED })), "2026-07-31", new Date());
             await writeStationStatuses(tx, ids.map((stationId) => ({ stationId, status: "ACTIVE", closedAt: null })));
 
             expect(tx.$executeRaw).toHaveBeenCalledTimes(2);
