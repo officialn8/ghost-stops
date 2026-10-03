@@ -43,6 +43,17 @@ vi.mock("@vercel/functions", () => ({
 
 const globalForPrisma = globalThis as unknown as { prisma?: unknown };
 
+/** Forgets the cached client and every recorded construction, so the next import starts fresh. */
+function resetClientModule() {
+    delete globalForPrisma.prisma;
+    constructed.count = 0;
+    for (const list of [constructed.pools, constructed.poolConfigs, constructed.attached, constructed.adapters, constructed.clientOptions]) {
+        list.length = 0;
+    }
+    vi.unstubAllEnvs();
+    vi.resetModules();
+}
+
 const repoRoot = fileURLToPath(new URL("../../", import.meta.url));
 const srcDir = join(repoRoot, "src");
 /** The one module allowed to construct the client. */
@@ -97,17 +108,7 @@ const constructsPrismaClient = (ast: ts.SourceFile) =>
     someNode(ast, (node) => ts.isNewExpression(node) && calleeName(node.expression) === "PrismaClient");
 
 describe("prisma singleton", () => {
-    afterEach(() => {
-        delete globalForPrisma.prisma;
-        constructed.count = 0;
-        constructed.pools.length = 0;
-        constructed.poolConfigs.length = 0;
-        constructed.attached.length = 0;
-        constructed.adapters.length = 0;
-        constructed.clientOptions.length = 0;
-        vi.unstubAllEnvs();
-        vi.resetModules();
-    });
+    afterEach(resetClientModule);
 
     it("returns the same client when the module is evaluated twice", async () => {
         const first = await import("./prisma");
@@ -131,17 +132,7 @@ describe("prisma singleton", () => {
 });
 
 describe("prisma connection", () => {
-    afterEach(() => {
-        delete globalForPrisma.prisma;
-        constructed.count = 0;
-        constructed.pools.length = 0;
-        constructed.poolConfigs.length = 0;
-        constructed.attached.length = 0;
-        constructed.adapters.length = 0;
-        constructed.clientOptions.length = 0;
-        vi.unstubAllEnvs();
-        vi.resetModules();
-    });
+    afterEach(resetClientModule);
 
     it("opens one pool on the pooled DATABASE_URL, with an explicit size and connection timeout", async () => {
         vi.stubEnv("DATABASE_URL", "postgresql://app@pooled.example/db");
