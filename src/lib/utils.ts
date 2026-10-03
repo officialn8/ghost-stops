@@ -24,6 +24,31 @@ export function getGhostScoreColor(score: number): string {
   return "#22C55E" // green-500
 }
 
+/** Score v2 tiers (R17), from the most underused stations to the least. */
+export type ScoreTierName = "ghost" | "fading" | "quiet" | "healthy"
+
+/** How a tier is drawn: `ink` is the opacity of the station mark, `mark` its outline style. */
+export type TierMark = "hollow-dashed" | "hollow" | "solid"
+
+export interface TierStyle {
+  tier: ScoreTierName
+  ink: 0.44 | 0.72 | 1
+  mark: TierMark
+}
+
+/**
+ * The tier and how to draw it for a v2 score (0 to 100, a percentile over ranked stations), the
+ * one place that maps tiers to ink (KTD10). The bands are quantiles by construction: 90 and up
+ * is ghost, 75 to 89 fading, 50 to 74 quiet, under 50 healthy. A fading station keeps less ink,
+ * so the quietest stations literally fade on the map.
+ */
+export function getTier(score: number): TierStyle {
+  if (score >= 90) return { tier: "ghost", ink: 0.44, mark: "hollow-dashed" }
+  if (score >= 75) return { tier: "fading", ink: 0.72, mark: "hollow" }
+  if (score >= 50) return { tier: "quiet", ink: 1, mark: "hollow" }
+  return { tier: "healthy", ink: 1, mark: "solid" }
+}
+
 export type DataStatus = "available" | "missing" | "zero"
 
 export function normalizeDataStatus(status?: string | null): DataStatus {

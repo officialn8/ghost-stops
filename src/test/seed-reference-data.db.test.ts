@@ -108,6 +108,18 @@ describe("seedReferenceData", () => {
         expect(stateLake.closedAt?.toISOString().slice(0, 10)).toBe("2026-01-05");
         expect((await station("40770")).status).toBe("ACTIVE"); // Lawrence reopened 2025-07-20
 
+        // Opening dates for the stations that opened after the ridership data begins (2001).
+        const opened = await prisma.station.findMany({ where: { cityId, openedAt: { not: null } }, orderBy: { openedAt: "asc" } });
+        expect(opened.map((s) => [s.ctaStationId, s.openedAt?.toISOString().slice(0, 10)])).toEqual([
+            ["41670", "2001-06-30"], // Conservatory-Central Park Drive
+            ["41680", "2012-04-30"], // Oakton-Skokie
+            ["41510", "2012-05-18"], // Morgan
+            ["41690", "2015-02-08"], // Cermak-McCormick Place
+            ["41700", "2017-08-31"], // Washington/Wabash
+            ["41710", "2024-08-05"], // Damen (Green)
+        ]);
+        expect(report.stationUpdates.find((u) => u.ctaStationId === "41710")?.fields).toContain("openedAt");
+
         expect(await aliasOwners("State/Lake")).toEqual(["40260"]);
         expect(await aliasOwners("Lake/State")).toEqual(["41660"]);
         expect(await aliasOwners("Central-Lake")).toEqual(["40280"]);
@@ -147,17 +159,28 @@ describe("seedReferenceData", () => {
         await prisma.stationAlias.create({
             data: { stationId: "seed-40780", aliasName: "Central-Lake", normalized: "central lake" },
         });
+        await prisma.station.update({ where: { id: "seed-41510" }, data: { openedAt: new Date("2012-05-24") } }); // Morgan's ceremony, not its first day
+        await prisma.station.update({ where: { id: "seed-40900" }, data: { openedAt: new Date("1908-05-16") } });
 
         const report = await seedReferenceData(prisma, { cityCode: CITY, asOf: AS_OF });
-        expect(report.stationUpdates).toEqual([
+        expect(report.stationUpdates).toEqual(
+            expect.arrayContaining([
+                { ctaStationId: "41510", fields: ["openedAt"] },
+                { ctaStationId: "40900", fields: ["openedAt"] },
+            ]),
+        );
+        expect(report.stationUpdates.filter((u) => u.fields.includes("slug"))).toEqual([
             { ctaStationId: expect.any(String), fields: ["slug"] },
             { ctaStationId: expect.any(String), fields: ["slug"] },
         ]);
+        expect(report.stationUpdates).toHaveLength(4);
         expect(report.closures).toEqual({ created: 0, updated: 1, deleted: 1 });
         expect(report.sequenceRows).toEqual({ inserted: 0, deleted: 1 });
         expect(report.aliases).toEqual({ added: 0, removed: 1 });
         expect((await station("40670")).slug).toBe("western-blue-ohare");
         expect((await station("40220")).slug).toBe("western-blue-forest-park");
+        expect((await station("41510")).openedAt?.toISOString().slice(0, 10)).toBe("2012-05-18");
+        expect((await station("40900")).openedAt).toBeNull();
 
         expect((await seedReferenceData(prisma, { cityCode: CITY, asOf: AS_OF })).changes).toBe(0);
     });

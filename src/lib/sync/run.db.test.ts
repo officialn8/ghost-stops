@@ -204,7 +204,7 @@ describe("runSync", () => {
         expect(record).toMatchObject({ status: "OK", rowsInserted: 122, driftMonths: [] });
     });
 
-    it("writes base metrics for every station with rows, keeping an existing v1 score", async () => {
+    it("writes base metrics and the v2 score for every station with rows, replacing a v1 score", async () => {
         await prisma.stationMetrics.create({
             data: { stationId: stationIdFor(CITY, A), ghostScore: 55, lastUpdated: NOW, serviceDateMax: new Date("2025-11-30") },
         });
@@ -223,17 +223,81 @@ describe("runSync", () => {
 
         const metrics = async (cta: string) => prisma.stationMetrics.findUniqueOrThrow({ where: { stationId: stationIdFor(CITY, cta) } });
         expect(await metrics(A)).toMatchObject({
-            ghostScore: 55,
             dataStatus: "normal",
             avg12m: 900,
             avg30d: 900,
             rolling30dAvg: 900,
             rolling90dAvg: 900,
             lastDayEntries: 900,
+            weekdayAvg: 900,
+            weekendAvg: 900,
         });
         expect((await metrics(A)).dataThrough?.toISOString().slice(0, 10)).toBe("2026-07-31");
         expect(await metrics(CLOSED)).toMatchObject({ ghostScore: -1, dataStatus: "missing", avg30d: null, rolling30dAvg: 0, avg12m: 300 });
         expect((await metrics(CLOSED)).serviceDateMax.toISOString().slice(0, 10)).toBe("2026-01-04");
+
+        // Austin (Blue) and Harlem/Lake share no line here, so neither has peers; with no year-ago
+        // or 2019 rows only erraticness is known, and both are equally steady: a tie at the median,
+        // broken by station id for the rank. The unranked station still records its raw inputs:
+        // walking the Green Line, Harlem/Lake is its peer.
+        const scored = await prisma.stationMetrics.findMany({
+            where: { station: { city: { code: CITY } } },
+            orderBy: { stationId: "asc" },
+            select: {
+                stationId: true,
+                scoreVersion: true,
+                ghostScore: true,
+                tier: true,
+                rank: true,
+                rankedCount: true,
+                residualPct: true,
+                erraticPct: true,
+                peerStationIds: true,
+            },
+        });
+        const noPeers = expect.objectContaining({ basis: "none" });
+        const tied = { scoreVersion: 2, ghostScore: 50, tier: "QUIET", rankedCount: 2, residualPct: null, erraticPct: 50, peerStationIds: noPeers };
+        expect(scored).toEqual([
+            { stationId: stationIdFor(CITY, A), rank: 1, ...tied },
+            { stationId: stationIdFor(CITY, B), rank: 2, ...tied },
+            {
+                stationId: stationIdFor(CITY, CLOSED),
+                scoreVersion: 2,
+                ghostScore: -1,
+                tier: null,
+                rank: null,
+                rankedCount: 2,
+                residualPct: null,
+                erraticPct: null,
+                peerStationIds: {
+                    basis: "neighbors",
+                    line: "Green",
+                    branch: "main",
+                    stationIds: [stationIdFor(CITY, B)],
+                    ctaStationIds: [B],
+                    avg12m: [450],
+                },
+            },
+        ]);
+    });
+
+    it("writes no metrics and no statuses, and finalizes as failed, when scoring throws", async () => {
+        await run(WINDOW_ROWS);
+        await prisma.stationMetrics.deleteMany({ where: { station: { city: { code: CITY } } } });
+        await prisma.stationClosure.create({
+            data: { stationId: stationIdFor(CITY, CLOSED), startDate: new Date("2026-01-05"), reason: "Rebuild" },
+        });
+
+        const { record } = await run(WINDOW_ROWS, {
+            scoreStations: () => {
+                throw new Error("scoring exploded");
+            },
+        });
+
+        expect(record).toMatchObject({ status: "FAILED", lease: null, rowsInserted: 0, rowsRevised: 0 });
+        expect(record.error).toMatch(/scoring exploded/);
+        expect(await prisma.stationMetrics.count({ where: { station: { city: { code: CITY } } } })).toBe(0);
+        expect((await prisma.station.findUniqueOrThrow({ where: { id: stationIdFor(CITY, CLOSED) } })).status).toBe("ACTIVE");
     });
 
     it("recomputes station status from closures", async () => {

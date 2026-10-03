@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 // Imported through the `@/` alias on purpose: this test also proves the alias resolves under Vitest.
-import { getGhostScoreColor } from "@/lib/utils";
+import { getGhostScoreColor, getTier } from "@/lib/utils";
 
 describe("getGhostScoreColor", () => {
     describe("at each threshold", () => {
@@ -33,5 +33,29 @@ describe("getGhostScoreColor", () => {
         it("maps 0 to green", () => {
             expect(getGhostScoreColor(0)).toBe("#22C55E");
         });
+    });
+});
+
+describe("getTier", () => {
+    it.each([
+        [95, { tier: "ghost", ink: 0.44, mark: "hollow-dashed" }],
+        [80, { tier: "fading", ink: 0.72, mark: "hollow" }],
+        [60, { tier: "quiet", ink: 1, mark: "hollow" }],
+        [30, { tier: "healthy", ink: 1, mark: "solid" }],
+    ])("maps %i to its tier, ink, and mark", (score, style) => {
+        expect(getTier(score)).toEqual(style);
+    });
+
+    it.each([
+        [100, "ghost"],
+        [90, "ghost"],
+        [89, "fading"],
+        [75, "fading"],
+        [74, "quiet"],
+        [50, "quiet"],
+        [49, "healthy"],
+        [0, "healthy"],
+    ])("puts %i in %s at the tier edges", (score, tier) => {
+        expect(getTier(score).tier).toBe(tier);
     });
 });

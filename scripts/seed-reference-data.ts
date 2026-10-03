@@ -1,6 +1,6 @@
 /**
  * Seeds the CTA reference data onto existing stations: State/Lake, corrected line lists, display
- * names, slugs, closures with the status they imply, line sequences, and alias fixes.
+ * names, slugs, opening dates, closures with the status they imply, line sequences, and alias fixes.
  *
  * Idempotent: a second run reports zero changes. It updates stations in place by id and never
  * deletes or recreates one, so facts, narratives, and metrics keep their foreign keys. Everything
@@ -119,7 +119,14 @@ async function seed(tx: Prisma.TransactionClient, cityCode: string, asOf: string
             const { status, closedAt } = deriveStatus(closuresFor(s.ctaStationId), asOf);
             return [
                 s.ctaStationId,
-                { slug: slugs.get(s.ctaStationId)!, displayName: displayNameFor(s), lines: s.lines, status, closedAt },
+                {
+                    slug: slugs.get(s.ctaStationId)!,
+                    displayName: displayNameFor(s),
+                    lines: s.lines,
+                    openedAt: s.openedAt ?? null,
+                    status,
+                    closedAt,
+                },
             ];
         }),
     );
@@ -150,6 +157,7 @@ async function seed(tx: Prisma.TransactionClient, cityCode: string, asOf: string
                 slug: d.slug,
                 displayName: d.displayName,
                 lines: JSON.stringify(d.lines),
+                openedAt: d.openedAt ? toDate(d.openedAt) : null,
                 status: d.status,
                 closedAt: d.closedAt ? toDate(d.closedAt) : null,
             },
@@ -165,6 +173,7 @@ async function seed(tx: Prisma.TransactionClient, cityCode: string, asOf: string
         if (s.slug !== d.slug) data.slug = d.slug;
         if (s.displayName !== d.displayName) data.displayName = d.displayName;
         if (JSON.stringify(JSON.parse(s.lines)) !== JSON.stringify(d.lines)) data.lines = JSON.stringify(d.lines);
+        if (toDay(s.openedAt) !== d.openedAt) data.openedAt = d.openedAt ? toDate(d.openedAt) : null;
         if (s.status !== d.status) data.status = d.status;
         if (toDay(s.closedAt) !== d.closedAt) data.closedAt = d.closedAt ? toDate(d.closedAt) : null;
         return Object.keys(data).length > 0 ? [{ station: s, data }] : [];

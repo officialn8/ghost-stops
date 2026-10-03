@@ -1,0 +1,1184 @@
+{
+  "about": [
+    "Shared contract between score v2 (U12) and the 'why this score' card (U21).",
+    "Each station's input is what scoreStations() takes; 'expected' (named stations only) is what it must return for this population.",
+    "Percentiles are relative to these 26 stations, not the full system.",
+    "Numbers come from the cleaned snapshot (data through 2025-11-30) and are relabelled as of dataThrough 2026-07-31 so the real closures apply: Lawrence reopened 2025-07-20 and State/Lake closed 2026-01-05.",
+    "Lawrence's avg12m is its post-reopening average (2025-07-20 to 2025-11-30) and its year-ago window holds the closure's zero-rider days, which the closure blocks.",
+    "Western (O'Hare) comes from the rows the SQLite snapshot filed under the swapped Western id (KTD3); State/Lake is not in the snapshot, so its numbers are illustrative."
+  ],
+  "dataThrough": "2026-07-31",
+  "stations": [
+    {
+      "name": "Halsted (Green)",
+      "input": {
+        "stationId": "fixture-40940",
+        "ctaStationId": "40940",
+        "status": "ACTIVE",
+        "dataStatus": "normal",
+        "openedAt": null,
+        "closures": [],
+        "avg12m": 262.56,
+        "avg2019": 436.2,
+        "trailing": {
+          "weekdayDays": 64,
+          "weekendDays": 26,
+          "weekdayAvg": 331.86,
+          "weekendAvg": 167.12,
+          "weekdayMadRatio": 0.0784,
+          "weekendMadRatio": 0.1754
+        },
+        "yearAgo": {
+          "weekdayDays": 65,
+          "weekendDays": 25,
+          "weekdayAvg": 345.55,
+          "weekendAvg": 202.72,
+          "weekdayMadRatio": 0.0686,
+          "weekendMadRatio": 0.178
+        }
+      },
+      "named": true,
+      "expected": {
+        "ranked": true,
+        "score": 100,
+        "tier": "GHOST",
+        "rank": 1,
+        "composite": 88.05,
+        "baselineAvg": 547.13,
+        "peers": {
+          "basis": "neighbors",
+          "line": "Green",
+          "branch": "ashland-63rd",
+          "ctaStationIds": [
+            "40510",
+            "40290"
+          ]
+        },
+        "components": {
+          "residual": {
+            "raw": -0.7342,
+            "pct": 95.83,
+            "nullReason": null
+          },
+          "yoy": {
+            "raw": -6.5465,
+            "pct": 86.96,
+            "nullReason": null
+          },
+          "longRun": {
+            "raw": -39.8074,
+            "pct": 82.61,
+            "nullReason": null
+          },
+          "erratic": {
+            "raw": 0.1269,
+            "pct": 66.67,
+            "nullReason": null
+          }
+        },
+        "badge": null
+      }
+    },
+    {
+      "name": "Logan Square",
+      "input": {
+        "stationId": "fixture-41020",
+        "ctaStationId": "41020",
+        "status": "ACTIVE",
+        "dataStatus": "normal",
+        "openedAt": null,
+        "closures": [],
+        "avg12m": 4022.58,
+        "avg2019": 6196.48,
+        "trailing": {
+          "weekdayDays": 64,
+          "weekendDays": 26,
+          "weekdayAvg": 4797.52,
+          "weekendAvg": 3320.08,
+          "weekdayMadRatio": 0.0616,
+          "weekendMadRatio": 0.1254
+        },
+        "yearAgo": {
+          "weekdayDays": 65,
+          "weekendDays": 25,
+          "weekdayAvg": 4276.57,
+          "weekendAvg": 2892.64,
+          "weekdayMadRatio": 0.0565,
+          "weekendMadRatio": 0.0979
+        }
+      },
+      "named": true,
+      "expected": {
+        "ranked": true,
+        "score": 8,
+        "tier": "HEALTHY",
+        "rank": 23,
+        "composite": 24.89,
+        "baselineAvg": 2984.32,
+        "peers": {
+          "basis": "neighbors",
+          "line": "Blue",
+          "branch": "main",
+          "ctaStationIds": [
+            "40060",
+            "40570"
+          ]
+        },
+        "components": {
+          "residual": {
+            "raw": 0.2986,
+            "pct": 25,
+            "nullReason": null
+          },
+          "yoy": {
+            "raw": 12.7341,
+            "pct": 4.35,
+            "nullReason": null
+          },
+          "longRun": {
+            "raw": -35.0828,
+            "pct": 56.52,
+            "nullReason": null
+          },
+          "erratic": {
+            "raw": 0.0935,
+            "pct": 12.5,
+            "nullReason": null
+          }
+        },
+        "badge": null
+      }
+    },
+    {
+      "name": "State/Lake",
+      "input": {
+        "stationId": "fixture-40260",
+        "ctaStationId": "40260",
+        "status": "CLOSED",
+        "dataStatus": "zero",
+        "openedAt": null,
+        "closures": [
+          {
+            "startDate": "2026-01-05",
+            "endDate": null
+          }
+        ],
+        "avg12m": 2961.4,
+        "avg2019": null,
+        "trailing": null,
+        "yearAgo": {
+          "weekdayDays": 63,
+          "weekendDays": 28,
+          "weekdayAvg": 8105.2,
+          "weekendAvg": 5310.75,
+          "weekdayMadRatio": 0.0521,
+          "weekendMadRatio": 0.1176
+        }
+      },
+      "named": true,
+      "expected": {
+        "ranked": false,
+        "score": null,
+        "tier": null,
+        "rank": null,
+        "composite": null,
+        "baselineAvg": 3731.72,
+        "peers": {
+          "basis": "loop",
+          "line": "Brown",
+          "branch": "loop",
+          "ctaStationIds": [
+            "41700",
+            "40680",
+            "40850",
+            "40160",
+            "40040",
+            "40730"
+          ]
+        },
+        "components": {
+          "residual": {
+            "raw": null,
+            "pct": null,
+            "nullReason": {
+              "kind": "closed",
+              "closedFrom": "2026-01-05"
+            }
+          },
+          "yoy": {
+            "raw": null,
+            "pct": null,
+            "nullReason": {
+              "kind": "closed",
+              "closedFrom": "2026-01-05"
+            }
+          },
+          "longRun": {
+            "raw": null,
+            "pct": null,
+            "nullReason": {
+              "kind": "closed",
+              "closedFrom": "2026-01-05"
+            }
+          },
+          "erratic": {
+            "raw": null,
+            "pct": null,
+            "nullReason": {
+              "kind": "closed",
+              "closedFrom": "2026-01-05"
+            }
+          }
+        },
+        "badge": null
+      }
+    },
+    {
+      "name": "Damen (Green)",
+      "input": {
+        "stationId": "fixture-41710",
+        "ctaStationId": "41710",
+        "status": "ACTIVE",
+        "dataStatus": "normal",
+        "openedAt": "2024-08-05",
+        "closures": [],
+        "avg12m": 781.2,
+        "avg2019": null,
+        "trailing": {
+          "weekdayDays": 64,
+          "weekendDays": 26,
+          "weekdayAvg": 1089.84,
+          "weekendAvg": 690.19,
+          "weekdayMadRatio": 0.1992,
+          "weekendMadRatio": 0.3214
+        },
+        "yearAgo": {
+          "weekdayDays": 65,
+          "weekendDays": 25,
+          "weekdayAvg": 841.92,
+          "weekendAvg": 652.24,
+          "weekdayMadRatio": 0.1822,
+          "weekendMadRatio": 0.2619
+        }
+      },
+      "named": true,
+      "expected": {
+        "ranked": true,
+        "score": 50,
+        "tier": "QUIET",
+        "rank": 13,
+        "composite": 50,
+        "baselineAvg": 1034.76,
+        "peers": {
+          "basis": "neighbors",
+          "line": "Green",
+          "branch": "main",
+          "ctaStationIds": [
+            "41360",
+            "40170"
+          ]
+        },
+        "components": {
+          "residual": {
+            "raw": -0.2811,
+            "pct": 66.67,
+            "nullReason": null
+          },
+          "yoy": {
+            "raw": 23.8571,
+            "pct": 0,
+            "nullReason": null
+          },
+          "longRun": {
+            "raw": null,
+            "pct": null,
+            "nullReason": {
+              "kind": "new",
+              "openedAt": "2024-08-05",
+              "availableFrom": null
+            }
+          },
+          "erratic": {
+            "raw": 0.2603,
+            "pct": 100,
+            "nullReason": null
+          }
+        },
+        "badge": null
+      }
+    },
+    {
+      "name": "Lawrence",
+      "input": {
+        "stationId": "fixture-40770",
+        "ctaStationId": "40770",
+        "status": "ACTIVE",
+        "dataStatus": "normal",
+        "openedAt": null,
+        "closures": [
+          {
+            "startDate": "2021-05-16",
+            "endDate": "2025-07-20"
+          }
+        ],
+        "avg12m": 1803.56,
+        "avg2019": 2672.32,
+        "trailing": {
+          "weekdayDays": 64,
+          "weekendDays": 26,
+          "weekdayAvg": 1921.95,
+          "weekendAvg": 1756.58,
+          "weekdayMadRatio": 0.0543,
+          "weekendMadRatio": 0.1956
+        },
+        "yearAgo": {
+          "weekdayDays": 65,
+          "weekendDays": 25,
+          "weekdayAvg": 0,
+          "weekendAvg": 0,
+          "weekdayMadRatio": null,
+          "weekendMadRatio": null
+        }
+      },
+      "named": true,
+      "expected": {
+        "ranked": true,
+        "score": 79,
+        "tier": "FADING",
+        "rank": 6,
+        "composite": 67.83,
+        "baselineAvg": 3400.45,
+        "peers": {
+          "basis": "neighbors",
+          "line": "Red",
+          "branch": "main",
+          "ctaStationIds": [
+            "41200",
+            "40540"
+          ]
+        },
+        "components": {
+          "residual": {
+            "raw": -0.6341,
+            "pct": 91.67,
+            "nullReason": null
+          },
+          "yoy": {
+            "raw": null,
+            "pct": null,
+            "nullReason": {
+              "kind": "reopened",
+              "closedFrom": "2021-05-16",
+              "reopenedOn": "2025-07-20",
+              "availableFrom": "2026-10-17"
+            }
+          },
+          "longRun": {
+            "raw": -32.5096,
+            "pct": 39.13,
+            "nullReason": null
+          },
+          "erratic": {
+            "raw": 0.125,
+            "pct": 62.5,
+            "nullReason": null
+          }
+        },
+        "badge": null
+      }
+    },
+    {
+      "name": "LaSalle/Van Buren",
+      "input": {
+        "stationId": "fixture-40160",
+        "ctaStationId": "40160",
+        "status": "ACTIVE",
+        "dataStatus": "normal",
+        "openedAt": null,
+        "closures": [],
+        "avg12m": 1415.72,
+        "avg2019": 2274.15,
+        "trailing": {
+          "weekdayDays": 64,
+          "weekendDays": 26,
+          "weekdayAvg": 1876.66,
+          "weekendAvg": 530.5,
+          "weekdayMadRatio": 0.1154,
+          "weekendMadRatio": 0.255
+        },
+        "yearAgo": {
+          "weekdayDays": 65,
+          "weekendDays": 25,
+          "weekdayAvg": 1773.8,
+          "weekendAvg": 509.56,
+          "weekdayMadRatio": 0.1107,
+          "weekendMadRatio": 0.1804
+        }
+      },
+      "named": true,
+      "expected": {
+        "ranked": true,
+        "score": 96,
+        "tier": "GHOST",
+        "rank": 2,
+        "composite": 79.15,
+        "baselineAvg": 3747.38,
+        "peers": {
+          "basis": "loop",
+          "line": "Brown",
+          "branch": "loop",
+          "ctaStationIds": [
+            "41700",
+            "40680",
+            "40850",
+            "40040",
+            "40730"
+          ]
+        },
+        "components": {
+          "residual": {
+            "raw": -0.9734,
+            "pct": 100,
+            "nullReason": null
+          },
+          "yoy": {
+            "raw": 5.6247,
+            "pct": 39.13,
+            "nullReason": null
+          },
+          "longRun": {
+            "raw": -37.7473,
+            "pct": 73.91,
+            "nullReason": null
+          },
+          "erratic": {
+            "raw": 0.1852,
+            "pct": 95.83,
+            "nullReason": null
+          }
+        },
+        "badge": null
+      }
+    },
+    {
+      "name": "Wilson",
+      "input": {
+        "stationId": "fixture-40540",
+        "ctaStationId": "40540",
+        "status": "ACTIVE",
+        "dataStatus": "normal",
+        "openedAt": null,
+        "closures": [],
+        "avg12m": 4514.26,
+        "avg2019": 5598.32,
+        "trailing": {
+          "weekdayDays": 64,
+          "weekendDays": 26,
+          "weekdayAvg": 4836.34,
+          "weekendAvg": 3176.85,
+          "weekdayMadRatio": 0.0624,
+          "weekendMadRatio": 0.1652
+        },
+        "yearAgo": {
+          "weekdayDays": 65,
+          "weekendDays": 25,
+          "weekdayAvg": 5826.38,
+          "weekendAvg": 4095.36,
+          "weekdayMadRatio": 0.0468,
+          "weekendMadRatio": 0.1607
+        }
+      },
+      "named": true,
+      "expected": {
+        "ranked": true,
+        "score": 17,
+        "tier": "HEALTHY",
+        "rank": 21,
+        "composite": 33.99,
+        "baselineAvg": 2096.45,
+        "peers": {
+          "basis": "neighbors",
+          "line": "Red",
+          "branch": "main",
+          "ctaStationIds": [
+            "40770",
+            "40080"
+          ]
+        },
+        "components": {
+          "residual": {
+            "raw": 0.767,
+            "pct": 8.33,
+            "nullReason": null
+          },
+          "yoy": {
+            "raw": -18.1853,
+            "pct": 95.65,
+            "nullReason": null
+          },
+          "longRun": {
+            "raw": -19.364,
+            "pct": 8.7,
+            "nullReason": null
+          },
+          "erratic": {
+            "raw": 0.1138,
+            "pct": 45.83,
+            "nullReason": null
+          }
+        },
+        "badge": null
+      }
+    },
+    {
+      "name": "O'Hare",
+      "input": {
+        "stationId": "fixture-40890",
+        "ctaStationId": "40890",
+        "status": "ACTIVE",
+        "dataStatus": "normal",
+        "openedAt": null,
+        "closures": [],
+        "avg12m": 8908.36,
+        "avg2019": 10441.55,
+        "trailing": {
+          "weekdayDays": 64,
+          "weekendDays": 26,
+          "weekdayAvg": 9964.84,
+          "weekendAvg": 9230.77,
+          "weekdayMadRatio": 0.131,
+          "weekendMadRatio": 0.1109
+        },
+        "yearAgo": {
+          "weekdayDays": 65,
+          "weekendDays": 25,
+          "weekdayAvg": 9711.28,
+          "weekendAvg": 8757.28,
+          "weekdayMadRatio": 0.107,
+          "weekendMadRatio": 0.0439
+        }
+      },
+      "named": true,
+      "expected": {
+        "ranked": true,
+        "score": 0,
+        "tier": "HEALTHY",
+        "rank": 25,
+        "composite": 18.24,
+        "baselineAvg": 2656.77,
+        "peers": {
+          "basis": "neighbors",
+          "line": "Blue",
+          "branch": "main",
+          "ctaStationIds": [
+            "40820",
+            "40230"
+          ]
+        },
+        "components": {
+          "residual": {
+            "raw": 1.2099,
+            "pct": 0,
+            "nullReason": null
+          },
+          "yoy": {
+            "raw": 3.3521,
+            "pct": 47.83,
+            "nullReason": null
+          },
+          "longRun": {
+            "raw": -14.6835,
+            "pct": 4.35,
+            "nullReason": null
+          },
+          "erratic": {
+            "raw": 0.121,
+            "pct": 54.17,
+            "nullReason": null
+          }
+        },
+        "badge": null
+      }
+    },
+    {
+      "name": "Western (O'Hare)",
+      "input": {
+        "stationId": "fixture-40670",
+        "ctaStationId": "40670",
+        "status": "ACTIVE",
+        "dataStatus": "normal",
+        "openedAt": null,
+        "closures": [],
+        "avg12m": 3008.4,
+        "avg2019": 4518.98,
+        "trailing": {
+          "weekdayDays": 64,
+          "weekendDays": 26,
+          "weekdayAvg": 3664.55,
+          "weekendAvg": 2284.85,
+          "weekdayMadRatio": 0.0664,
+          "weekendMadRatio": 0.1599
+        },
+        "yearAgo": {
+          "weekdayDays": 65,
+          "weekendDays": 25,
+          "weekdayAvg": 3388.68,
+          "weekendAvg": 2091.32,
+          "weekdayMadRatio": 0.0914,
+          "weekendMadRatio": 0.1557
+        }
+      },
+      "named": true,
+      "expected": {
+        "ranked": true,
+        "score": 33,
+        "tier": "HEALTHY",
+        "rank": 17,
+        "composite": 44.47,
+        "baselineAvg": 3402.6,
+        "peers": {
+          "basis": "neighbors",
+          "line": "Blue",
+          "branch": "main",
+          "ctaStationIds": [
+            "40570",
+            "40590"
+          ]
+        },
+        "components": {
+          "residual": {
+            "raw": -0.1231,
+            "pct": 54.17,
+            "nullReason": null
+          },
+          "yoy": {
+            "raw": 8.3613,
+            "pct": 30.43,
+            "nullReason": null
+          },
+          "longRun": {
+            "raw": -33.4275,
+            "pct": 47.83,
+            "nullReason": null
+          },
+          "erratic": {
+            "raw": 0.1132,
+            "pct": 29.17,
+            "nullReason": null
+          }
+        },
+        "badge": null
+      }
+    },
+    {
+      "name": "Garfield (Green)",
+      "input": {
+        "stationId": "fixture-40510",
+        "ctaStationId": "40510",
+        "status": "ACTIVE",
+        "dataStatus": "normal",
+        "openedAt": null,
+        "closures": [],
+        "avg12m": 601.51,
+        "avg2019": 885.47,
+        "trailing": {
+          "weekdayDays": 64,
+          "weekendDays": 26,
+          "weekdayAvg": 694.94,
+          "weekendAvg": 473.27,
+          "weekdayMadRatio": 0.0581,
+          "weekendMadRatio": 0.1686
+        },
+        "yearAgo": {
+          "weekdayDays": 65,
+          "weekendDays": 25,
+          "weekdayAvg": 723.52,
+          "weekendAvg": 512.16,
+          "weekdayMadRatio": 0.0481,
+          "weekendMadRatio": 0.1291
+        }
+      },
+      "named": false
+    },
+    {
+      "name": "Ashland/63rd",
+      "input": {
+        "stationId": "fixture-40290",
+        "ctaStationId": "40290",
+        "status": "ACTIVE",
+        "dataStatus": "normal",
+        "openedAt": null,
+        "closures": [],
+        "avg12m": 492.76,
+        "avg2019": 827.1,
+        "trailing": {
+          "weekdayDays": 64,
+          "weekendDays": 26,
+          "weekdayAvg": 568.45,
+          "weekendAvg": 338.04,
+          "weekdayMadRatio": 0.0506,
+          "weekendMadRatio": 0.0378
+        },
+        "yearAgo": {
+          "weekdayDays": 65,
+          "weekendDays": 25,
+          "weekdayAvg": 620.97,
+          "weekendAvg": 402.4,
+          "weekdayMadRatio": 0.0393,
+          "weekendMadRatio": 0.0564
+        }
+      },
+      "named": false
+    },
+    {
+      "name": "Belmont (Blue)",
+      "input": {
+        "stationId": "fixture-40060",
+        "ctaStationId": "40060",
+        "status": "ACTIVE",
+        "dataStatus": "normal",
+        "openedAt": null,
+        "closures": [],
+        "avg12m": 2949.94,
+        "avg2019": 4000.36,
+        "trailing": {
+          "weekdayDays": 64,
+          "weekendDays": 26,
+          "weekdayAvg": 3613.08,
+          "weekendAvg": 2118.15,
+          "weekdayMadRatio": 0.0465,
+          "weekendMadRatio": 0.1259
+        },
+        "yearAgo": {
+          "weekdayDays": 65,
+          "weekendDays": 25,
+          "weekdayAvg": 3533.49,
+          "weekendAvg": 2087.12,
+          "weekdayMadRatio": 0.0528,
+          "weekendMadRatio": 0.1374
+        }
+      },
+      "named": false
+    },
+    {
+      "name": "California (Blue)",
+      "input": {
+        "stationId": "fixture-40570",
+        "ctaStationId": "40570",
+        "status": "ACTIVE",
+        "dataStatus": "normal",
+        "openedAt": null,
+        "closures": [],
+        "avg12m": 3018.69,
+        "avg2019": 4664.28,
+        "trailing": {
+          "weekdayDays": 64,
+          "weekendDays": 26,
+          "weekdayAvg": 3645.67,
+          "weekendAvg": 2419.15,
+          "weekdayMadRatio": 0.0744,
+          "weekendMadRatio": 0.1932
+        },
+        "yearAgo": {
+          "weekdayDays": 65,
+          "weekendDays": 25,
+          "weekdayAvg": 3304.69,
+          "weekendAvg": 2227.24,
+          "weekdayMadRatio": 0.0743,
+          "weekendMadRatio": 0.1813
+        }
+      },
+      "named": false
+    },
+    {
+      "name": "California (Green)",
+      "input": {
+        "stationId": "fixture-41360",
+        "ctaStationId": "41360",
+        "status": "ACTIVE",
+        "dataStatus": "normal",
+        "openedAt": null,
+        "closures": [],
+        "avg12m": 607.53,
+        "avg2019": 840.53,
+        "trailing": {
+          "weekdayDays": 64,
+          "weekendDays": 26,
+          "weekdayAvg": 755.97,
+          "weekendAvg": 380.5,
+          "weekdayMadRatio": 0.0425,
+          "weekendMadRatio": 0.1766
+        },
+        "yearAgo": {
+          "weekdayDays": 65,
+          "weekendDays": 25,
+          "weekdayAvg": 784.43,
+          "weekendAvg": 391.52,
+          "weekdayMadRatio": 0.0464,
+          "weekendMadRatio": 0.1443
+        }
+      },
+      "named": false
+    },
+    {
+      "name": "Ashland (Green/Pink)",
+      "input": {
+        "stationId": "fixture-40170",
+        "ctaStationId": "40170",
+        "status": "ACTIVE",
+        "dataStatus": "normal",
+        "openedAt": null,
+        "closures": [],
+        "avg12m": 1461.99,
+        "avg2019": 2041.27,
+        "trailing": {
+          "weekdayDays": 64,
+          "weekendDays": 26,
+          "weekdayAvg": 1787.27,
+          "weekendAvg": 1130.04,
+          "weekdayMadRatio": 0.0802,
+          "weekendMadRatio": 0.2184
+        },
+        "yearAgo": {
+          "weekdayDays": 65,
+          "weekendDays": 25,
+          "weekdayAvg": 1817.91,
+          "weekendAvg": 1145.36,
+          "weekdayMadRatio": 0.0844,
+          "weekendMadRatio": 0.1587
+        }
+      },
+      "named": false
+    },
+    {
+      "name": "Argyle",
+      "input": {
+        "stationId": "fixture-41200",
+        "ctaStationId": "41200",
+        "status": "ACTIVE",
+        "dataStatus": "normal",
+        "openedAt": null,
+        "closures": [],
+        "avg12m": 2286.63,
+        "avg2019": 2657.89,
+        "trailing": {
+          "weekdayDays": 64,
+          "weekendDays": 26,
+          "weekdayAvg": 1994.27,
+          "weekendAvg": 1747.81,
+          "weekdayMadRatio": 0.0464,
+          "weekendMadRatio": 0.142
+        },
+        "yearAgo": {
+          "weekdayDays": 65,
+          "weekendDays": 25,
+          "weekdayAvg": 2981.65,
+          "weekendAvg": 2379.56,
+          "weekdayMadRatio": 0.0496,
+          "weekendMadRatio": 0.1459
+        }
+      },
+      "named": false
+    },
+    {
+      "name": "Sheridan",
+      "input": {
+        "stationId": "fixture-40080",
+        "ctaStationId": "40080",
+        "status": "ACTIVE",
+        "dataStatus": "normal",
+        "openedAt": null,
+        "closures": [],
+        "avg12m": 2389.35,
+        "avg2019": 4120.18,
+        "trailing": {
+          "weekdayDays": 64,
+          "weekendDays": 26,
+          "weekdayAvg": 2922.52,
+          "weekendAvg": 2346.15,
+          "weekdayMadRatio": 0.0575,
+          "weekendMadRatio": 0.1796
+        },
+        "yearAgo": {
+          "weekdayDays": 65,
+          "weekendDays": 25,
+          "weekdayAvg": 2732.37,
+          "weekendAvg": 2070.68,
+          "weekdayMadRatio": 0.0618,
+          "weekendMadRatio": 0.176
+        }
+      },
+      "named": false
+    },
+    {
+      "name": "Quincy",
+      "input": {
+        "stationId": "fixture-40040",
+        "ctaStationId": "40040",
+        "status": "ACTIVE",
+        "dataStatus": "normal",
+        "openedAt": null,
+        "closures": [],
+        "avg12m": 3858.82,
+        "avg2019": 5995.49,
+        "trailing": {
+          "weekdayDays": 64,
+          "weekendDays": 26,
+          "weekdayAvg": 5310.86,
+          "weekendAvg": 1405.27,
+          "weekdayMadRatio": 0.1289,
+          "weekendMadRatio": 0.1346
+        },
+        "yearAgo": {
+          "weekdayDays": 65,
+          "weekendDays": 25,
+          "weekdayAvg": 4972.72,
+          "weekendAvg": 1575.88,
+          "weekdayMadRatio": 0.1466,
+          "weekendMadRatio": 0.1124
+        }
+      },
+      "named": false
+    },
+    {
+      "name": "Harold Washington Library-State/Van Buren",
+      "input": {
+        "stationId": "fixture-40850",
+        "ctaStationId": "40850",
+        "status": "ACTIVE",
+        "dataStatus": "normal",
+        "openedAt": null,
+        "closures": [],
+        "avg12m": 2016.92,
+        "avg2019": 2950.71,
+        "trailing": {
+          "weekdayDays": 64,
+          "weekendDays": 26,
+          "weekdayAvg": 2619.02,
+          "weekendAvg": 1555.04,
+          "weekdayMadRatio": 0.094,
+          "weekendMadRatio": 0.2537
+        },
+        "yearAgo": {
+          "weekdayDays": 65,
+          "weekendDays": 25,
+          "weekdayAvg": 2558.02,
+          "weekendAvg": 1664.68,
+          "weekdayMadRatio": 0.1113,
+          "weekendMadRatio": 0.2067
+        }
+      },
+      "named": false
+    },
+    {
+      "name": "Washington/Wells",
+      "input": {
+        "stationId": "fixture-40730",
+        "ctaStationId": "40730",
+        "status": "ACTIVE",
+        "dataStatus": "normal",
+        "openedAt": null,
+        "closures": [],
+        "avg12m": 3716.06,
+        "avg2019": 6067.18,
+        "trailing": {
+          "weekdayDays": 64,
+          "weekendDays": 26,
+          "weekdayAvg": 5281.66,
+          "weekendAvg": 1007.31,
+          "weekdayMadRatio": 0.0977,
+          "weekendMadRatio": 0.2123
+        },
+        "yearAgo": {
+          "weekdayDays": 65,
+          "weekendDays": 25,
+          "weekdayAvg": 4787.8,
+          "weekendAvg": 1055.08,
+          "weekdayMadRatio": 0.1154,
+          "weekendMadRatio": 0.1351
+        }
+      },
+      "named": false
+    },
+    {
+      "name": "Adams/Wabash",
+      "input": {
+        "stationId": "fixture-40680",
+        "ctaStationId": "40680",
+        "status": "ACTIVE",
+        "dataStatus": "normal",
+        "openedAt": null,
+        "closures": [],
+        "avg12m": 3747.38,
+        "avg2019": 5719.13,
+        "trailing": {
+          "weekdayDays": 64,
+          "weekendDays": 26,
+          "weekdayAvg": 4897.84,
+          "weekendAvg": 2915.54,
+          "weekdayMadRatio": 0.1095,
+          "weekendMadRatio": 0.2221
+        },
+        "yearAgo": {
+          "weekdayDays": 65,
+          "weekendDays": 25,
+          "weekdayAvg": 4797.49,
+          "weekendAvg": 2993.48,
+          "weekdayMadRatio": 0.1067,
+          "weekendMadRatio": 0.1877
+        }
+      },
+      "named": false
+    },
+    {
+      "name": "Washington/Wabash",
+      "input": {
+        "stationId": "fixture-41700",
+        "ctaStationId": "41700",
+        "status": "ACTIVE",
+        "dataStatus": "normal",
+        "openedAt": "2017-08-31",
+        "closures": [],
+        "avg12m": 5769.06,
+        "avg2019": 8564.58,
+        "trailing": {
+          "weekdayDays": 64,
+          "weekendDays": 26,
+          "weekdayAvg": 6896.83,
+          "weekendAvg": 4474.69,
+          "weekdayMadRatio": 0.0525,
+          "weekendMadRatio": 0.1741
+        },
+        "yearAgo": {
+          "weekdayDays": 65,
+          "weekendDays": 25,
+          "weekdayAvg": 6115.34,
+          "weekendAvg": 4490.84,
+          "weekdayMadRatio": 0.0426,
+          "weekendMadRatio": 0.1457
+        }
+      },
+      "named": false
+    },
+    {
+      "name": "Clark/Lake",
+      "input": {
+        "stationId": "fixture-40380",
+        "ctaStationId": "40380",
+        "status": "ACTIVE",
+        "dataStatus": "normal",
+        "openedAt": null,
+        "closures": [],
+        "avg12m": 8273.17,
+        "avg2019": 15974.7,
+        "trailing": {
+          "weekdayDays": 64,
+          "weekendDays": 26,
+          "weekdayAvg": 10091.3,
+          "weekendAvg": 5309.38,
+          "weekdayMadRatio": 0.0988,
+          "weekendMadRatio": 0.1281
+        },
+        "yearAgo": {
+          "weekdayDays": 65,
+          "weekendDays": 25,
+          "weekdayAvg": 10338.03,
+          "weekendAvg": 5950.92,
+          "weekdayMadRatio": 0.1043,
+          "weekendMadRatio": 0.1107
+        }
+      },
+      "named": false
+    },
+    {
+      "name": "Rosemont",
+      "input": {
+        "stationId": "fixture-40820",
+        "ctaStationId": "40820",
+        "status": "ACTIVE",
+        "dataStatus": "normal",
+        "openedAt": null,
+        "closures": [],
+        "avg12m": 3383.15,
+        "avg2019": 5392.53,
+        "trailing": {
+          "weekdayDays": 64,
+          "weekendDays": 26,
+          "weekdayAvg": 3898.97,
+          "weekendAvg": 2736.38,
+          "weekdayMadRatio": 0.0528,
+          "weekendMadRatio": 0.1302
+        },
+        "yearAgo": {
+          "weekdayDays": 65,
+          "weekendDays": 25,
+          "weekdayAvg": 4080.34,
+          "weekendAvg": 2835.16,
+          "weekdayMadRatio": 0.0616,
+          "weekendMadRatio": 0.1414
+        }
+      },
+      "named": false
+    },
+    {
+      "name": "Cumberland",
+      "input": {
+        "stationId": "fixture-40230",
+        "ctaStationId": "40230",
+        "status": "ACTIVE",
+        "dataStatus": "normal",
+        "openedAt": null,
+        "closures": [],
+        "avg12m": 1930.39,
+        "avg2019": 3396.74,
+        "trailing": {
+          "weekdayDays": 64,
+          "weekendDays": 26,
+          "weekdayAvg": 2423.19,
+          "weekendAvg": 1334.85,
+          "weekdayMadRatio": 0.0825,
+          "weekendMadRatio": 0.1636
+        },
+        "yearAgo": {
+          "weekdayDays": 65,
+          "weekendDays": 25,
+          "weekdayAvg": 2267.78,
+          "weekendAvg": 1278.92,
+          "weekdayMadRatio": 0.0769,
+          "weekendMadRatio": 0.1539
+        }
+      },
+      "named": false
+    },
+    {
+      "name": "Damen (Blue)",
+      "input": {
+        "stationId": "fixture-40590",
+        "ctaStationId": "40590",
+        "status": "ACTIVE",
+        "dataStatus": "normal",
+        "openedAt": null,
+        "closures": [],
+        "avg12m": 3786.5,
+        "avg2019": 5542.88,
+        "trailing": {
+          "weekdayDays": 64,
+          "weekendDays": 26,
+          "weekdayAvg": 4185.56,
+          "weekendAvg": 3668.23,
+          "weekdayMadRatio": 0.0401,
+          "weekendMadRatio": 0.1551
+        },
+        "yearAgo": {
+          "weekdayDays": 65,
+          "weekendDays": 25,
+          "weekdayAvg": 3865.11,
+          "weekendAvg": 3265.76,
+          "weekdayMadRatio": 0.0502,
+          "weekendMadRatio": 0.173
+        }
+      },
+      "named": false
+    }
+  ]
+}

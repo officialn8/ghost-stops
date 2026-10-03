@@ -5,17 +5,27 @@
  * 1. Insert the SyncRun row holding the lease, or record a skipped run and stop.
  * 2. Re-fetch the trailing window (or the runner's --since range) month by month and upsert it.
  * 3. Daily: re-fetch up to three carried drift months. Weekly: reconcile and record drift months.
- * 4. Compute base metrics and station statuses outside any transaction, then write them in one.
+ * 4. Compute base metrics, station statuses, and score v2 outside any transaction, then write
+ *    them in one, so a scoring failure leaves the previous run's metrics in place.
  * 5. Finalize the row as ok, partial (data changed before an error), or failed, and release the lease.
  */
 import type { PrismaClient, SyncRunStatus } from "@prisma/client";
 import { todayInChicago } from "@/lib/cta/closures";
-import { computeBaseMetrics, readBaseMetricInputs, storedMaxDate, writeBaseMetrics } from "./baseMetrics";
+import { summarizeWindow } from "@/lib/scoring/components";
+import { scoreColumns, scoreStations, type StationScoreInput } from "@/lib/scoring/score";
+import { readScoreWindows } from "@/lib/scoring/windows";
+import {
+    computeBaseMetrics,
+    readBaseMetricInputs,
+    storedMaxDate,
+    writeStationMetrics,
+    type StationMetricsRow,
+} from "./baseMetrics";
 import { acquireLease, finishRun, latestCompletedRun, type RunOutcome } from "./lease";
 import { dedupeDays, matchStations } from "./match";
 import { parseDriftMonths, planDriftFetches, reconcileMonths } from "./reconcile";
 import type { RidershipSource } from "./socrata";
-import { deriveStationStatuses, writeStationStatuses } from "./status";
+import { deriveStationStatuses, writeStationStatuses, type StationStatusRow } from "./status";
 import { upsertRidership } from "./upsert";
 import { monthChunks, monthRange, toUtcDate, trailingWindow, type DateWindow } from "./window";
 
@@ -35,6 +45,8 @@ export interface SyncOptions {
     now?: () => Date;
     /** Progress lines for the local runner, one per fetched range. */
     log?: (message: string) => void;
+    /** Stands in for score v2's computation; tests pass one that throws. */
+    scoreStations?: typeof scoreStations;
 }
 
 export interface SyncSummary {
@@ -50,6 +62,50 @@ export interface SyncSummary {
     driftMonths: string[];
     durationMs: number;
     error: string | null;
+}
+
+/**
+ * Every station's metrics row for `dataThrough`: base metrics and score v2, computed from reads
+ * alone. Stations with no ridership at all get no row. `statuses` are this run's derived statuses,
+ * which decide who is ranked.
+ */
+export async function computeStationMetrics(
+    db: Pick<PrismaClient, "$queryRaw" | "station">,
+    cityId: string,
+    dataThrough: string,
+    statuses: readonly StationStatusRow[],
+    score: typeof scoreStations = scoreStations,
+): Promise<StationMetricsRow[]> {
+    const [inputs, windows] = await Promise.all([
+        readBaseMetricInputs(db, cityId, dataThrough),
+        readScoreWindows(db, cityId, dataThrough),
+    ]);
+    const metrics = computeBaseMetrics(inputs);
+    const statusById = new Map(statuses.map((s) => [s.stationId, s.status]));
+    const windowsById = new Map(windows.map((w) => [w.stationId, w]));
+    const scoreInputs = metrics.map((m): StationScoreInput => {
+        const w = windowsById.get(m.stationId);
+        const status = statusById.get(m.stationId);
+        if (!w || !status) throw new Error(`Station ${m.stationId} has metrics but no score inputs or status`);
+        return {
+            stationId: m.stationId,
+            ctaStationId: w.ctaStationId,
+            status,
+            dataStatus: m.dataStatus,
+            openedAt: w.openedAt,
+            closures: w.closures,
+            avg12m: m.avg12m,
+            avg2019: w.avg2019,
+            trailing: summarizeWindow(w.trailing),
+            yearAgo: summarizeWindow(w.yearAgo),
+        };
+    });
+    const scores = new Map(score(dataThrough, scoreInputs).map((s) => [s.stationId, s]));
+    return metrics.map((m) => {
+        const s = scores.get(m.stationId);
+        if (!s) throw new Error(`Scoring returned no score for station ${m.stationId}`);
+        return { ...m, ...scoreColumns(s) };
+    });
 }
 
 /** KTD10: Prisma's 5-second default would fail; the writes are two set-based statements. */
@@ -141,13 +197,13 @@ export async function runSync(db: PrismaClient, source: RidershipSource, options
         }
 
         const dataThrough = await storedMaxDate(db, city.id);
-        const [inputs, statuses] = await Promise.all([
-            dataThrough === null ? [] : readBaseMetricInputs(db, city.id, dataThrough),
-            deriveStationStatuses(db, city.id, todayInChicago(now())),
-        ]);
-        const metrics = computeBaseMetrics(inputs);
+        const statuses = await deriveStationStatuses(db, city.id, todayInChicago(now()));
+        const metrics =
+            dataThrough === null
+                ? []
+                : await computeStationMetrics(db, city.id, dataThrough, statuses, options.scoreStations);
         await db.$transaction(async (tx) => {
-            if (dataThrough !== null) await writeBaseMetrics(tx, metrics, dataThrough, now());
+            if (dataThrough !== null) await writeStationMetrics(tx, metrics, dataThrough, now());
             await writeStationStatuses(tx, statuses);
         }, TRANSACTION_OPTIONS);
 
