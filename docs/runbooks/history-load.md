@@ -882,3 +882,51 @@ rehearsal: Argyle 98, Bryn Mawr 99, Clark/Lake 118, Washington/Wabash 127 and Wi
 healthy with year-over-year set aside and the "next door" reason on the card and in the story;
 Clark/Division quiet; tiers 15/22/35/71; health 200. The rehearsal and PR preview branches were
 deleted on Nate's approval; Neon is production-only.
+
+## 8. Phase 4: Prisma 7 and Next 16 (U15, U16)
+
+No schema or data change: U15 moves the app to Prisma 7 on the `pg` driver adapter
+(officialn8/ghost-stops#6), and U16 moves it to Next 16, the ESLint CLI, and motion 14
+(officialn8/ghost-stops#7). Each PR body records its preview checks: concurrency sweeps, a
+preview-versus-production payload comparison, a computed-style comparison of the UI, and a sync on
+the PR's Neon preview branch. Section 1 has the Prisma 7 connection and drift-check changes.
+
+### 8.1 Go-live record (2026-10-03, run by the agent on Nate's "switch it over now")
+
+Nate waived the gate both PR bodies set (wait for the first scheduled `cron-daily` and
+`cron-weekly` runs on 2026-10-04, which had not happened yet). The first scheduled runs therefore
+run on Prisma 7 and Next 16.
+
+| Step | UTC | Result |
+|---|---|---|
+| 0. Snapshot | 23:09:28 | `pre-prisma-7-next-16-2026-10-03` (`snap-quiet-pond-aegin6w6`) |
+| 1. Merge U15 | 23:09:35 to 23:10:58 | #6 merged as `8772b4f` with every check green; deployment `dpl_B7W3yZ56CxPZvrWMUFBnBWyukZJR` live |
+| 2. Check U15 | 23:11 | health, list, `stations-raw`, and detail 200; Harlem/Lake's v1 percentile 60 (61 under Prisma 6, which read its own average one float step high and counted the station itself); 30 of 30 concurrent detail requests 200 |
+| 3. Merge U16 | 23:11:24 to 23:12:18 | #7's base switched from `feat/prisma-7` to `main` (its four U16 commits only), merged as `9f656e3` with every check green; deployment `dpl_73AY1XnTkDeYfbW7qqCtk715cYKb` live |
+| 4. Sync | 23:11:39 | local runner on the merged tree (identical to `9f656e3`), runtime role over the pooled host: OK in 4.7 s; fetched 8,784, inserted 0, revised 0; 144 narratives written, 0 rejected. Every station's rank, tier, and score matches the pre-upgrade fingerprint (`779815968acfd44899499319c2ea0958`): ghost 15, fading 22, quiet 35, healthy 71, State/Lake unranked. `stations` tag invalidated |
+| 5. Live site | 23:13 | `/api/health` 200; the list has 144 stations, `dataThrough` "2026-07-31", `lastSuccessfulFetch` 23:11:39; 30 of 30 concurrent detail requests 200; the page reports Next 16.3.8, the glass panels keep their backdrop blur, the list renders, and the console shows no errors; no production runtime warnings or errors since the deploys |
+| 6. Cleanup | 23:14 | Neon branches `preview/feat/prisma-7` and `preview/feat/next-16` deleted on Nate's approval; Neon is production-only |
+
+Rollback: instant rollback to `dpl_B7W3yZ56CxPZvrWMUFBnBWyukZJR` undoes U16 only; to
+`dpl_BppfttMS7zGwbZan2ENjA4fb44VD` (main at `35f329e`, Prisma 6) undoes both. Neither needs a
+database step.
+
+## 9. Retire the Go ETL and Railway (U11)
+
+The plan gated this on seven consecutive days with an OK cron-triggered sync. On 2026-10-03 Nate
+waived the gate and directed the retirement, before any scheduled run had happened. The Go ETL only
+ever wrote the old SQLite file, so it has had no part in production since Phase 1 moved the data to
+Neon. Its last Railway deployment failed on 2026-10-03 06:31 UTC, and Railway's GitHub autodeploy
+was turned off in Phase 0.
+
+Record (2026-10-03, run by the agent on Nate's "Retire the Go ETL and Railway now"):
+
+| Step | UTC | Result |
+|---|---|---|
+| Railway service | 23:15 | service `ghost-stops` (`b0b298cc-d5f6-4ae2-8ebd-79d3f79dfb95`) in project `ghost-stops` (`deff2f28-2a17-4777-b597-0bc3621277c7`) deleted |
+| Railway volume | 23:15 | volume `ghost-stops-volume` (`a4da15ce-2ed9-4c08-b916-e2027ec9bb9a`, 5 GB at `/app/prisma`, the Go ETL's SQLite file) deleted. The same history survives as the local `prisma/dev.db` snapshot and the exports in section 4.7 |
+| Check | 23:16 | the Railway project lists no services and no volumes; the empty project remains |
+| Repository | | `go-etl/` and the root `Dockerfile` deleted; `DEPLOYMENT.md` rewritten for Vercel and Neon only |
+
+The scheduled sync is now the only pipeline. Until seven OK scheduled days have passed, watch the
+daily `/api/health` check (section 6) and the `SyncRun` rows.
