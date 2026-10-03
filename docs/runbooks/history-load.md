@@ -19,10 +19,15 @@ Migrations, the seed, and the load run from an operator machine as the database 
 - Get the owner string from the Neon console or the Neon connector's `get_connection_string`
   with `role_name: neondb_owner` and the target branch. Never paste it into a file, a commit,
   or a chat; export it in the shell only.
-- Set **both** variables. The schema's `directUrl` reads `DATABASE_URL_UNPOOLED`, and
-  `prisma validate`, `migrate deploy`, and `migrate diff` fail without it.
-- The repo's `.env` points `DATABASE_URL` at the local SQLite snapshot and Prisma loads it
-  automatically, so always export both variables explicitly in the shell that runs a command.
+- Set **both** variables. The Prisma CLI (`migrate deploy`, `migrate diff`, `migrate status`)
+  reads `DATABASE_URL_UNPOOLED` from `prisma.config.ts`; the seed, the local runner, and the app
+  read `DATABASE_URL` through `src/lib/prisma.ts`.
+- Since Prisma 7 (plan U15) nothing loads `.env` for these commands, and the repo's `.env` still
+  points `DATABASE_URL` at the old SQLite file. Always export both variables explicitly in the
+  shell that runs a command.
+- Prisma 7 removed `migrate diff --from-url` and `--to-schema-datamodel`. The drift check that
+  section 3.1 shows with the old flags is now
+  `npx prisma migrate diff --from-config-datasource --to-schema prisma/schema.prisma --exit-code`.
 
 ```bash
 export DATABASE_URL='<neondb_owner direct URL for the target branch>'
