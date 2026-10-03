@@ -10,6 +10,10 @@ const serverOnly = (modulePath, role) => ({
   message: `src/${modulePath} is server-only (${role}). Components must get this data from an API route instead.`,
 });
 
+// eslint-plugin-react-hooks 7 (with eslint-config-next 16) adds React Compiler rules as errors.
+// The v1 UI breaks two of them in nine places; the Phase 5 redesign (plan U17 to U22) replaces
+// that UI, so those nine are recorded in eslint-suppressions.json rather than rewritten twice.
+// Any new violation fails lint. After removing one, run `npx eslint . --prune-suppressions`.
 export default defineConfig([
   ...nextVitals,
   ...nextTs,
@@ -25,25 +29,6 @@ export default defineConfig([
     // Retired one-off scripts, kept for reference and no longer run.
     "scripts/archive/**",
   ]),
-  {
-    // eslint-plugin-react-hooks 7 (with eslint-config-next 16) adds React Compiler rules, and
-    // these v1 files break two of them. The Phase 5 redesign (plan U17 to U22) replaces the v1
-    // UI, so they warn here instead of being rewritten twice. Every other file gets errors.
-    files: [
-      "src/components/map/MapContainer.tsx",
-      "src/components/mobile/MobileBottomSheet.tsx",
-      "src/components/mobile/MobileStationDetail.tsx",
-      "src/components/station/StationDetailPanel.tsx",
-      "src/components/theme/ThemeProvider.tsx",
-      "src/components/ui/SmartTooltip.tsx",
-      "src/hooks/useBodyScrollLock.ts",
-      "src/hooks/useMediaQuery.ts",
-    ],
-    rules: {
-      "react-hooks/refs": "warn",
-      "react-hooks/set-state-in-effect": "warn",
-    },
-  },
   {
     files: ["src/components/**/*.{ts,tsx}"],
     rules: {
