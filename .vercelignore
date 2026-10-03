@@ -1,7 +1,6 @@
 # Ignore large files for Vercel deployment
 node_modules
 .next
-go-etl
 *.db
 *.sqlite
 docs
