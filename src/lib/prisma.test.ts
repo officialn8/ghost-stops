@@ -152,8 +152,10 @@ describe("prisma connection", () => {
     it("attaches the pool to Fluid compute and hands the same pool to the client through the pg adapter", async () => {
         await import("./prisma");
 
+        // Identity, not equality: the mocked pools are empty objects, so toEqual would accept any.
         const [pool] = constructed.pools;
-        expect(constructed.attached).toEqual([pool]);
+        expect(constructed.attached).toHaveLength(1);
+        expect(constructed.attached[0]).toBe(pool);
         expect(constructed.adapters).toHaveLength(1);
         expect(constructed.adapters[0].pool).toBe(pool);
         expect(constructed.clientOptions).toHaveLength(1);

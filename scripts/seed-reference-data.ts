@@ -18,7 +18,7 @@ import { CTA_ROSTER } from "../src/lib/cta/roster";
 import { linesForStation, sequenceRows } from "../src/lib/cta/sequences";
 import { displayNameFor, generateSlugs } from "../src/lib/cta/slug";
 import { prisma } from "../src/lib/prisma";
-import { isCliEntry } from "./cli";
+import { isCliEntry, requireDatabaseUrl } from "./cli";
 import { isCalendarDate } from "./dates";
 
 const STATE_LAKE = "40260";
@@ -291,7 +291,10 @@ function parseOptions(argv: string[]): SeedOptions {
 
 if (isCliEntry(import.meta.url)) {
     Promise.resolve()
-        .then(() => seedReferenceData(prisma, parseOptions(process.argv.slice(2))))
+        .then(() => {
+            requireDatabaseUrl();
+            return seedReferenceData(prisma, parseOptions(process.argv.slice(2)));
+        })
         .then((report) => console.log(JSON.stringify(report, null, 2)))
         .catch((error: unknown) => {
             console.error(error instanceof Error ? error.message : error);
