@@ -57,6 +57,8 @@ interface Metrics {
   systemAverage: number;
   systemMedian?: number;
   explanation: string;
+  /** False for closed and no-data stations, which are not compared with others. */
+  ranked?: boolean;
 }
 
 interface MobileStationDetailProps {
@@ -372,25 +374,27 @@ export default function MobileStationDetail({
                   <Ghost className="w-4 h-4 text-indigo-600" />
                 </div>
                 <h3 className="font-semibold text-foreground">
-                  Why is this a ghost stop?
+                  {metrics.ranked === false ? "Not ranked" : "Why is this a ghost stop?"}
                 </h3>
               </div>
               <p className="text-sm text-muted-foreground leading-relaxed mb-3">
                 {metrics.explanation}
               </p>
-              <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                <TrendingDown className="w-3 h-3" />
-                <span>
-                  {metrics.percentile <= 50
-                    ? `Bottom ${metrics.percentile || 1}% of all CTA stations`
-                    : `Top ${100 - metrics.percentile}% of all CTA stations`}
-                </span>
-              </div>
+              {metrics.ranked !== false && (
+                <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                  <TrendingDown className="w-3 h-3" />
+                  <span>
+                    {metrics.percentile <= 50
+                      ? `Bottom ${metrics.percentile || 1}% of all CTA stations`
+                      : `Top ${100 - metrics.percentile}% of all CTA stations`}
+                  </span>
+                </div>
+              )}
             </div>
           ) : null}
 
           {/* How It Compares */}
-          {comparisons && (
+          {comparisons && metrics?.ranked !== false && (
             <div className="bg-muted rounded-lg p-4">
               <div className="flex items-center gap-2 mb-4">
                 <div className="w-8 h-8 rounded-full bg-muted/50 flex items-center justify-center">

@@ -1,7 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { isRanked } from "@/lib/sync/baseMetrics";
-import { normalizeDataStatus, safeJsonParse } from "@/lib/utils";
+import { safeJsonParse, type DataStatus } from "@/lib/utils";
+
+// The stored StationMetrics.dataStatus in the UI's vocabulary; a station with no metrics row is missing.
+function uiDataStatus(stored: string | undefined): DataStatus {
+  if (stored === "normal") return "available";
+  if (stored === "zero") return "zero";
+  return "missing";
+}
 
 export async function GET(request: NextRequest) {
   try {
@@ -64,25 +71,17 @@ export async function GET(request: NextRequest) {
     });
 
     // Format response
-    const formattedStations = stations.map(station => {
-      const dataStatus = !station.metrics?.serviceDateMax || station.metrics.dataStatus === "missing"
-        ? 'missing'
-        : station.metrics.rolling30dAvg === 0 
-          ? 'zero' 
-          : 'available';
-
-      return {
-        id: station.id,
-        name: station.name,
-        latitude: station.latitude,
-        longitude: station.longitude,
-        lines: safeJsonParse<string[]>(station.lines, []),
-        ghostScore: station.metrics?.ghostScore ?? 0,
-        rolling30dAvg: station.metrics?.rolling30dAvg ?? 0,
-        lastDayEntries: station.metrics?.lastDayEntries ?? 0,
-        dataStatus: normalizeDataStatus(dataStatus)
-      };
-    });
+    const formattedStations = stations.map(station => ({
+      id: station.id,
+      name: station.name,
+      latitude: station.latitude,
+      longitude: station.longitude,
+      lines: safeJsonParse<string[]>(station.lines, []),
+      ghostScore: station.metrics?.ghostScore ?? 0,
+      rolling30dAvg: station.metrics?.rolling30dAvg ?? 0,
+      lastDayEntries: station.metrics?.lastDayEntries ?? 0,
+      dataStatus: uiDataStatus(station.metrics?.dataStatus)
+    }));
 
     return NextResponse.json({
       stations: formattedStations,

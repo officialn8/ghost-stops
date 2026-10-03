@@ -76,6 +76,22 @@ describe("GET /api/chicago/stations-raw", () => {
         ]);
     });
 
+    it("reports the stored zero status for an open station under one rider a day", async () => {
+        // The sync stores zero for any 30-day average under 1, not only for exactly 0.
+        const quiet = station("Quiet", 45, "zero");
+        prismaMock.station.findMany.mockResolvedValue([
+            { ...quiet, metrics: { ...quiet.metrics!, rolling30dAvg: 0.4 } },
+            station("Halsted", 72),
+            station("Kostner", 70),
+        ] as never);
+
+        expect((await body("ghost_score_desc")).stations).toMatchObject([
+            { name: "Halsted", dataStatus: "available" },
+            { name: "Kostner", dataStatus: "available" },
+            { name: "Quiet", dataStatus: "zero" },
+        ]);
+    });
+
     it("keeps the database order for the name sort", async () => {
         prismaMock.station.findMany.mockResolvedValue([
             station("Argyle", 40),
