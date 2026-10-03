@@ -178,17 +178,29 @@ npx tsx scripts/sample-upstream.ts --csv exports/ridership-history.csv --sqlite 
 Expected: `ok: true`, 60 sampled (30 from 2019, 30 from 2001, seed 20261003), 0 mismatches,
 0 missing upstream. Day type differences are informational (holidays are U upstream).
 
-**Load** (direct host, owner role, one transaction; about 30 seconds):
+**Load** (direct host, owner role, one transaction; about 30 seconds). The migration leaves the
+table empty, so the first load refuses to run on a non-empty table instead of truncating it:
+`TRUNCATE` would hold an exclusive lock for the whole load and block every detail request, and
+after Phase 2 starts syncing it would erase synced rows. A failed load rolls back to empty, so the
+same block is also the retry.
 
 ```bash
 psql "$DATABASE_URL_UNPOOLED" -v ON_ERROR_STOP=1 <<'SQL'
 BEGIN;
-TRUNCATE "RidershipDaily";
+DO $$ BEGIN
+  IF EXISTS (SELECT 1 FROM "RidershipDaily") THEN
+    RAISE EXCEPTION 'RidershipDaily is not empty; this block is only for the first load';
+  END IF;
+END $$;
 \copy "RidershipDaily" ("stationId","serviceDate","entries","dayType") FROM 'exports/ridership-history.csv' WITH (FORMAT csv, HEADER true)
 COMMIT;
 ANALYZE "RidershipDaily";
 SQL
 ```
+
+Only if a committed Phase 1 load must be redone before Phase 2 writes anything, replace the `DO`
+block with `TRUNCATE "RidershipDaily";` after checking that `max("serviceDate")` is still
+2025-11-30.
 
 Verify:
 
@@ -198,8 +210,26 @@ SELECT count(*), min("serviceDate"), max("serviceDate"), count(DISTINCT "station
 FROM "RidershipDaily";
 -- 1242528, 2001-01-02, 2025-11-30, 141, about 173 MB, about 183 MB
 
-SELECT to_char("serviceDate", 'YYYY-MM') AS month, count(*) FROM "RidershipDaily" GROUP BY 1 ORDER BY 1;
--- equals the per-month counts of the CSV (299 months)
+SELECT sum(entries)::bigint FROM "RidershipDaily";
+-- 3550614440
+
+SELECT "dayType", count(*) FROM "RidershipDaily" GROUP BY 1 ORDER BY 1;
+-- A 177528, U 177520, W 887480
+
+SELECT s.name FROM "Station" s
+WHERE NOT EXISTS (SELECT 1 FROM "RidershipDaily" r WHERE r."stationId" = s.id) ORDER BY 1;
+-- exactly State/Lake, Western (O'Hare), Western (Orange)
+```
+
+Per-month counts against the CSV (299 months, both files identical):
+
+```bash
+psql "$DATABASE_URL_UNPOOLED" -At -F, -c "SELECT to_char(\"serviceDate\", 'YYYY-MM'), count(*) FROM \"RidershipDaily\" GROUP BY 1" | sort > exports/verify-db-months.csv
+tail -n +2 exports/ridership-history.csv | cut -d, -f2 | cut -c1-7 | sort | uniq -c | awk '{print $2","$1}' | sort > exports/verify-csv-months.csv
+diff exports/verify-db-months.csv exports/verify-csv-months.csv && echo MONTHS_MATCH
+```
+
+```sql
 
 SELECT count(*), md5(string_agg(id || '|' || "factKey" || '|' || value::text, ',' ORDER BY id)) FROM "StationFact";
 -- 625, ea912a2122fd460cbf5a4fde9d9970e0 (production before the migration)
@@ -253,7 +283,7 @@ served Harlem's 91-day chart ending 2025-11-30 (149 riders that day, as in produ
 ### 4.4 Upstream comparison
 
 The 60-sample gate passed: 60 of 60 equal, across 54 stations; one day type differs (2019-01-01,
-a holiday). A further check compared every station-year in the export with Socrata's yearly sums
+a holiday). The final sample (section 4.6) had four day-type differences, all holidays. A further check compared every station-year in the export with Socrata's yearly sums
 (`5neh-572f`, one grouped query):
 
 | Years | Result |
@@ -285,12 +315,22 @@ riders except the gaps listed below, and 2025 differs in riders only (CTA's rest
 | Washington (Blue) 40370 | 2001 to 2009 | mixed with retired 40500 |
 | every station | 2001-01-01 | the snapshot starts 2001-01-02 |
 | every station | 2025-01 onward | CTA restated 2025, and data after 2025-11-30 (plan, U10 backfill) |
+| every station | day type, 2001 to 2024 | weekday holidays are stored as `W`; one `UPDATE` from a Socrata `(date, daytype)` query fixes them |
 
 Socrata itself holds two rows with different rider counts for 618 station-days in July and August
 2011. The load keeps the snapshot's one value per day. The Phase 2 sync must collapse duplicates
 before an upsert (an `ON CONFLICT DO UPDATE` cannot touch one row twice in a statement); the
 approved rule is to keep the row Socrata updated most recently. Retired ids 40200, 40500, 40640,
 and 41580 are not in the roster and are not loaded.
+
+**Exactness caveats of the Phase 1 load**, all known and accepted:
+
+- Day types come from the calendar, so weekday holidays are stored as `W` where Socrata says `U`
+  (about 8 days a year). Phase 2 overwrites only the rows it re-fetches, so it also needs a one-time
+  day-type correction from a Socrata `(date, daytype)` query, added to the list above.
+- July and August 2011 hold the snapshot's value where Socrata has two (see above).
+- 2001-01-01 is missing for every station.
+- 2025 holds the pre-restatement values, exactly as production does today.
 
 Other tables: every existing station has facts, metrics, and a narrative. State/Lake has none,
 because it is new; Phase 2 and Phase 3 compute metrics and narratives for every station.
@@ -346,32 +386,80 @@ Run it in a quiet window, with Nate's go at that moment.
 | Gate | Evidence |
 |---|---|
 | Restore rehearsed | section 4.5 |
-| Upstream sample passed | section 4.4 and 4.6 (60 of 60) |
+| Upstream sample passed | sections 4.4 and 4.6 (60 of 60) |
 | Facts, narratives, and every other table exported locally | section 4.7 |
 | CSV passes the distinct-count and station-id checks | the export refuses to write otherwise (section 3.3) |
 | Projected size acceptable | 183 MB measured (section 4.3); Nate lifted the 800 MB cap |
-| Phase 1 PR open, not merged | the PR link |
-| Railway autodeploy off, so the merge does not start a failing build | Railway service settings |
+| Seed rehearsed at the commit that will merge | section 4.8 |
+| Rollback window known | production keeps 6 hours of history (`history_retention_seconds` 21600 on the Launch plan, checked 2026-10-03) |
+| Every production ridership row survives the reload | section 5.2 step 2: 38,654 identical, 0 different, 488 absent (all Western, excluded by design) |
+| Nate acknowledges the Western interim | from step 5 until Phase 2, Western (O'Hare) and Western (Orange) show empty charts beside metrics and narratives built on the swapped history; production shows those swapped charts today |
+| Phase 1 PR open, not merged, no auto-merge | the PR link |
 | Nate confirms at that moment | his reply |
+
+Railway autodeploy is off (2026-10-03). That only stops a failed-build email; nothing on Railway
+writes to Neon.
 
 ### 5.2 Steps
 
-Record the UTC time and result of each step in section 5.4.
+Record the UTC time and result of each step in section 5.4. Steps 4 to 7 run without a pause: from
+the seed until the Phase 1 deploy, the old code lists State/Lake first in the ranking (it has no
+metrics yet, and Postgres sorts that first), which the Phase 1 code fixes.
 
-1. Take a manual snapshot of the production branch and note its id and time. The rehearsal
-   snapshot from section 4.5 is also a valid pre-migration snapshot as long as step 2 passes.
-2. Confirm production is unchanged since the backups: `Station` 143, `RidershipDaily` 39,142,
-   and the fact and narrative checksums in section 4.7.
-3. Section 3.1 against production's direct URL as `neondb_owner`.
-4. Section 3.2: `--dry-run`, then the real run (345 changes), then a second run (0 changes).
-5. Section 3.3: export already on disk (check its SHA-256 against section 4.7), load, `ANALYZE`,
-   and every verification query.
+1. Take a manual snapshot of the production branch; confirm it in the snapshot list and note its
+   id and time. The rehearsal snapshot from section 4.5 is a fallback, not the plan.
+2. Guard the target and the artifacts, in the shell that runs steps 3 to 5:
+
+   ```bash
+   git rev-parse HEAD                     # the commit that will merge
+   git status --porcelain                 # only .claude/worktrees/ may appear
+   npx prisma generate
+   shasum -a 256 prisma/migrations/20261003064611_revival_v2/migration.sql   # note it
+   shasum -a 256 exports/ridership-history.csv   # must equal section 4.7
+   node -e 'const u=new URL(process.env.DATABASE_URL_UNPOOLED);console.log(u.host,u.username,u.pathname)'
+   # must print ep-purple-bread-ae5a0gwi.<region host> (no -pooler) neondb_owner /neondb
+   psql "$DATABASE_URL_UNPOOLED" -Atc 'SELECT (SELECT count(*) FROM "Station"), (SELECT count(*) FROM "RidershipDaily")'
+   # 143|39142
+   ```
+
+   Then confirm production is unchanged since the backups (the fact and narrative checksums in
+   section 4.7), and run the row-preservation check: every production ridership row must appear in
+   the load file with the same value, apart from the excluded Western stations.
+
+   ```bash
+   python3 - <<'EOF'
+   import csv, collections
+   load = {}
+   with open('exports/ridership-history.csv') as f:
+       r = csv.reader(f); next(r)
+       for s, d, e, t in r: load[(s, d)] = int(e)
+   names = {r['id']: r['name'] for r in csv.DictReader(open('exports/backups/2026-10-03-production/Station.csv'))}
+   same = diff = 0; absent = collections.Counter()
+   for r in csv.DictReader(open('exports/backups/2026-10-03-production/RidershipDaily.csv')):
+       k = (r['stationId'], r['serviceDate'][:10])
+       if k not in load: absent[names[r['stationId']]] += 1
+       elif load[k] == int(r['entries']): same += 1
+       else: diff += 1
+   print('identical', same, 'differ', diff, 'absent', dict(absent))
+   EOF
+   # identical 38654 differ 0 absent {'Western (Orange)': 366, "Western (O'Hare)": 122}
+   ```
+
+3. Section 3.1 against production's direct URL as `neondb_owner`. Afterwards the `revival_v2`
+   row's `checksum` in `_prisma_migrations` equals the noted SHA-256. If `migrate deploy` fails,
+   Prisma records a failed row: run
+   `npx prisma migrate resolve --rolled-back 20261003064611_revival_v2` before any retry.
+4. Section 3.2: `--dry-run`, then the real run (345 changes), then a second run (0 changes). Any
+   other report is a stop.
+5. Section 3.3: load, `ANALYZE`, and every verification query.
 6. Check that production still serves with the old code: `GET /api/chicago/stations-raw` returns
    200 and 144 stations, and a station detail returns 200 with a chart ending 2025-11-30.
 7. Merge the Phase 1 PR and wait for the production deployment.
-8. Check the new deployment: list and detail return 200; Harlem
-   (`/api/chicago/stations/088ea428fedd5ac895912b99bd633067`) names Oak Park (Blue) and Forest Park;
-   30 concurrent detail requests return no 500s; the site still shows November 2025 data.
+8. Check the new deployment: list and detail return 200; the list does not start with State/Lake;
+   Harlem (`/api/chicago/stations/088ea428fedd5ac895912b99bd633067`) names Oak Park (Blue) and
+   Forest Park; 30 concurrent detail requests return no 500s; the site still shows November 2025
+   data. If a detail request fails with `cached plan must not change result type` (an instance that
+   prepared the query before the table was recreated), redeploy to recycle the instances.
 
 ### 5.3 Rollback
 
@@ -379,13 +467,27 @@ Record the UTC time and result of each step in section 5.4.
   before step 3 (Neon instant restore). Connection strings keep working; Neon keeps the replaced
   state as a separate branch.
 - **Later:** restore the step 1 snapshot onto the production branch with finalize (rehearsed in
-  section 4.5). The branch id changes; anything that refers to the production branch by id needs
-  the new one.
-- **Partial:** the load is idempotent (TRUNCATE plus COPY in one transaction), so a failed or
-  suspect load is re-run as is. Facts and narratives can be reloaded from the section 4.7 CSVs.
-- **The deployment fails after the merge:** revert the merge commit. The old code serves the
-  new schema (section 4.1), so no database rollback is needed for that.
+  section 4.5). The branch id changes, so anything that refers to the production branch by id,
+  including the Neon-Vercel integration, needs the new one.
+- **Partial:** a failed load rolls back to an empty table and is re-run as is (section 3.3). Facts
+  and narratives can be reloaded from the section 4.7 CSVs. Those backups exist only on this
+  machine; copy them somewhere else before step 3.
+- **The deployment fails after the merge:** Vercel Instant Rollback to the previous deployment,
+  then revert the merge commit. The old code serves the new schema (section 4.1), so no database
+  rollback is needed for that.
 
-### 5.4 Record
+### 5.4 Monitoring (first 24 hours)
+
+Check at +1 hour, +4 hours, and +24 hours:
+
+| Signal | Expected | Where |
+|---|---|---|
+| 5xx on `/api/chicago/*` | none | Vercel runtime logs |
+| Detail latency | no worse than before the migration | Vercel logs |
+| Prisma errors (`P2022`, `P2010`, key violations) | none | Vercel logs |
+| Storage | steady near 183 MB | Neon console |
+| Writes | none; `max("lastUpdated")` in `StationMetrics` unchanged | SQL |
+
+### 5.5 Record
 
 Filled in during the production run.
