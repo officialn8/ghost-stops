@@ -16,11 +16,12 @@ import fs from "node:fs";
 import path from "node:path";
 import readline from "node:readline";
 import { DatabaseSync } from "node:sqlite";
-import { fileURLToPath } from "node:url";
 import { parseArgs } from "node:util";
+import { isCliEntry } from "./cli";
 import { CSV_HEADER, isCalendarDate } from "./export-history";
 
-export const SOCRATA_ENDPOINT = "https://data.cityofchicago.org/resource/5neh-572f.json";
+export const DATASET_ID = "5neh-572f";
+export const SOCRATA_ENDPOINT = `https://data.cityofchicago.org/resource/${DATASET_ID}.json`;
 export const DEFAULT_SEED = 20261003;
 export const DEFAULT_YEARS: readonly number[] = [2019, 2001];
 export const DEFAULT_PER_YEAR = 30;
@@ -257,13 +258,11 @@ export async function sampleUpstream(options: SampleOptions): Promise<SampleRepo
         serviceDate: pick.serviceDate,
     }));
 
-    const upstreamByKey = new Map<string, UpstreamRow[]>();
+    const upstreamRows: UpstreamRow[] = [];
     for (let i = 0; i < queries.length; i += BATCH_SIZE) {
-        for (const row of await fetchUpstream(queries.slice(i, i + BATCH_SIZE), fetchFn, options.appToken)) {
-            const key = `${row.ctaStationId}|${row.serviceDate}`;
-            upstreamByKey.set(key, [...(upstreamByKey.get(key) ?? []), row]);
-        }
+        upstreamRows.push(...(await fetchUpstream(queries.slice(i, i + BATCH_SIZE), fetchFn, options.appToken)));
     }
+    const upstreamByKey = Map.groupBy(upstreamRows, (row) => `${row.ctaStationId}|${row.serviceDate}`);
 
     const samples = picks.map((pick, index): SampleResult => {
         const { ctaStationId } = queries[index];
@@ -290,7 +289,7 @@ export async function sampleUpstream(options: SampleOptions): Promise<SampleRepo
     const missingUpstream = samples.filter((sample) => sample.status === "missing").length;
     return {
         ok: ridesMismatches === 0 && missingUpstream === 0,
-        dataset: "5neh-572f",
+        dataset: DATASET_ID,
         csvPath: path.resolve(options.csvPath),
         seed,
         perYear,
@@ -335,11 +334,6 @@ async function main(argv: string[]): Promise<number> {
         console.error(error instanceof Error ? error.message : String(error));
         return 1;
     }
-}
-
-function isCliEntry(moduleUrl: string): boolean {
-    const entry = process.argv[1];
-    return entry !== undefined && path.resolve(entry) === fileURLToPath(moduleUrl);
 }
 
 if (isCliEntry(import.meta.url)) {

@@ -29,6 +29,10 @@ export const STATION_CLOSURES: readonly StationClosureDef[] = [
     },
 ];
 
+export function closuresFor(ctaStationId: string): StationClosureDef[] {
+    return STATION_CLOSURES.filter((c) => c.ctaStationId === ctaStationId);
+}
+
 export interface DerivedStatus {
     status: StationStatus;
     closedAt: string | null;

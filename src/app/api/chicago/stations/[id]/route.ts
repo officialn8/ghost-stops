@@ -135,7 +135,7 @@ export async function GET(
       if (!ctaStationId) return null;
       const neighbor = await prisma.station.findUnique({
         where: { cityId_ctaStationId: { cityId: station.cityId, ctaStationId } },
-        include: { metrics: true }
+        select: { id: true, name: true, metrics: { select: { rolling30dAvg: true, ghostScore: true } } }
       });
       if (!neighbor?.metrics) return null;
       return {

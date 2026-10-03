@@ -11,12 +11,14 @@
  * Run it after the revival_v2 migration (docs/runbooks/history-load.md); it refuses to run against
  * a station whose CTA id is not in the roster, which is what an unmigrated database looks like.
  */
-import { pathToFileURL } from "node:url";
-import { Prisma, PrismaClient, type StationStatus } from "@prisma/client";
-import { STATION_CLOSURES, deriveStatus } from "../src/lib/cta/closures";
+import { parseArgs } from "node:util";
+import { Prisma, PrismaClient } from "@prisma/client";
+import { STATION_CLOSURES, closuresFor, deriveStatus } from "../src/lib/cta/closures";
 import { CTA_ROSTER } from "../src/lib/cta/roster";
 import { linesForStation, sequenceRows } from "../src/lib/cta/sequences";
 import { displayNameFor, generateSlugs } from "../src/lib/cta/slug";
+import { isCliEntry } from "./cli";
+import { isCalendarDate } from "./export-history";
 
 const STATE_LAKE = "40260";
 // From CTA's stop list (8pix-ypme); State/Lake was never ingested, so it has no row yet.
@@ -52,7 +54,7 @@ export interface SeedOptions {
 }
 
 /** Same normalization the Go ETL used to fill StationAlias.normalized. */
-export function normalizeAliasName(name: string): string {
+function normalizeAliasName(name: string): string {
     return name
         .toLowerCase()
         .replace(/&/g, "and")
@@ -63,31 +65,38 @@ export function normalizeAliasName(name: string): string {
         .trim();
 }
 
-export function todayInChicago(now = new Date()): string {
+function todayInChicago(now = new Date()): string {
     return new Intl.DateTimeFormat("en-CA", { timeZone: "America/Chicago" }).format(now);
 }
 
 const toDate = (day: string) => new Date(`${day}T00:00:00Z`);
 const toDay = (date: Date | null) => (date ? date.toISOString().slice(0, 10) : null);
 
-class DryRunRollback extends Error {}
+/** Thrown to roll back a dry run's transaction, carrying the report it computed. */
+class DryRunRollback extends Error {
+    constructor(readonly report: SeedReport) {
+        super("dry run");
+    }
+}
+
+const closureKey = (stationId: string, startDay: string | null) => `${stationId}|${startDay}`;
+const sequenceKey = (row: { line: string; branch: string; seq: number }) => `${row.line}|${row.branch}|${row.seq}`;
 
 export async function seedReferenceData(prisma: PrismaClient, options: SeedOptions = {}): Promise<SeedReport> {
     const { cityCode = "chicago", asOf = todayInChicago(), dryRun = false } = options;
-    let report: SeedReport | undefined;
-
     try {
-        await prisma.$transaction(
+        return await prisma.$transaction(
             async (tx) => {
-                report = await seed(tx, cityCode, asOf, dryRun);
-                if (dryRun) throw new DryRunRollback();
+                const report = await seed(tx, cityCode, asOf, dryRun);
+                if (dryRun) throw new DryRunRollback(report);
+                return report;
             },
             { timeout: 120_000, maxWait: 10_000 },
         );
     } catch (error) {
-        if (!(error instanceof DryRunRollback)) throw error;
+        if (error instanceof DryRunRollback) return error.report;
+        throw error;
     }
-    return report!;
 }
 
 async function seed(tx: Prisma.TransactionClient, cityCode: string, asOf: string, dryRun: boolean): Promise<SeedReport> {
@@ -107,25 +116,19 @@ async function seed(tx: Prisma.TransactionClient, cityCode: string, asOf: string
     };
 
     // Desired state for every roster station.
-    const slugs = generateSlugs(CTA_ROSTER.map((s) => ({ ...s, lines: linesForStation(s.ctaStationId) })));
+    const roster = CTA_ROSTER.map((s) => ({ ...s, lines: linesForStation(s.ctaStationId) }));
+    const slugs = generateSlugs(roster);
     const desired = new Map(
-        CTA_ROSTER.map((s) => {
-            const { status, closedAt } = deriveStatus(
-                STATION_CLOSURES.filter((c) => c.ctaStationId === s.ctaStationId),
-                asOf,
-            );
-            const fields = {
-                slug: slugs.get(s.ctaStationId)!,
-                displayName: displayNameFor(s),
-                lines: linesForStation(s.ctaStationId) as string[],
-                status: status as StationStatus,
-                closedAt,
-            };
-            return [s.ctaStationId, { ...s, ...fields }];
+        roster.map((s) => {
+            const { status, closedAt } = deriveStatus(closuresFor(s.ctaStationId), asOf);
+            return [
+                s.ctaStationId,
+                { slug: slugs.get(s.ctaStationId)!, displayName: displayNameFor(s), lines: s.lines, status, closedAt },
+            ];
         }),
     );
 
-    let stations = await tx.station.findMany({ where: { cityId: city.id } });
+    const stations = await tx.station.findMany({ where: { cityId: city.id } });
     const unknown = stations.filter((s) => !s.ctaStationId || !desired.has(s.ctaStationId));
     if (unknown.length > 0) {
         const list = unknown.map((s) => `${s.name} (${s.ctaStationId ?? "no CTA id"})`).join(", ");
@@ -141,7 +144,7 @@ async function seed(tx: Prisma.TransactionClient, cityCode: string, asOf: string
     }
     for (const s of missing) {
         const d = desired.get(s.ctaStationId)!;
-        await tx.station.create({
+        const created = await tx.station.create({
             data: {
                 cityId: city.id,
                 externalId: s.ctaStationId,
@@ -155,9 +158,9 @@ async function seed(tx: Prisma.TransactionClient, cityCode: string, asOf: string
                 closedAt: d.closedAt ? toDate(d.closedAt) : null,
             },
         });
+        stations.push(created);
         report.stationsInserted.push(s.ctaStationId);
     }
-    if (missing.length > 0) stations = await tx.station.findMany({ where: { cityId: city.id } });
 
     // Station fields. A slug that moves is cleared first so two stations never hold it at once.
     const updates = stations.flatMap((s) => {
@@ -183,11 +186,9 @@ async function seed(tx: Prisma.TransactionClient, cityCode: string, asOf: string
 
     // Closures, keyed by station and start date.
     const existingClosures = await tx.stationClosure.findMany({ where: { station: { cityId: city.id } } });
-    const wantedClosures = new Map(
-        STATION_CLOSURES.map((c) => [`${idByCta.get(c.ctaStationId)}|${c.startDate}`, c]),
-    );
+    const wantedClosures = new Map(STATION_CLOSURES.map((c) => [closureKey(idByCta.get(c.ctaStationId)!, c.startDate), c]));
     for (const row of existingClosures) {
-        const want = wantedClosures.get(`${row.stationId}|${toDay(row.startDate)}`);
+        const want = wantedClosures.get(closureKey(row.stationId, toDay(row.startDate)));
         if (!want) {
             await tx.stationClosure.delete({ where: { id: row.id } });
             report.closures.deleted++;
@@ -199,7 +200,7 @@ async function seed(tx: Prisma.TransactionClient, cityCode: string, asOf: string
             report.closures.updated++;
         }
     }
-    const haveClosures = new Set(existingClosures.map((r) => `${r.stationId}|${toDay(r.startDate)}`));
+    const haveClosures = new Set(existingClosures.map((r) => closureKey(r.stationId, toDay(r.startDate))));
     for (const [key, c] of wantedClosures) {
         if (haveClosures.has(key)) continue;
         await tx.stationClosure.create({
@@ -215,18 +216,15 @@ async function seed(tx: Prisma.TransactionClient, cityCode: string, asOf: string
 
     // Line sequences, keyed by line, branch, and position.
     const wantedRows = new Map(
-        sequenceRows().map((r) => [`${r.line}|${r.branch}|${r.seq}`, { ...r, stationId: idByCta.get(r.ctaStationId)! }]),
+        sequenceRows().map((r) => [sequenceKey(r), { ...r, stationId: idByCta.get(r.ctaStationId)! }]),
     );
     const existingRows = await tx.stationLineSequence.findMany({ where: { station: { cityId: city.id } } });
-    const staleIds = existingRows
-        .filter((r) => wantedRows.get(`${r.line}|${r.branch}|${r.seq}`)?.stationId !== r.stationId)
-        .map((r) => r.id);
+    const isCurrent = (r: (typeof existingRows)[number]) => wantedRows.get(sequenceKey(r))?.stationId === r.stationId;
+    const staleIds = existingRows.filter((r) => !isCurrent(r)).map((r) => r.id);
     if (staleIds.length > 0) {
         report.sequenceRows.deleted = (await tx.stationLineSequence.deleteMany({ where: { id: { in: staleIds } } })).count;
     }
-    const kept = new Set(
-        existingRows.filter((r) => !staleIds.includes(r.id)).map((r) => `${r.line}|${r.branch}|${r.seq}`),
-    );
+    const kept = new Set(existingRows.filter(isCurrent).map(sequenceKey));
     const toInsert = [...wantedRows].filter(([key]) => !kept.has(key)).map(([, r]) => r);
     if (toInsert.length > 0) {
         report.sequenceRows.inserted = (
@@ -237,17 +235,21 @@ async function seed(tx: Prisma.TransactionClient, cityCode: string, asOf: string
     }
 
     // Aliases.
-    for (const { ctaStationId, aliasName } of WRONG_ALIASES) {
-        const stationId = idByCta.get(ctaStationId)!;
-        report.aliases.removed += (await tx.stationAlias.deleteMany({ where: { stationId, aliasName } })).count;
-    }
-    for (const { ctaStationId, aliasName } of ADDED_ALIASES) {
-        const stationId = idByCta.get(ctaStationId)!;
-        const exists = await tx.stationAlias.findUnique({ where: { stationId_aliasName: { stationId, aliasName } } });
-        if (exists) continue;
-        await tx.stationAlias.create({ data: { stationId, aliasName, normalized: normalizeAliasName(aliasName) } });
-        report.aliases.added++;
-    }
+    const wrongAliases = WRONG_ALIASES.map(({ ctaStationId, aliasName }) => ({
+        stationId: idByCta.get(ctaStationId)!,
+        aliasName,
+    }));
+    report.aliases.removed = (await tx.stationAlias.deleteMany({ where: { OR: wrongAliases } })).count;
+    report.aliases.added = (
+        await tx.stationAlias.createMany({
+            data: ADDED_ALIASES.map(({ ctaStationId, aliasName }) => ({
+                stationId: idByCta.get(ctaStationId)!,
+                aliasName,
+                normalized: normalizeAliasName(aliasName),
+            })),
+            skipDuplicates: true,
+        })
+    ).count;
 
     report.stationCount = await tx.station.count({ where: { cityId: city.id } });
     if (report.stationCount !== CTA_ROSTER.length) {
@@ -266,23 +268,25 @@ async function seed(tx: Prisma.TransactionClient, cityCode: string, asOf: string
     return report;
 }
 
-function parseArgs(argv: string[]): SeedOptions {
-    const options: SeedOptions = {};
-    for (let i = 0; i < argv.length; i++) {
-        if (argv[i] === "--dry-run") options.dryRun = true;
-        else if (argv[i] === "--as-of") options.asOf = argv[++i];
-        else if (argv[i] === "--city") options.cityCode = argv[++i];
-        else throw new Error(`Unknown argument: ${argv[i]}`);
+function parseOptions(argv: string[]): SeedOptions {
+    const { values } = parseArgs({
+        args: argv,
+        options: {
+            "dry-run": { type: "boolean", default: false },
+            "as-of": { type: "string" },
+            city: { type: "string" },
+        },
+    });
+    if (values["as-of"] !== undefined && !isCalendarDate(values["as-of"])) {
+        throw new Error("--as-of must be a calendar date, YYYY-MM-DD.");
     }
-    if (options.asOf !== undefined && !/^\d{4}-\d{2}-\d{2}$/.test(options.asOf)) {
-        throw new Error("--as-of must be YYYY-MM-DD.");
-    }
-    return options;
+    return { dryRun: values["dry-run"], asOf: values["as-of"], cityCode: values.city };
 }
 
-if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+if (isCliEntry(import.meta.url)) {
     const prisma = new PrismaClient();
-    seedReferenceData(prisma, parseArgs(process.argv.slice(2)))
+    Promise.resolve()
+        .then(() => seedReferenceData(prisma, parseOptions(process.argv.slice(2))))
         .then((report) => console.log(JSON.stringify(report, null, 2)))
         .catch((error: unknown) => {
             console.error(error instanceof Error ? error.message : error);

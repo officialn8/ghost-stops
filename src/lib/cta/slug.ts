@@ -46,41 +46,37 @@ export function slugify(text: string): string {
         .replace(/^-|-$/g, "");
 }
 
-function baseSlug(station: SlugInput): string {
+/** The unqualified slug: the display name without any parenthetical. */
+export function baseSlug(station: { ctaStationId: string; name: string }): string {
     return slugify(displayNameFor(station).replace(/\s*\([^)]*\)/g, ""));
-}
-
-function groupBy<T>(items: readonly T[], key: (item: T) => string): Map<string, T[]> {
-    const groups = new Map<string, T[]>();
-    for (const item of items) {
-        const k = key(item);
-        groups.set(k, [...(groups.get(k) ?? []), item]);
-    }
-    return groups;
 }
 
 /** Slugs for a whole roster, keyed by CTA station id. Throws if any slug would not be unique. */
 export function generateSlugs(stations: readonly SlugInput[]): Map<string, string> {
     const slugs = new Map<string, string>();
 
-    for (const [base, group] of groupBy(stations, baseSlug)) {
+    for (const [base, group] of Map.groupBy(stations, baseSlug)) {
         if (group.length === 1) {
             slugs.set(group[0].ctaStationId, base);
             continue;
         }
         const withLine = (s: SlugInput) => `${base}-${slugify(getPrimaryLine(s.lines) ?? "")}`;
-        for (const [lineSlug, sameLine] of groupBy(group, withLine)) {
+        for (const [lineSlug, sameLine] of Map.groupBy(group, withLine)) {
             for (const s of sameLine) {
+                if (sameLine.length === 1) {
+                    slugs.set(s.ctaStationId, lineSlug);
+                    continue;
+                }
                 const end = BLUE_BRANCH_ENDS[s.ctaStationId];
-                slugs.set(s.ctaStationId, sameLine.length === 1 ? lineSlug : `${lineSlug}-${end}`);
-                if (sameLine.length > 1 && !end) {
+                if (!end) {
                     throw new Error(`Cannot give "${s.name}" a unique slug: it shares "${lineSlug}" with another station.`);
                 }
+                slugs.set(s.ctaStationId, `${lineSlug}-${end}`);
             }
         }
     }
 
-    const duplicates = [...groupBy([...slugs], ([, slug]) => slug)].filter(([, ids]) => ids.length > 1);
+    const duplicates = [...Map.groupBy(slugs, ([, slug]) => slug)].filter(([, entries]) => entries.length > 1);
     if (duplicates.length > 0) {
         throw new Error(`Duplicate slugs: ${duplicates.map(([slug]) => slug).join(", ")}`);
     }

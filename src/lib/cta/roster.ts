@@ -158,9 +158,3 @@ export const CTA_ROSTER: readonly RosterStation[] = [
     { ctaStationId: "40740", name: "Western (Pink)" },
     { ctaStationId: "40540", name: "Wilson" },
 ];
-
-const BY_ID = new Map(CTA_ROSTER.map((s) => [s.ctaStationId, s]));
-
-export function rosterStation(ctaStationId: string): RosterStation | undefined {
-    return BY_ID.get(ctaStationId);
-}

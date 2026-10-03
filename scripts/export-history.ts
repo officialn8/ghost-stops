@@ -16,8 +16,8 @@
 import fs from "node:fs";
 import path from "node:path";
 import { DatabaseSync, type SQLOutputValue } from "node:sqlite";
-import { fileURLToPath } from "node:url";
 import { parseArgs } from "node:util";
+import { isCliEntry } from "./cli";
 
 /** The snapshot's last service date; the plan exports history through this day. */
 export const HISTORY_THROUGH = "2025-11-30";
@@ -339,10 +339,46 @@ function emptySummary(sqlitePath: string, through: string, options: ExportOption
     };
 }
 
-interface ParsedRow {
-    date: string;
-    format: ServiceDateFormat;
+interface ParsedRow extends NormalizedServiceDate {
     entries: SQLOutputValue;
+}
+
+/** Counts a manual-format row whose RFC3339 twin holds different entries. */
+function recordTwinDisagreement(
+    summary: ExportSummary,
+    stationId: string,
+    row: ParsedRow,
+    twinEntries: SQLOutputValue,
+    isExcluded: boolean,
+): void {
+    const disagreements = summary.twinDisagreements;
+    if (isExcluded) {
+        disagreements.excluded++;
+        disagreements.excludedByStation[stationId] = (disagreements.excludedByStation[stationId] ?? 0) + 1;
+        return;
+    }
+    disagreements.exported++;
+    if (disagreements.examples.length < EXAMPLE_LIMIT) {
+        disagreements.examples.push({
+            stationId,
+            serviceDate: row.date,
+            rfc3339Entries: Number(twinEntries),
+            nonRfc3339Entries: Number(row.entries),
+        });
+    }
+}
+
+/** Widens the station's span of manual-format rows that have no RFC3339 twin. */
+function recordUntwinned(summary: ExportSummary, stationId: string, date: string): void {
+    summary.nonRfc3339RowsWithoutTwin++;
+    const span = summary.untwinnedByStation[stationId];
+    if (!span) {
+        summary.untwinnedByStation[stationId] = { rows: 1, minDate: date, maxDate: date };
+        return;
+    }
+    span.rows++;
+    if (date < span.minDate) span.minDate = date;
+    if (date > span.maxDate) span.maxDate = date;
 }
 
 function collectErrors(summary: ExportSummary): string[] {
@@ -471,25 +507,10 @@ export function exportHistory(options: ExportOptions): ExportSummary {
                     kept.push(row);
                     continue;
                 }
-                if (rfc3339ByDate.has(row.date)) {
-                    const twinEntries = rfc3339ByDate.get(row.date);
-                    if (twinEntries !== row.entries) {
-                        if (isExcluded) {
-                            summary.twinDisagreements.excluded++;
-                            summary.twinDisagreements.excludedByStation[stationId] =
-                                (summary.twinDisagreements.excludedByStation[stationId] ?? 0) + 1;
-                        } else {
-                            summary.twinDisagreements.exported++;
-                            if (summary.twinDisagreements.examples.length < EXAMPLE_LIMIT) {
-                                summary.twinDisagreements.examples.push({
-                                    stationId,
-                                    serviceDate: row.date,
-                                    rfc3339Entries: Number(twinEntries),
-                                    nonRfc3339Entries: Number(row.entries),
-                                });
-                            }
-                        }
-                    }
+                // A stored SQL value is never undefined, so undefined means "no RFC3339 twin".
+                const twinEntries = rfc3339ByDate.get(row.date);
+                if (twinEntries !== undefined) {
+                    if (twinEntries !== row.entries) recordTwinDisagreement(summary, stationId, row, twinEntries, isExcluded);
                     if (!isExcluded) summary.nonRfc3339RowsDropped++;
                     continue;
                 }
@@ -501,15 +522,7 @@ export function exportHistory(options: ExportOptions): ExportSummary {
                     summary.nonRfc3339RowsKept++;
                     continue;
                 }
-                summary.nonRfc3339RowsWithoutTwin++;
-                const span = summary.untwinnedByStation[stationId];
-                if (span) {
-                    span.rows++;
-                    if (row.date < span.minDate) span.minDate = row.date;
-                    if (row.date > span.maxDate) span.maxDate = row.date;
-                } else {
-                    summary.untwinnedByStation[stationId] = { rows: 1, minDate: row.date, maxDate: row.date };
-                }
+                recordUntwinned(summary, stationId, row.date);
             }
             if (isExcluded || kept.length === 0) continue;
 
@@ -518,6 +531,7 @@ export function exportHistory(options: ExportOptions): ExportSummary {
             summary.distinctStations++;
 
             kept.sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
+            const stationField = csvField(stationId);
             let previousDate: string | null = null;
             for (const row of kept) {
                 if (row.date === previousDate) {
@@ -532,7 +546,7 @@ export function exportHistory(options: ExportOptions): ExportSummary {
                     summary.invalidEntries++;
                 }
 
-                writer.write(`${csvField(stationId)},${row.date},${String(row.entries)},${deriveDayType(row.date)}\n`);
+                writer.write(`${stationField},${row.date},${String(row.entries)},${deriveDayType(row.date)}\n`);
                 summary.rowsWritten++;
                 const year = row.date.slice(0, 4);
                 summary.rowsPerYear[year] = (summary.rowsPerYear[year] ?? 0) + 1;
@@ -594,11 +608,6 @@ function main(argv: string[]): number {
         console.error(error instanceof Error ? error.message : String(error));
         return 1;
     }
-}
-
-function isCliEntry(moduleUrl: string): boolean {
-    const entry = process.argv[1];
-    return entry !== undefined && path.resolve(entry) === fileURLToPath(moduleUrl);
 }
 
 if (isCliEntry(import.meta.url)) {

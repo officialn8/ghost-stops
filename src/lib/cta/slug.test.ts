@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { CTA_ROSTER } from "./roster";
 import { linesForStation } from "./sequences";
-import { displayNameFor, generateSlugs, resolveSlugAlias, slugify } from "./slug";
+import { baseSlug, displayNameFor, generateSlugs, resolveSlugAlias, slugify } from "./slug";
 
 const rosterWithLines = CTA_ROSTER.map((s) => ({ ...s, lines: linesForStation(s.ctaStationId) }));
 const slugs = generateSlugs(rosterWithLines);
@@ -46,9 +46,7 @@ describe("generateSlugs over the roster", () => {
     it("is unique across all 144 stations and qualifies exactly the 59 stations in 23 collision groups", () => {
         expect(slugs.size).toBe(144);
         expect(new Set(slugs.values()).size).toBe(144);
-        const qualified = rosterWithLines.filter(
-            (s) => slugs.get(s.ctaStationId) !== slugify(displayNameFor(s).replace(/\s*\([^)]*\)/g, "")),
-        );
+        const qualified = rosterWithLines.filter((s) => slugs.get(s.ctaStationId) !== baseSlug(s));
         expect(qualified).toHaveLength(59);
     });
 
