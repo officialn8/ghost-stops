@@ -43,20 +43,14 @@ vercel postgres create ghost-stops-db
 
 ### Migrate Database Schema
 
-1. Update Prisma to use PostgreSQL:
-```bash
-# Use the PostgreSQL schema
-cp prisma/schema.postgres.prisma prisma/schema.prisma
-```
-
-2. Update your `.env` with the PostgreSQL connection string:
+1. Update your `.env` with the PostgreSQL connection string:
 ```env
 DATABASE_URL="postgresql://user:password@host:5432/database?sslmode=require"
 ```
 
-3. Run migrations:
+2. Run migrations:
 ```bash
-npx prisma migrate dev --name init_postgres
+npx prisma migrate deploy
 npx prisma generate
 ```
 

@@ -341,7 +341,7 @@ def validate_segments(geojson: Dict) -> None:
 def main():
     # Create scripts directory if needed
     os.makedirs("scripts", exist_ok=True)
-    os.chdir(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    os.chdir(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
     # Download GTFS
     zip_path = download_gtfs(GTFS_URL, "scripts/cta_gtfs.zip")

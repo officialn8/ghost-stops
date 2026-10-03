@@ -12,7 +12,7 @@ from pathlib import Path
 
 
 def main() -> None:
-    root = Path(__file__).resolve().parent.parent
+    root = Path(__file__).resolve().parents[2]
     os.chdir(root)
 
     input_path = "public/data/cta/chicago_track_segments.geojson"
