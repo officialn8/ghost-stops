@@ -1,0 +1,33 @@
+# Gitleaks configuration for Ghost Stops.
+# Extends the default ruleset with rules for the two credential shapes this repo
+# has leaked before: Neon connection strings and Socrata (Chicago Data Portal) app tokens.
+# The default generic rule does not match a bare postgresql:// literal, which is why
+# the Neon rule exists. Historical findings are baselined in .gitleaksignore, which may list
+# only credentials rotated so they no longer authenticate; git history is not rewritten.
+
+title = "ghost-stops"
+
+[extend]
+useDefault = true
+
+[[rules]]
+id = "neon-postgres-uri"
+description = "Neon Postgres connection string carrying an npg_ password"
+regex = '''postgres(?:ql)?://[^:@\s/'"`]+:(npg_[A-Za-z0-9]{8,})@'''
+secretGroup = 1
+keywords = ["npg_"]
+
+[[rules]]
+id = "socrata-app-token"
+description = "Socrata (Chicago Data Portal) app token in an env var, header, query parameter, or assignment"
+regex = '''(?i)(?:chicago_data_app_token|\$\$app_token|x-app-token|app_token|api_token)\\?["']?\s*[:=]\s*\\?["']?([a-z0-9]{25})\b'''
+secretGroup = 1
+keywords = ["app_token", "app-token", "api_token"]
+
+# Prisma fact keys such as factKey: 'ridership_2001_avg' are identifiers, not secrets,
+# but the default generic-api-key rule reads "key" plus a quoted value as a credential.
+[[allowlists]]
+description = "Station fact keys are identifiers"
+targetRules = ["generic-api-key"]
+regexTarget = "line"
+regexes = ['''\bfactKey\s*[:=]\s*['"][A-Za-z0-9_]+['"]''']

@@ -45,9 +45,6 @@ DATABASE_URL="file:./prisma/dev.db"
 
 # Mapbox (required for map display)
 NEXT_PUBLIC_MAPBOX_TOKEN="your-mapbox-token-here"
-
-# CTA API (optional, for real-time arrivals)
-CTA_API_KEY="your-cta-api-key-here"
 ```
 
 ### 3. Database Setup
@@ -113,7 +110,6 @@ Scores are based on 30-day rolling averages to smooth out daily variations.
 
 - `GET /api/chicago/stations` - List all stations with ghost scores
 - `GET /api/chicago/stations/[id]` - Station details with 90-day ridership
-- `GET /api/chicago/stations/[id]/arrivals` - Real-time arrivals (if configured)
 
 ## Development
 
@@ -173,7 +169,6 @@ For more details on the sync architecture, see [docs/hybrid-sync.md](./docs/hybr
 
 - Some CTA station names may not match between GTFS and ridership data
 - Check `docs/chicago-unmatched-stations.md` after ETL runs
-- Real-time arrivals require CTA API key
 
 ## Future Enhancements
 

@@ -1,0 +1,13 @@
+# Gitleaks baseline. Policy: list only historical findings of credentials that have been
+# rotated so they no longer authenticate. Git history is intentionally not rewritten, so
+# these commits stay scannable; never baseline a live secret.
+# Format: commit:file:rule-id:line. Any finding not listed here fails CI.
+5ea7be9a3cac88b0df34551457b2dab7224d463a:scripts/fetch-all-2001.ts:neon-postgres-uri:6
+5ea7be9a3cac88b0df34551457b2dab7224d463a:scripts/fetch-missing-2001.ts:neon-postgres-uri:6
+b8067acdd4c7dbda9e0b0dd17b90321bf0f00d3e:docs/debugging-summary.md:generic-api-key:28
+b8067acdd4c7dbda9e0b0dd17b90321bf0f00d3e:docs/debugging-summary.md:socrata-app-token:51
+b8067acdd4c7dbda9e0b0dd17b90321bf0f00d3e:scripts/manual_sync_stations.sh:socrata-app-token:17
+b8067acdd4c7dbda9e0b0dd17b90321bf0f00d3e:scripts/manual_sync_stations.sh:curl-auth-header:17
+b8067acdd4c7dbda9e0b0dd17b90321bf0f00d3e:scripts/sync_missing_stations.py:socrata-app-token:9
+b8067acdd4c7dbda9e0b0dd17b90321bf0f00d3e:scripts/sync_missing_stations.sh:socrata-app-token:4
+b8067acdd4c7dbda9e0b0dd17b90321bf0f00d3e:sync_chicago_data.sh:socrata-app-token:7
