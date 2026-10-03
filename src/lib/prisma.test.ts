@@ -162,6 +162,16 @@ describe("prisma connection", () => {
         expect((constructed.clientOptions[0].adapter as { pool?: unknown }).pool).toBe(pool);
     });
 
+    it("asks pg for verify-full by name when Neon's URL says sslmode=require", async () => {
+        vi.stubEnv("DATABASE_URL", "postgresql://app@pooled.example/db?sslmode=require&channel_binding=require");
+
+        await import("./prisma");
+
+        expect(constructed.poolConfigs[0].connectionString).toBe(
+            "postgresql://app@pooled.example/db?sslmode=verify-full&channel_binding=require",
+        );
+    });
+
     it("closes the pool when a script disconnects, so the process can exit", async () => {
         await import("./prisma");
 
@@ -219,5 +229,23 @@ describe("guard detection", () => {
 
         expect(mentionsDisconnect(ast)).toBe(false);
         expect(constructsPrismaClient(ast)).toBe(false);
+    });
+});
+
+describe("withVerifiedTls", () => {
+    it.each([
+        ["require, first parameter", "postgresql://u@h/db?sslmode=require", "postgresql://u@h/db?sslmode=verify-full"],
+        ["require, later parameter", "postgresql://u@h/db?x=1&sslmode=require", "postgresql://u@h/db?x=1&sslmode=verify-full"],
+        ["already verify-full", "postgresql://u@h/db?sslmode=verify-full", "postgresql://u@h/db?sslmode=verify-full"],
+        ["no sslmode (local Postgres)", "postgresql://postgres@127.0.0.1:55432/test", "postgresql://postgres@127.0.0.1:55432/test"],
+        ["disable", "postgresql://u@h/db?sslmode=disable", "postgresql://u@h/db?sslmode=disable"],
+    ])("handles %s", async (_label, url, expected) => {
+        const { withVerifiedTls } = await import("./prisma");
+        expect(withVerifiedTls(url)).toBe(expected);
+    });
+
+    it("leaves an unset URL unset", async () => {
+        const { withVerifiedTls } = await import("./prisma");
+        expect(withVerifiedTls(undefined)).toBeUndefined();
     });
 });

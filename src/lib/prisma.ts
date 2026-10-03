@@ -28,8 +28,19 @@ export const POOL_CONFIG = {
     idleTimeoutMillis: 5_000,
 } as const;
 
+/**
+ * Neon's connection strings say `sslmode=require`. pg 8 already enforces that as verify-full
+ * (certificate and host checked) but logs a SECURITY WARNING about it on every cold start, and
+ * pg 9 will weaken `require` to libpq's meaning, which skips the certificate check. Naming
+ * verify-full keeps today's checks and drops the warning. A URL without sslmode (local
+ * Postgres) is left alone.
+ */
+export function withVerifiedTls(url: string | undefined): string | undefined {
+    return url?.replace(/([?&]sslmode=)require(?=&|$)/, "$1verify-full");
+}
+
 function createClient(): PrismaClient {
-    const pool = new Pool({ connectionString: process.env.DATABASE_URL, ...POOL_CONFIG });
+    const pool = new Pool({ connectionString: withVerifiedTls(process.env.DATABASE_URL), ...POOL_CONFIG });
     attachDatabasePool(pool);
     // Routes never disconnect. Scripts and database tests do, and then the pool must close
     // too, or its idle clients hold the process open.
