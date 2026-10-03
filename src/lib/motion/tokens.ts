@@ -2,7 +2,7 @@
 // Motion token system for Ghost Stops UI
 // Based on Phase 1 UI Overhaul specifications
 
-import type { Transition, Variants } from "framer-motion";
+import type { Transition, Variants } from "motion/react";
 
 // ═══════════════════════════════════════════════════════════════
 // SPRING CONFIGURATIONS

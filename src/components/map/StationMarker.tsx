@@ -1,7 +1,7 @@
 "use client";
 
 import { Marker } from "react-map-gl/mapbox";
-import { motion } from "framer-motion";
+import { motion } from "motion/react";
 import { normalizeStationLines } from "@/lib/cta/normalizeStationLines";
 import { CTALine, CTA_LINE_COLORS } from "@/lib/cta/explodeAndStitchSegments";
 

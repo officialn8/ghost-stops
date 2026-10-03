@@ -65,7 +65,7 @@ describe("GET /api/cron/sync-ridership", () => {
 
         expect(response.status).toBe(200);
         expect(runSync).toHaveBeenCalledWith({}, expect.anything(), expect.objectContaining({ trigger: "cron-daily", mode: "daily" }));
-        expect(revalidateTag).toHaveBeenCalledWith(STATIONS_CACHE_TAG);
+        expect(revalidateTag).toHaveBeenCalledWith(STATIONS_CACHE_TAG, { expire: 0 });
         expect(await response.json()).toMatchObject({
             status: "OK",
             mode: "daily",
@@ -106,7 +106,7 @@ describe("GET /api/cron/sync-ridership", () => {
         const response = await GET(request({ authorization: "Bearer test-cron-secret" }));
         expect(response.status).toBe(500);
         expect(await response.json()).toMatchObject({ status: "PARTIAL", rowsInserted: 61 });
-        expect(revalidateTag).toHaveBeenCalledWith(STATIONS_CACHE_TAG);
+        expect(revalidateTag).toHaveBeenCalledWith(STATIONS_CACHE_TAG, { expire: 0 });
     });
 
     it("answers 500 with only status and mode when the run throws, leaking no error text", async () => {

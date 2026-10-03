@@ -85,7 +85,6 @@
   border-radius: 24px;
   background: var(--glass-bg-solid);
   backdrop-filter: blur(20px);
-  -webkit-backdrop-filter: blur(20px); /* Safari */
   box-shadow: 0 4px 20px var(--shadow-color);
   display: flex;
   align-items: center;
@@ -280,7 +279,6 @@
   .mobile-search-bar {
     background: rgba(0, 0, 0, 0.85);
     backdrop-filter: blur(20px);
-    -webkit-backdrop-filter: blur(20px);
   }
 
   .mobile-search-bar input {

@@ -2,7 +2,7 @@
 
 import { Users, Ghost } from "lucide-react";
 import { useMemo } from "react";
-import { motion } from "framer-motion";
+import { motion } from "motion/react";
 import CTALineBadge from "./CTALineBadge";
 import Sparkline from "@/components/charts/Sparkline";
 import { clampGhostScore, cn, normalizeDataStatus } from "@/lib/utils";
