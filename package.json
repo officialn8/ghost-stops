@@ -2,13 +2,18 @@
   "name": "ghost-stops",
   "version": "0.1.0",
   "private": true,
+  "engines": {
+    "node": "22.x"
+  },
   "scripts": {
     "dev": "next dev --turbopack",
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
     "seed": "tsx prisma/seed.ts",
-    "test": "vitest",
+    "test": "vitest run --project unit",
+    "test:db": "vitest run --project db",
+    "test:watch": "vitest --project unit",
     "migrate:data": "tsx scripts/migrate-to-postgres.ts",
     "db:push": "prisma db push",
     "db:generate": "prisma generate",
@@ -75,6 +80,7 @@
     "ts-node": "^10.9.2",
     "tsx": "^4.19.2",
     "typescript": "^5",
-    "vitest": "^4.0.17"
+    "vitest": "^4.0.17",
+    "vitest-mock-extended": "^5.1.1"
   }
 }
