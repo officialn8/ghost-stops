@@ -716,6 +716,22 @@ the pooled host, at commit `8fa71b1`:
 | 4. Queries (6.5) | every result identical to section 6.6 |
 | v1 scores | identical to production's for all 143 stations; State/Lake gains one row with -1 |
 
+### 6.8 Go-live record (2026-10-03, run by the agent on Nate's "merge and go live")
+
+All against production (`br-floral-rain-aeynqoma`) as the runtime role over the pooled host, from
+the merged `main` (`9dbca56`).
+
+| Step | UTC | Result |
+|---|---|---|
+| 0. Baseline and snapshot | 15:59:03 to 15:59:31 | 1,242,528 rows, 2001-01-02 to 2025-11-30, 141 stations, sum 3,550,614,440; 143 metrics rows; 0 runs; upstream max 2026-07-31. Snapshot `pre-u10-backfill-2026-10-03` (`snap-hidden-tooth-aeyf4rua`) listed |
+| 1. Merge and deploy | 15:59:41 to 16:01:22 | officialn8/ghost-stops#3 merged as `9dbca56`; deployment `dpl_GacprerinjdaF8axWtD6vRopHN99` ready at 16:01:10; cron route 401 without the secret; health 503 `stale` |
+| 2. Backfill | 16:01:33 to 16:06:28 | 295 s; fetched 1,333,391, inserted 74,446, revised 65,115; unmatched 40200, 40500, 40640, 41580; health 503 `reconcile-stale` |
+| 3. Reconcile | 16:06:39 to 16:06:48 | zero drift months; health 200 with both dates |
+| 4. Queries (6.5) | 16:06:50 | every result identical to section 6.6b, including the fact and narrative checksums; v1 scores unchanged for all 143 stations, State/Lake gains one row with -1 |
+| 5. Live site | 16:07 | `/api/health` 200, `dataThrough` 2026-07-31; the list has 144 stations with data as of 2026-07-31 and State/Lake last in both score sorts; Harlem names Oak Park (Blue) and Forest Park with its chart ending 2026-07-31; State/Lake's detail is `ranked: false`; 30 of 30 concurrent detail requests 200; no runtime errors since the deploy |
+| 6. Health workflow | 16:07:16 to 16:09 | run 37135678647 passed (HTTP 200); forced failure run 37135712388 failed with HTTP 404 twice, which should email Nate |
+| 7. First scheduled runs | pending | daily `cron-daily` on 2026-10-04 between 10:00 and 10:59 UTC; weekly `cron-weekly` the same day between 14:00 and 14:59 UTC |
+
 ### 6.7 Rollback
 
 - **Stop the cron:** remove the two `crons` entries from `vercel.json` and deploy, or replace
