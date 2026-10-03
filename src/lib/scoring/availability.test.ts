@@ -168,9 +168,14 @@ describe("windowBlock for a closure next door", () => {
     it("does not set aside a neighbor closed throughout both windows, or open throughout both", () => {
         expect(windowBlock("yoy", besideClosures(D, [{ startDate: "2025-01-01", endDate: null }]))).toBeNull();
         expect(windowBlock("yoy", besideClosures(D, [{ startDate: "2025-01-01", endDate: "2026-09-01" }]))).toBeNull();
-        // Two back-to-back closures read as one.
+        // Two back-to-back closures read as one: the seam, 2025-06-15, falls inside the year-ago
+        // window (2025-05-03 to 2025-07-31), which neither closure covers alone.
         expect(
-            windowBlock("yoy", besideClosures(D, [{ startDate: "2025-01-01", endDate: "2026-01-01" }, { startDate: "2026-01-01", endDate: null }])),
+            windowBlock("yoy", besideClosures(D, [{ startDate: "2025-01-01", endDate: "2025-06-15" }, { startDate: "2025-06-15", endDate: null }])),
+        ).toBeNull();
+        // An overlapping pair, the second ending inside the first, keeps the first's open end.
+        expect(
+            windowBlock("yoy", besideClosures(D, [{ startDate: "2025-01-01", endDate: null }, { startDate: "2025-06-01", endDate: "2025-06-20" }])),
         ).toBeNull();
         // Open throughout both: before them, between them, and after them.
         expect(windowBlock("yoy", besideClosures(D, [{ startDate: "2020-01-01", endDate: "2021-01-01" }]))).toBeNull();
@@ -190,6 +195,13 @@ describe("windowBlock for a closure next door", () => {
         expect(block([{ startDate: "2026-06-01", endDate: "2026-06-15" }])).toMatchObject({ change: "reopened", date: "2026-06-15" });
         // Closed at the start of the trailing window's last day.
         expect(block([{ startDate: "2026-07-31", endDate: null }])).toMatchObject({ change: "closed", date: "2026-07-31" });
+        // Closed for part of both windows: the same state in each, but neither window is like for like.
+        expect(
+            block([
+                { startDate: "2025-06-01", endDate: "2025-06-10" },
+                { startDate: "2026-06-01", endDate: "2026-06-10" },
+            ]),
+        ).toMatchObject({ change: "reopened", date: "2026-06-10" });
     });
 
     it("names the neighbor with the latest change, and waits for every neighbor before comparing again", () => {
@@ -213,17 +225,39 @@ describe("windowBlock for a closure next door", () => {
 
     it("keeps the station's own reason first: its own reopening, closure, or opening", () => {
         const stateLakeNextDoor = [{ startDate: "2026-01-05", endDate: null }];
-        expect(windowBlock("yoy", besideClosures(D, stateLakeNextDoor, { closures: closures("40770") }))).toEqual({
+        // Its own reopening clears on 2026-10-17, but State/Lake next door holds year-over-year
+        // until 2027-04-04, so that is when it is available.
+        const reopenedBeside = (dataThrough: string) => besideClosures(dataThrough, stateLakeNextDoor, { closures: closures("40770") });
+        expect(windowBlock("yoy", reopenedBeside(D))).toEqual({
             kind: "reopened",
             closedFrom: "2021-05-16",
             reopenedOn: "2025-07-20",
-            availableFrom: "2026-10-17",
+            availableFrom: "2027-04-04",
         });
+        expect(windowBlock("yoy", reopenedBeside("2026-10-17"))).toMatchObject({ kind: "neighbor-closure", availableFrom: "2027-04-04" });
+        expect(windowBlock("yoy", reopenedBeside("2027-04-03"))).not.toBeNull();
+        expect(windowBlock("yoy", reopenedBeside("2027-04-04"))).toBeNull();
         expect(windowBlock("yoy", besideClosures(D, stateLakeNextDoor, { closures: [{ startDate: "2026-03-01", endDate: null }] }))).toEqual({
             kind: "closed",
             closedFrom: "2026-03-01",
         });
         expect(windowBlock("yoy", besideClosures(D, stateLakeNextDoor, { openedAt: "2025-09-15" }))).toMatchObject({ kind: "new" });
+    });
+
+    it("dates a closure next door by every rule: the station's own later closure holds year-over-year too", () => {
+        // State/Lake next door clears on 2027-04-04; the station's own closure from 2026-12-01 to
+        // 2027-01-15 leaves the trailing window on 2027-04-14.
+        const ctx = (dataThrough: string) =>
+            besideClosures(dataThrough, [{ startDate: "2026-01-05", endDate: null }], { closures: [{ startDate: "2026-12-01", endDate: "2027-01-15" }] });
+        expect(windowBlock("yoy", ctx(D))).toEqual({
+            kind: "neighbor-closure",
+            neighborCtaStationId: "40260",
+            change: "closed",
+            date: "2026-01-05",
+            availableFrom: "2027-04-14",
+        });
+        expect(windowBlock("yoy", ctx("2027-04-13"))).toMatchObject({ kind: "reopened" });
+        expect(windowBlock("yoy", ctx("2027-04-14"))).toBeNull();
     });
 });
 

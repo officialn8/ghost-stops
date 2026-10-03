@@ -76,6 +76,9 @@ const STATION_UUID = "0b7a6f3e-5d0c-4c43-9a55-1f3d2a9c8e01";
 /** The rows the why card names its peers from, answered to the route's `id: { in }` lookup. */
 let peerStationRows: { id: string; slug: string; name: string; displayName: string }[] = [];
 
+/** The closures recorded at stations in BY_CTA_ID, which the lookup by CTA station id returns with each row. */
+let closuresByCtaId: Record<string, { startDate: Date; endDate: Date | null }[]> = {};
+
 type StationWhere = {
     OR?: { slug?: string; id?: string }[];
     ctaStationId?: { in: string[] };
@@ -121,7 +124,11 @@ function stubStation(ctaStationId: string | null, lines: string[], self: Self = 
     prismaMock.station.findMany.mockImplementation((async (args: { where: StationWhere }) => {
         const { OR, ctaStationId: byCtaId } = args.where;
         if (OR) return rows.filter((row) => OR.some((c) => c.slug === row.slug || c.id === row.id));
-        if (byCtaId) return byCtaId.in.flatMap((cta) => (BY_CTA_ID[cta] ? [{ ctaStationId: cta, ...BY_CTA_ID[cta] }] : []));
+        if (byCtaId) {
+            return byCtaId.in.flatMap((cta) =>
+                BY_CTA_ID[cta] ? [{ ctaStationId: cta, ...BY_CTA_ID[cta], closures: closuresByCtaId[cta] ?? [] }] : [],
+            );
+        }
         return peerStationRows;
     }) as never);
 }
@@ -158,6 +165,7 @@ const component = (body: StationDetailResponse, key: WhyComponent["key"]) =>
 beforeEach(() => {
     resetPrismaMock();
     peerStationRows = [];
+    closuresByCtaId = {};
     prismaMock.$queryRaw.mockResolvedValue([] as never);
     prismaMock.stationMetrics.aggregate.mockResolvedValue({ _avg: { rolling30dAvg: 1000 } } as never);
     prismaMock.station.count.mockResolvedValue(143);
@@ -743,9 +751,7 @@ describe("GET /api/chicago/stations/[slug] why card", () => {
             // What scoring stores for it: no year-over-year percentile or change.
             metrics: v2Metrics({ yoyPct: null, yoyChangePct: null }),
         });
-        prismaMock.stationClosure.findMany.mockResolvedValue([
-            { startDate: day("2026-01-05"), endDate: null, station: { ctaStationId: "40260", name: "State/Lake", displayName: "State/Lake" } },
-        ] as never);
+        closuresByCtaId = { "40260": [{ startDate: day("2026-01-05"), endDate: null }] };
 
         const body = await detail("washington-wabash");
         expect(body.whyCard!.chips).toEqual([{ kind: "nearby-closure", text: "State/Lake closed next door in Jan 2026" }]);
@@ -762,16 +768,20 @@ describe("GET /api/chicago/stations/[slug] why card", () => {
             },
         });
         expect(component(body, "longRun")).toMatchObject({ value: -30, nullReason: null });
-        // One small read: the closures of the stations next door on every line.
-        expect(prismaMock.stationClosure.findMany).toHaveBeenCalledWith(
-            expect.objectContaining({ where: { station: { cityId: CITY, ctaStationId: { in: ["40260", "40680"] } } } }),
-        );
+        // One small read: the stations next door on every line, with their closures.
+        expect(prismaMock.station.findMany).toHaveBeenCalledWith({
+            where: { cityId: CITY, ctaStationId: { in: ["40260", "40680"] } },
+            select: { ctaStationId: true, name: true, displayName: true, closures: { select: { startDate: true, endDate: true } } },
+        });
+        expect(prismaMock.stationClosure.findMany).not.toHaveBeenCalled();
     });
 
     it("reads no closures next door for a station without a CTA id", async () => {
         stubStation(null, ["Blue"], { metrics: v2Metrics() });
         expect((await detail()).whyCard!.chips).toEqual([]);
-        expect(prismaMock.stationClosure.findMany).not.toHaveBeenCalled();
+        expect(prismaMock.station.findMany).not.toHaveBeenCalledWith(
+            expect.objectContaining({ select: expect.objectContaining({ closures: expect.anything() }) }),
+        );
     });
 
     it("has no card for a station without score v2 metrics", async () => {

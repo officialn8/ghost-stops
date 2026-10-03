@@ -115,6 +115,27 @@ describe("narrativeInputs", () => {
         });
     });
 
+    it("leaves the closure next door unsaid when no station record carries the neighbor's CTA id", () => {
+        const [input] = narrativeInputs(
+            [record("wabash", { ctaStationId: "41700", name: "Washington/Wabash" })],
+            [
+                metricsRow("wabash", {
+                    yoyPct: null,
+                    yoyChangePct: null,
+                    yoyNeighborClosure: {
+                        kind: "neighbor-closure",
+                        neighborCtaStationId: "99999",
+                        change: "closed",
+                        date: "2026-01-05",
+                        availableFrom: "2027-04-04",
+                    },
+                }),
+            ],
+            [{ stationId: "wabash", status: "ACTIVE", closedAt: null }],
+        );
+        expect(input).toMatchObject({ stationId: "wabash", yoyChangePct: null, nearbyClosure: null });
+    });
+
     it("marks an open station with no recent riders unranked", () => {
         const [input] = narrativeInputs(
             [record("quiet")],

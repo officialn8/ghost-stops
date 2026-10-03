@@ -134,6 +134,24 @@ describe("adjacentStations", () => {
         expect(adjacentTo("40260")).toEqual(["40380", "41700"]); // State/Lake: Clark/Lake, Washington/Wabash
         expect(adjacentTo("40770")).toEqual(["40540", "41200"]); // Lawrence: Wilson, Argyle
         expect(adjacentTo("40340")).toEqual(["41200", "41380"]); // Berwyn: Argyle, Bryn Mawr
+        expect(adjacentStations("40260")).toEqual(["40380", "41700"]);
+        expect(adjacentStations("40770")).toEqual(["41200", "40540"]);
+        expect(adjacentStations("40340")).toEqual(["41380", "41200"]);
+    });
+
+    it("is symmetric: a station is next to every station next to it", () => {
+        for (const { ctaStationId } of CTA_ROSTER) {
+            expect(adjacentTo(ctaStationId), ctaStationId).toEqual([...adjacentStations(ctaStationId)].sort());
+        }
+    });
+
+    it("lists the trunk station at a Loop entry from the Loop side too, after its own neighbors", () => {
+        // Washington/Wells: Quincy and Clark/Lake around the Loop, then Merchandise Mart (Brown,
+        // Purple) and Clinton (Pink), whose trains enter the Loop there.
+        expect(adjacentStations("40730")).toEqual(["40040", "40380", "40460", "41160"]);
+        // Clark/Lake gains Merchandise Mart; Library gains Roosevelt (Orange).
+        expect(adjacentStations("40380")).toEqual(["40490", "40370", "40730", "40260", "41160", "40460"]);
+        expect(adjacentStations("40850")).toEqual(["40680", "40160", "41400"]);
     });
 
     it("returns nothing for a station on no line", () => {

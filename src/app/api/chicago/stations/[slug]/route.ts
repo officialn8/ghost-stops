@@ -100,7 +100,7 @@ export async function GET(
       facts,
       narrative,
       peerStations,
-      closuresNextDoor,
+      stationsNextDoor,
       freshness,
     ] = await Promise.all([
       // The last 91 days of the station's data, reaching back to the score's 90 days if they start earlier
@@ -164,15 +164,11 @@ export async function GET(
             select: { id: true, slug: true, name: true, displayName: true },
           })
         : Promise.resolve([]),
-      // The closures recorded at those stations: a handful of rows at most.
+      // Those stations with their recorded closures: a handful of rows at most.
       adjacentCtaIds.length > 0
-        ? prisma.stationClosure.findMany({
-            where: { station: { cityId: station.cityId, ctaStationId: { in: adjacentCtaIds } } },
-            select: {
-              startDate: true,
-              endDate: true,
-              station: { select: { ctaStationId: true, name: true, displayName: true } },
-            },
+        ? prisma.station.findMany({
+            where: { cityId: station.cityId, ctaStationId: { in: adjacentCtaIds } },
+            select: { ctaStationId: true, name: true, displayName: true, closures: { select: { startDate: true, endDate: true } } },
           })
         : Promise.resolve([]),
       readFreshness(prisma),
@@ -387,16 +383,15 @@ export async function GET(
     }
 
     // The closures next door, one entry per station, for the why card's year-over-year row.
-    const neighborClosures = [
-      ...Map.groupBy(
-        closuresNextDoor.filter((c) => c.station.ctaStationId !== null),
-        (c) => c.station.ctaStationId!,
-      ),
-    ].map(([ctaStationId, rows]) => ({
-      ctaStationId,
-      displayName: rows[0].station.displayName ?? rows[0].station.name,
-      closures: rows.map((c) => ({ startDate: toDay(c.startDate), endDate: optionalDay(c.endDate) })),
-    }));
+    const neighborClosures = stationsNextDoor.flatMap((s) =>
+      s.ctaStationId === null
+        ? []
+        : [{
+            ctaStationId: s.ctaStationId,
+            displayName: s.displayName ?? s.name,
+            closures: s.closures.map((c) => ({ startDate: toDay(c.startDate), endDate: optionalDay(c.endDate) })),
+          }]
+    );
 
     // The why card needs score v2 metrics, which carry the date they were computed for. A v1 row
     // that a Phase 2 sync stamped with dataThrough still holds the v1 score and no v2 columns.

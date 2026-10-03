@@ -4,11 +4,13 @@
  * its raw value, and a plain-language sentence with the real numbers, the peers the residual used,
  * the small-station badge, and the station's data-quality chips.
  *
- * Pure. Every null is explained by the same rules that nulled it (./availability.ts), fed the
- * stored data-through date, closures, and opening date, and the closures of the stations next
- * door, which can set year-over-year aside. Two raw values have no column and are
- * re-derived exactly as scoring derived them: the residual from the 12-month average and the
- * peers' baseline, the erraticness from the trailing 90 days of rows.
+ * Pure. The stored row decides which components are set aside: one is, only when its stored
+ * percentile is null, so the card never contradicts the stored score, rank, and story between a
+ * closure edit and the next sync. Each null is explained by the same rules that nulled it
+ * (./availability.ts), fed the stored data-through date, closures, and opening date, and the
+ * closures of the stations next door, which can set year-over-year aside. Two raw values have no
+ * column and are re-derived exactly as scoring derived them: the residual from the 12-month average
+ * and the peers' baseline, the erraticness from the trailing 90 days of rows.
  *
  * Changes are worded with the formatter the narratives use (src/lib/format.ts), so the card and
  * the story quote one number, and read as level by the same band (`isLevelChange`), so they agree
@@ -202,8 +204,17 @@ function firstBlock<K extends NullReason["kind"]>(blocks: ComponentBlocks, kind:
     return COMPONENT_KEYS.map((k) => blocks[k]).find((b): b is Extract<NullReason, { kind: K }> => b?.kind === kind);
 }
 
-/** The station-level chips: closed, reopened, new, nearby closure, stale, in that order, at most one of each. */
-function stationChips(input: WhyCardInput, blocks: ComponentBlocks, nameOf: (ctaStationId: string) => string): Chip[] {
+/**
+ * The station-level chips: closed, reopened, new, nearby closure, stale, in that order, at most one
+ * of each. The station's own chips read its live window blocks; the nearby-closure chip reads
+ * `setAside`, so it shows only when the stored row has year-over-year set aside too.
+ */
+function stationChips(
+    input: WhyCardInput,
+    blocks: ComponentBlocks,
+    setAside: ComponentBlocks,
+    nameOf: (ctaStationId: string) => string,
+): Chip[] {
     const chips: Chip[] = [];
     const openClosure = input.closures.find((c) => c.endDate === null || c.endDate > input.dataThrough);
     const closedFrom =
@@ -215,7 +226,7 @@ function stationChips(input: WhyCardInput, blocks: ComponentBlocks, nameOf: (cta
     if (reopened) chips.push({ kind: "reopened", text: reopenedOn(reopened.reopenedOn) });
     const opened = firstBlock(blocks, "new");
     if (opened) chips.push({ kind: "new", text: openedOn(opened.openedAt) });
-    const nextDoor = firstBlock(blocks, "neighbor-closure");
+    const nextDoor = firstBlock(setAside, "neighbor-closure");
     if (nextDoor) chips.push({ kind: "nearby-closure", text: changedNextDoor(nameOf(nextDoor.neighborCtaStationId), nextDoor) });
 
     // A closed station has no riders by definition; the closed chip already says why.
@@ -258,7 +269,16 @@ export function buildWhyCard(input: WhyCardInput): WhyCard {
         neighbors: neighborClosures(input.ctaStationId, closuresByCta),
     };
     const blocks = byComponent((k) => windowBlock(k, ctx));
-    const blocked = (k: ComponentKey) => blocks[k] !== null;
+    const pcts: Record<ComponentKey, number | null> = {
+        residual: metrics.residualPct,
+        yoy: metrics.yoyPct,
+        longRun: metrics.longRunPct,
+        erratic: metrics.erraticPct,
+    };
+    // The card agrees with the stored row: a component is set aside only when the last sync left
+    // its percentile null. A closure recorded or a rule deployed since then cannot set aside a
+    // number the stored score, rank, and story counted; the next sync brings them together.
+    const setAside = byComponent((k) => (pcts[k] === null ? blocks[k] : null));
 
     const peerList: WhyPeer[] =
         peers === null
@@ -271,24 +291,18 @@ export function buildWhyCard(input: WhyCardInput): WhyCard {
     const { trailing90 } = scoreWindows(input.dataThrough);
     const trailing = input.days.filter((d) => d.serviceDate >= trailing90.start && d.serviceDate <= trailing90.end);
 
-    // Each raw value is null whenever scoring left it null: a window block, or data that cannot support it.
+    // Each raw value is null whenever the stored row has it set aside, or the data cannot support it.
     const raws: Record<ComponentKey, number | null> = {
-        residual: blocked("residual") ? null : residualLog(metrics.avg12m, metrics.baselineAvg),
-        yoy: blocked("yoy") ? null : metrics.yoyChangePct,
-        longRun: blocked("longRun") ? null : metrics.vs2019Pct,
-        erratic: blocked("erratic") ? null : erraticness(summarizeWindow(trailing)),
-    };
-    const pcts: Record<ComponentKey, number | null> = {
-        residual: metrics.residualPct,
-        yoy: metrics.yoyPct,
-        longRun: metrics.longRunPct,
-        erratic: metrics.erraticPct,
+        residual: setAside.residual ? null : residualLog(metrics.avg12m, metrics.baselineAvg),
+        yoy: setAside.yoy ? null : metrics.yoyChangePct,
+        longRun: setAside.longRun ? null : metrics.vs2019Pct,
+        erratic: setAside.erratic ? null : erraticness(summarizeWindow(trailing)),
     };
 
     const components = COMPONENT_KEYS.map((key): WhyComponent => {
         const value = raws[key];
         if (value === null) {
-            const reason = blocks[key] ?? missingDataReason(key, peers?.basis ?? null);
+            const reason = setAside[key] ?? missingDataReason(key, peers?.basis ?? null);
             const nullReason: WhyNullReason = { kind: reason.kind, text: nullReasonText(key, reason, nameOf) };
             return { key, label: LABELS[key], weight: COMPONENT_WEIGHTS[key], pct: null, value, sentence: `${capitalize(nullReason.text)}.`, nullReason };
         }
@@ -304,7 +318,7 @@ export function buildWhyCard(input: WhyCardInput): WhyCard {
         rankedCount: metrics.rankedCount,
         badge: smallStationBadge(metrics),
         components,
-        chips: stationChips(input, blocks, nameOf),
+        chips: stationChips(input, blocks, setAside, nameOf),
         peers: {
             basis: peers?.basis ?? "none",
             line: peers?.line ?? null,
