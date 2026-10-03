@@ -1,6 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { normalizeDataStatus, safeJsonParse } from "@/lib/utils";
+import { isRanked } from "@/lib/sync/baseMetrics";
+import { safeJsonParse, type DataStatus } from "@/lib/utils";
+
+// The stored StationMetrics.dataStatus in the UI's vocabulary; a station with no metrics row is missing.
+function uiDataStatus(stored: string | undefined): DataStatus {
+  if (stored === "normal") return "available";
+  if (stored === "zero") return "zero";
+  return "missing";
+}
 
 export async function GET(request: NextRequest) {
   try {
@@ -45,11 +53,12 @@ export async function GET(request: NextRequest) {
       orderBy
     });
 
-    // Postgres sorts a missing metrics row first in a descending order, which would rank an
-    // unscored station (State/Lake, closed) as the ghostiest. Keep unscored stations last; the
-    // sort is stable, so the database order holds otherwise.
+    // Stations outside the ranking sort last: Postgres puts a missing metrics row first in a
+    // descending order, and a closed station's 0 average and -1 score would lead the ascending
+    // sorts. The sort is stable, so the database order holds otherwise.
+    const unranked = (s: (typeof stations)[number]) => Number(s.metrics === null || !isRanked(s.status, s.metrics.dataStatus));
     if (sort !== "name") {
-      stations.sort((a, b) => Number(a.metrics === null) - Number(b.metrics === null));
+      stations.sort((a, b) => unranked(a) - unranked(b));
     }
 
     // Get max service date
@@ -62,25 +71,17 @@ export async function GET(request: NextRequest) {
     });
 
     // Format response
-    const formattedStations = stations.map(station => {
-      const dataStatus = !station.metrics?.serviceDateMax 
-        ? 'missing'
-        : station.metrics.rolling30dAvg === 0 
-          ? 'zero' 
-          : 'available';
-
-      return {
-        id: station.id,
-        name: station.name,
-        latitude: station.latitude,
-        longitude: station.longitude,
-        lines: safeJsonParse<string[]>(station.lines, []),
-        ghostScore: station.metrics?.ghostScore ?? 0,
-        rolling30dAvg: station.metrics?.rolling30dAvg ?? 0,
-        lastDayEntries: station.metrics?.lastDayEntries ?? 0,
-        dataStatus: normalizeDataStatus(dataStatus)
-      };
-    });
+    const formattedStations = stations.map(station => ({
+      id: station.id,
+      name: station.name,
+      latitude: station.latitude,
+      longitude: station.longitude,
+      lines: safeJsonParse<string[]>(station.lines, []),
+      ghostScore: station.metrics?.ghostScore ?? 0,
+      rolling30dAvg: station.metrics?.rolling30dAvg ?? 0,
+      lastDayEntries: station.metrics?.lastDayEntries ?? 0,
+      dataStatus: uiDataStatus(station.metrics?.dataStatus)
+    }));
 
     return NextResponse.json({
       stations: formattedStations,

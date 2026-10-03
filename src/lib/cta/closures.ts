@@ -1,6 +1,6 @@
 /**
  * Station closures: the source of truth for Station.status and Station.closedAt, which the seed
- * (and later the sync) derive from these rows so the three never disagree.
+ * and the sync derive from these rows so the three never disagree.
  *
  * A closure covers startDate up to, not including, endDate: endDate is the day service resumed,
  * and null means the station is still closed. Dates are the first and last days the ridership
@@ -39,8 +39,16 @@ export interface DerivedStatus {
 }
 
 /** A station's status on `asOf` (YYYY-MM-DD) from its closures. */
-export function deriveStatus(closures: readonly StationClosureDef[], asOf: string): DerivedStatus {
+export function deriveStatus(
+    closures: readonly Pick<StationClosureDef, "startDate" | "endDate">[],
+    asOf: string,
+): DerivedStatus {
     const current = closures.find((c) => c.startDate <= asOf && (c.endDate === null || asOf < c.endDate));
     if (!current) return { status: "ACTIVE", closedAt: null };
     return { status: current.endDate === null ? "CLOSED" : "TEMP_CLOSED", closedAt: current.startDate };
+}
+
+/** Today's date in Chicago as YYYY-MM-DD, the day a station's status is derived for. */
+export function todayInChicago(now = new Date()): string {
+    return new Intl.DateTimeFormat("en-CA", { timeZone: "America/Chicago" }).format(now);
 }

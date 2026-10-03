@@ -5,7 +5,8 @@ How production moves to the v2 schema and gets its ridership history back. The r
 is the authority. This file records the commands, the expected results, and what the dry run measured.
 
 The order is fixed: dry run on a branch first (section 4), then production (section 5).
-Production steps run only after Nate confirms at that moment.
+Production steps run only after Nate confirms at that moment. Section 6 covers Phase 2 (U10):
+the backfill from upstream that fills the gaps section 4.4 lists, and the sync's go-live.
 
 ## 1. Connections
 
@@ -508,6 +509,222 @@ Check at +1 hour, +4 hours, and +24 hours:
 | Storage | steady near 183 MB | Neon console |
 | Writes | none; `max("lastUpdated")` in `StationMetrics` unchanged | SQL |
 
-### 5.5 Record
+### 5.5 Record (2026-10-03, run by the agent on Nate's go)
 
-Filled in during the production run.
+| Step | UTC | Result |
+|---|---|---|
+| 1. Snapshot | 08:39:22 | `pre-u8-migration-2026-10-03` (`snap-rapid-flower-aeyqzl0l`), listed; Neon allowed a second manual snapshot, so the rehearsal one stayed |
+| 2. Guards | 08:39:39 | commit `56d5be1` (code identical to the rehearsed `0c5d313`); migration SHA-256 `b1b054de8857661f...`; CSV SHA-256 as in section 4.7; target production direct host as `neondb_owner`; 143 stations, 39,142 ridership rows; fact and narrative checksums as in section 4.7; row check identical 38,654, differ 0, absent 488 (Western); live site 30 of 30 detail requests 200 |
+| 3. Migrate | 08:40:00 to 08:40:02 | applied, no drift, recorded checksum equals the noted SHA-256, four CTA ids corrected, facts 625, narratives 143, metrics 143 |
+| 4. Seed | 08:40:15 to 08:40:33 | dry run 345, real run 345, second run 0; 144 stations, 144 slugs, 1 closed |
+| 5. Load | 08:40:46 to 08:41:13 | `COPY 1242528`; dates 2001-01-02 to 2025-11-30; 141 stations; sum 3,550,614,440; day types A 177,528, U 177,520, W 887,480; the three expected stations without rows; facts, narratives, metrics, and station checksums unchanged; 299 months equal to the CSV; 183 MB |
+| 6. Old code | 08:41:27 | `stations-raw` 200 with 144 stations (State/Lake first, as expected); detail requests **29 of 30 returned 500** (see below); fixed at 08:42:20, then 60 of 60 returned 200 |
+| 7. Merge | 08:42:53 | officialn8/ghost-stops#2 merged as `94f0ed2`; production deployment `dpl_8djStH74PNLw8yCqkuNhhrVKQSkn` live at 08:44:28 |
+| 8. New code | 08:44:35 | `stations-raw` 144 stations with State/Lake last; Harlem names Oak Park (Blue) and Forest Park with its chart to 2025-11-30; `/api/chicago/stations` 200; 60 of 60 concurrent detail requests 200; no runtime errors since the deploy; the page renders the list and map with November 2025 data |
+
+**The detail-route outage in step 6.** After the migration, warm production instances failed the
+detail route's raw ridership query with Prisma `P2010` ("Error in the underlying connector"). Fresh
+connections worked, as in every rehearsal. The likely cause is statements prepared before
+`RidershipDaily` was recreated (when `serviceDate` was a timestamp) still cached on Neon's pooler
+connections; the review had flagged this hazard. Restarting the production compute endpoint
+(`ep-purple-bread-ae5a0gwi`, 08:42:20) dropped those connections and cleared it, with no data
+change. Whether a Vercel redeploy alone would have cleared it was not tested. Detail pages could
+have failed from 08:40:02 to 08:42:20; the only errors logged were the 30 test requests.
+
+**For the next schema change that retypes or recreates a table the app queries:** restart the
+compute endpoint right after the migration, before checking the live site.
+
+## 6. Phase 2: backfill and sync go-live (U10)
+
+Phase 2 replaces the Go ETL with the TypeScript sync in `src/lib/sync/`. Vercel Cron runs it
+daily and weekly through `/api/cron/sync-ridership`; operators run the same library with
+`scripts/run-sync.ts`. There is no schema change: every table it writes arrived in Phase 1.
+
+### 6.1 Connections
+
+The sync writes ridership, metrics, station statuses, and run records, never schema, so the
+runtime role over the **pooled** host is enough and matches what the cron uses:
+
+```bash
+export DATABASE_URL='<ghost_stops_app pooled URL for the target branch>'
+```
+
+`CHICAGO_DATA_APP_TOKEN` is optional on an operator machine; the rehearsal ran without it at
+about one second a month.
+
+### 6.2 One backfill replaces the re-fetch list
+
+`--since 2001-01-01` re-fetches every month from upstream, and the upsert writes only rows whose
+entries or day type differ, so one pass covers the whole approved list in section 4.4 and the
+plan's U10 backfill:
+
+| Gap (section 4.4) | Filled by |
+|---|---|
+| Both Western stations, State/Lake, Jefferson Park, Washington before 2010, 2001-01-01 | inserted |
+| Day types of weekday holidays, 2001 to 2024 | revised |
+| CTA's 2025 restatement, and December 2025 to July 2026 | revised and inserted |
+| Socrata's 618 duplicate days in 2011 | one row each: the most recently updated, and on a tie (all 618 tie) the higher count |
+
+Retired ids 40200, 40500, 40640, and 41580 have no station, so the run lists them in
+`unmatchedStationIds`; that is expected for any range before 2018.
+
+### 6.3 Gates
+
+| Gate | Evidence |
+|---|---|
+| `CRON_SECRET` in Vercel Production and Preview | set 2026-10-03 as a sensitive variable |
+| `CHICAGO_DATA_APP_TOKEN` in Vercel Production | set in Phase 0 |
+| Fluid compute for the 300-second cron | `vercel.json` sets `"fluid": true`; `src/lib/sync/schedule.test.ts` checks it |
+| Rehearsal on a production copy matched, at the commit that will merge | section 6.6; the commit is recorded there |
+| Production unchanged since the rehearsal's copy | step 0 baseline below |
+| A restore point newer than the v2 migration | step 0 snapshot below (the U8 snapshot predates the migration, so restoring it would undo Phase 1) |
+| Phase 2 PR open, CI green, no auto-merge | the PR link |
+
+### 6.4 Steps
+
+Avoid 10:00 to 11:00 UTC for steps 2 and 3: the daily cron fires in that hour, and whichever run
+starts second records SKIPPED (the runner then exits 1; run it again afterward). Finish before
+12:30 UTC, when the health workflow runs: until step 2 completes, `/api/health` answers 503 and the
+workflow emails Nate.
+
+0. Baseline and restore point, against production's pooled URL as the runtime role:
+   - Print the host only, never the password, and confirm it is production
+     (`ep-purple-bread-ae5a0gwi-pooler`), not a rehearsal branch:
+     `node -e 'const u=new URL(process.env.DATABASE_URL);console.log(u.host,u.username)'`.
+   - The baseline must equal the rehearsal's starting state, or stop and rehearse again:
+
+     ```sql
+     SELECT count(*), min("serviceDate"), max("serviceDate"), count(DISTINCT "stationId"), sum(entries) FROM "RidershipDaily";
+     -- 1242528 | 2001-01-02 | 2025-11-30 | 141 | 3550614440
+     SELECT (SELECT count(*) FROM "StationMetrics") AS metrics, (SELECT count(*) FROM "SyncRun") AS runs;
+     -- 143 | 0  (runs > 0 means a cron already fired: see the note under step 2)
+     ```
+
+     and upstream's `max(date)` is still 2026-07-31.
+   - Take a manual Neon snapshot of the production branch (for example
+     `pre-u10-backfill-<date>`) and note its id. If Neon refuses it, note `SELECT now()` and rely on
+     the six-hour instant restore instead.
+1. Merge the Phase 2 PR and wait for the production deployment. Then:
+   - `curl -s -o /dev/null -w '%{http_code}' https://ghost-stops.vercel.app/api/cron/sync-ridership` prints 401.
+   - `/api/health` answers 503 with `"status":"stale"`: no run has succeeded yet. Expected until step 2.
+2. Backfill: `npx tsx scripts/run-sync.ts --since 2001-01-01`, about five minutes. Expect status
+   OK, fetched 1,333,391, **inserted 74,446** and revised 65,115, and `unmatchedStationIds` exactly
+   40200, 40500, 40640, 41580. Section 6.6's rehearsal ran a daily window first, so its backfill
+   inserted 8,784 fewer rows; if a scheduled run already inserted the window on production, expect
+   65,662 here. Either way the table ends at 1,316,974 rows.
+   - If the runner is interrupted (Ctrl-C, sleep, lost network), its `SyncRun` row stays RUNNING and
+     holds the lease: a re-run within the hour records SKIPPED and exits 1. Wait until the row is an
+     hour old (the next run expires it), or have Nate approve clearing it as the owner role:
+     `UPDATE "SyncRun" SET lease = NULL, status = 'FAILED', "finishedAt" = now() WHERE status = 'RUNNING';`
+     Re-running is safe: every chunk upserts idempotently.
+3. Reconcile: `npx tsx scripts/run-sync.ts --reconcile`. Expect `"driftMonths": []`. Until this
+   succeeds, `/api/health` answers 503 with `"status":"reconcile-stale"`: health also requires a
+   successful weekly reconciliation within 15 days (review finding #5, Nate's call), and this run
+   is the first one.
+4. Run the queries in section 6.5; each must match section 6.6.
+5. `/api/health` answers 200 with `"dataThrough": "2026-07-31"` and a `lastReconciliationAt` from
+   step 3. The site's charts end 2026-07-31.
+6. Run the health workflow once: `gh workflow run health.yml`; it must pass. Then rehearse a
+   failure: `gh workflow run health.yml -f url=https://ghost-stops.vercel.app/api/health-missing`;
+   it must fail, and GitHub must email Nate.
+7. The next day: the first scheduled run appears in `SyncRun` with trigger `cron-daily`, status
+   OK, `startedAt` between 10:00 and 10:59 UTC, and `durationMs` under 300,000. The first Sunday
+   run must record trigger `cron-weekly`; anything else means the `x-vercel-cron-schedule` header did
+   not arrive as `vercel.json` spells it, and drift goes unreconciled.
+
+For the first week, read `SyncRun` and the `dataThrough` on `/api/health` directly: a FAILED or
+PARTIAL run turns health red only after 10 days without an OK run, and health does not notice
+upstream stalling (every run is OK with nothing inserted).
+
+### 6.5 Verification queries
+
+Save these to a file and run `psql "$DATABASE_URL" -X -A -f <file>`. Section 6.6 has the
+expected results.
+
+```sql
+\echo '-- totals'
+SELECT count(*) AS rows, min("serviceDate") AS first, max("serviceDate") AS last, count(DISTINCT "stationId") AS stations, sum(entries) AS riders FROM "RidershipDaily";
+\echo '-- day types'
+SELECT "dayType", count(*) FROM "RidershipDaily" GROUP BY 1 ORDER BY 1;
+\echo '-- AE8: Western pair on 2025-11-03 (expect 40670 3476, 40310 2617)'
+SELECT s."ctaStationId", s.name, r.entries FROM "RidershipDaily" r JOIN "Station" s ON s.id = r."stationId" WHERE s."ctaStationId" IN ('40670','40310') AND r."serviceDate" = '2025-11-03' ORDER BY 1;
+\echo '-- Western 2019 averages (expect O''Hare above Orange)'
+SELECT s."ctaStationId", s.name, round(avg(r.entries)) AS avg2019, count(*) AS days FROM "RidershipDaily" r JOIN "Station" s ON s.id = r."stationId" WHERE s."ctaStationId" IN ('40670','40310') AND r."serviceDate" BETWEEN '2019-01-01' AND '2019-12-31' GROUP BY 1, 2 ORDER BY 1;
+\echo '-- 95th/Dan Ryan 2025-03-03 (expect the restated 5333)'
+SELECT r.entries FROM "RidershipDaily" r JOIN "Station" s ON s.id = r."stationId" WHERE s."ctaStationId" = '40450' AND r."serviceDate" = '2025-03-03';
+\echo '-- first and last day per re-fetched station'
+SELECT s."ctaStationId", s.name, min(r."serviceDate"), max(r."serviceDate"), count(*) FROM "RidershipDaily" r JOIN "Station" s ON s.id = r."stationId" WHERE s."ctaStationId" IN ('40670','40310','40260','41280','40370') GROUP BY 1, 2 ORDER BY 1;
+\echo '-- every station has 2001-01-01 if it existed then'
+SELECT count(*) AS stations_on_2001_01_01 FROM "RidershipDaily" WHERE "serviceDate" = '2001-01-01';
+\echo '-- holidays stored as U (2019-07-04, 2019-12-25)'
+SELECT "serviceDate", "dayType", count(*) FROM "RidershipDaily" WHERE "serviceDate" IN ('2019-07-04', '2019-12-25') GROUP BY 1, 2 ORDER BY 1;
+\echo '-- metrics and statuses'
+SELECT count(*) AS metrics, count(*) FILTER (WHERE "dataThrough" = '2026-07-31') AS through_jul31, array_agg(DISTINCT "dataStatus") AS statuses, count(*) FILTER (WHERE "ghostScore" = -1) AS no_v1_score FROM "StationMetrics";
+SELECT status, count(*) FROM "Station" GROUP BY 1 ORDER BY 1;
+\echo '-- untouched tables'
+SELECT (SELECT count(*) FROM "StationFact") AS facts, (SELECT count(*) FROM "StationNarrative") AS narratives, (SELECT md5(string_agg(id || "factKey" || value::text, ',' ORDER BY id)) FROM "StationFact") AS fact_md5, (SELECT md5(string_agg(id || "renderedStory", ',' ORDER BY id)) FROM "StationNarrative") AS narrative_md5;
+\echo '-- runs'
+SELECT trigger, status, lease IS NULL AS released, "windowStart", "windowEnd", "rowsFetched", "rowsInserted", "rowsRevised", "unmatchedStationIds", jsonb_array_length("driftMonths") AS drift, "durationMs" FROM "SyncRun" ORDER BY "startedAt";
+\echo '-- size'
+SELECT pg_size_pretty(pg_database_size(current_database())) AS db, pg_size_pretty(pg_total_relation_size('"RidershipDaily"')) AS ridership;
+```
+
+### 6.6 Rehearsal (2026-10-03, branch `rehearsal-phase-2-sync`)
+
+All on `rehearsal-phase-2-sync` (`br-spring-bonus-aejkv4yp`), a copy of production taken at
+09:22 UTC after U8, as the runtime role over the pooled host. Production was only read.
+
+| Step | Result |
+|---|---|
+| Daily run (window 2026-06-01 to 2026-07-31) | fetched 8,784, inserted 8,784, 6 s; a second run inserted 0 and revised 0; both rows OK with the lease released |
+| Cron route while the backfill held the lease (local `next dev` on the branch) | no header 401, wrong secret 401, right secret: a SKIPPED run with no writes (AE5) |
+| Backfill `--since 2001-01-01` | 297 s; fetched 1,333,391 (every upstream row), inserted 65,662, revised 65,115; unmatched 40200, 40500, 40640, 41580 |
+| Weekly reconciliation through the cron route | 9 s; zero drift months: every station-month from 2001 to July 2026 equals upstream |
+| Health route | 200, `dataThrough` 2026-07-31 |
+
+Verification query results:
+
+| Query | Result |
+|---|---|
+| Totals | 1,316,974 rows, 2001-01-01 to 2026-07-31, 144 stations, 3,820,929,857 riders |
+| Day types | A 187,484, U 209,596, W 919,894 |
+| AE8, 2025-11-03 | Western (O'Hare) 3,476, Western (Orange) 2,617 |
+| Western, 2019 average | O'Hare 4,519, Orange 2,984 (O'Hare higher, as upstream) |
+| 95th/Dan Ryan, 2025-03-03 | 5,333 (restated) |
+| State/Lake, both Westerns, Jefferson Park, Washington | 9,343 days each, 2001-01-01 to 2026-07-31; upstream reports State/Lake at 0 riders since it closed |
+| Stations on 2001-01-01 | 138 (the rest opened later) |
+| 2019-07-04 and 2019-12-25 | `U` for all 143 stations open in 2019 |
+| Metrics | 144 rows, all through 2026-07-31; State/Lake `zero` with score -1; the other 143 keep their v1 scores until U12 |
+| Statuses | 143 ACTIVE, State/Lake CLOSED |
+| Facts and narratives | 625 and 143, checksums equal to production |
+| Size | database 199 MB, `RidershipDaily` 189 MB |
+
+The live UI on the branch rendered July 2026 data with State/Lake last and no console errors;
+Harlem kept Oak Park (Blue) and Forest Park as neighbors.
+
+### 6.6b Final rehearsal at commit 8fa71b1 (2026-10-03)
+
+After the review fixes, the whole of section 6.4 ran again on a fresh copy of production,
+`rehearsal-phase-2-final` (`br-little-tooth-ae0eapnk`, copied at 10:24 UTC), as the runtime role over
+the pooled host, at commit `8fa71b1`:
+
+| Step | Result |
+|---|---|
+| 0. Baseline | 1,242,528 rows, 2001-01-02 to 2025-11-30, 141 stations, sum 3,550,614,440; 143 metrics rows; 0 runs; upstream max 2026-07-31; health 503 `stale` |
+| 2. Backfill | 283 s; fetched 1,333,391, inserted 74,446, revised 65,115; unmatched 40200, 40500, 40640, 41580; health 503 `reconcile-stale` |
+| 3. Reconcile | 8 s; zero drift months; health 200 with both dates |
+| 4. Queries (6.5) | every result identical to section 6.6 |
+| v1 scores | identical to production's for all 143 stations; State/Lake gains one row with -1 |
+
+### 6.7 Rollback
+
+- **Stop the cron:** remove the two `crons` entries from `vercel.json` and deploy, or replace
+  `CRON_SECRET` so every call answers 401.
+- **Data:** the sync only inserts rows and overwrites them with upstream's values. Pause the crons
+  first, then restore the step 0 snapshot, or within six hours use Neon instant restore to a time
+  before step 2. Either also discards the `SyncRun` history. Afterward upstream is the source of
+  truth, and a re-run puts its values back.
+- **Code only, after the backfill:** an Instant Rollback puts the Phase 1 routes in front of
+  State/Lake's new metrics row (0 riders, score -1), which then leads the ascending sorts and appears
+  as a 0-rider neighbor. Cosmetic; removing that row is an owner write that needs Nate's go.
+- **A failed deploy:** Vercel Instant Rollback, then revert the merge. No schema changed.

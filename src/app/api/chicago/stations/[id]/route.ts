@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getPrimaryLine, primaryLineNeighbors } from "@/lib/cta/sequences";
+import { isRanked } from "@/lib/sync/baseMetrics";
 import { formatValue, ARCHETYPE_TITLES, ARCHETYPE_EMOJIS } from "@/lib/narratives";
 import type { FactKey, ArchetypeKey } from "@/types/narrative";
 
@@ -50,12 +51,12 @@ export async function GET(
       ORDER BY "serviceDate" ASC
     `;
 
-    // Calculate system average for comparison
+    // Peer comparisons (average, percentile, medians) use ranked stations only, the isRanked rule:
+    // closed State/Lake's metrics row reports 0 riders and would drag every comparison down.
     const systemStats = await prisma.stationMetrics.aggregate({
       where: {
-        station: {
-          cityId: station.cityId
-        }
+        station: { cityId: station.cityId, status: "ACTIVE" },
+        dataStatus: "normal"
       },
       _avg: {
         rolling30dAvg: true
@@ -66,17 +67,17 @@ export async function GET(
 
     // Calculate percentile
     const totalStations = await prisma.station.count({
-      where: { cityId: station.cityId }
+      where: { cityId: station.cityId, status: "ACTIVE", metrics: { dataStatus: "normal" } }
     });
 
     const stationsWithLowerRidership = await prisma.station.count({
       where: {
         cityId: station.cityId,
-        metrics: station.metrics?.rolling30dAvg !== null && station.metrics?.rolling30dAvg !== undefined ? {
-          rolling30dAvg: {
-            lt: station.metrics.rolling30dAvg
-          }
-        } : undefined
+        status: "ACTIVE",
+        metrics: {
+          dataStatus: "normal",
+          rolling30dAvg: station.metrics?.rolling30dAvg != null ? { lt: station.metrics.rolling30dAvg } : undefined
+        }
       }
     });
 
@@ -93,7 +94,7 @@ export async function GET(
       }
     })();
 
-    // Get all station metrics for median calculations
+    // Get ranked station metrics for median calculations
     const allMetrics = await prisma.stationMetrics.findMany({
       where: {
         station: { cityId: station.cityId },
@@ -103,9 +104,10 @@ export async function GET(
         station: true
       }
     });
+    const rankedMetrics = allMetrics.filter(m => isRanked(m.station.status, m.dataStatus));
 
     // Calculate system median
-    const allRolling30dAvg = allMetrics
+    const allRolling30dAvg = rankedMetrics
       .map(m => m.rolling30dAvg)
       .filter((v): v is number => v !== null);
     const systemMedian = calculateMedian(allRolling30dAvg);
@@ -114,7 +116,7 @@ export async function GET(
     const primaryLine = getPrimaryLine(stationLines);
     let lineMedian = 0;
     if (primaryLine) {
-      const lineStationMetrics = allMetrics.filter(m => {
+      const lineStationMetrics = rankedMetrics.filter(m => {
         try {
           const lines = JSON.parse(m.station.lines || '[]');
           return lines.includes(primaryLine);
@@ -135,9 +137,10 @@ export async function GET(
       if (!ctaStationId) return null;
       const neighbor = await prisma.station.findUnique({
         where: { cityId_ctaStationId: { cityId: station.cityId, ctaStationId } },
-        select: { id: true, name: true, metrics: { select: { rolling30dAvg: true, ghostScore: true } } }
+        select: { id: true, name: true, status: true, metrics: { select: { rolling30dAvg: true, ghostScore: true, dataStatus: true } } }
       });
-      if (!neighbor?.metrics) return null;
+      // An unranked neighbor (closed State/Lake reports 0 riders) would pull the average toward zero.
+      if (!neighbor?.metrics || !isRanked(neighbor.status, neighbor.metrics.dataStatus)) return null;
       return {
         id: neighbor.id,
         name: neighbor.name,
@@ -287,10 +290,15 @@ export async function GET(
         )
       : null;
 
+    // Closed and no-data stations are left out of every comparison (R5, KTD9); the panels hide their bars.
+    const ranked = station.metrics !== null && isRanked(station.status, station.metrics.dataStatus);
+
     // Generate contextual explanation
     const generateExplanation = (): string => {
-      if (station.metrics?.dataStatus === "missing" || station.metrics?.rolling30dAvg == null) {
-        return "No ridership data available for this station.";
+      if (!station.metrics || !ranked || station.metrics.rolling30dAvg == null) {
+        return station.status === "CLOSED" || station.status === "TEMP_CLOSED"
+          ? "This station is closed, so it is not compared with other stations."
+          : "No ridership data available for this station.";
       }
 
       const insights: string[] = [];
@@ -362,7 +370,8 @@ export async function GET(
         percentile: percentile,
         systemAverage: Math.round(systemAverage),
         systemMedian: Math.round(systemMedian),
-        explanation: generateExplanation()
+        explanation: generateExplanation(),
+        ranked
       },
       comparisons: {
         systemMedian: Math.round(systemMedian),

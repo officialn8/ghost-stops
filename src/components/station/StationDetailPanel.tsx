@@ -43,6 +43,8 @@ interface StationDetail {
     systemAverage: number;
     systemMedian?: number;
     explanation: string;
+    /** False for closed and no-data stations, which are not compared with others. */
+    ranked?: boolean;
   };
   comparisons?: {
     systemMedian: number;
@@ -213,25 +215,27 @@ export default function StationDetailPanel({
                     <Ghost className="w-4 h-4 text-brandIndigo" />
                   </div>
                   <h3 className="font-display font-semibold text-ui-md">
-                    Why is this a ghost stop?
+                    {detail.metrics.ranked === false ? "Not ranked" : "Why is this a ghost stop?"}
                   </h3>
                 </div>
                 <p className="text-ui-sm text-text-secondary leading-relaxed mb-3">
                   {detail.metrics.explanation}
                 </p>
-                <div className="flex items-center gap-2 text-ui-xs text-text-tertiary">
-                  <TrendingDown className="w-3 h-3" />
-                  <span>
-                    {detail.metrics.percentile <= 50
-                      ? `Bottom ${detail.metrics.percentile || 1}% of all CTA stations`
-                      : `Top ${100 - detail.metrics.percentile}% of all CTA stations`}
-                  </span>
-                </div>
+                {detail.metrics.ranked !== false && (
+                  <div className="flex items-center gap-2 text-ui-xs text-text-tertiary">
+                    <TrendingDown className="w-3 h-3" />
+                    <span>
+                      {detail.metrics.percentile <= 50
+                        ? `Bottom ${detail.metrics.percentile || 1}% of all CTA stations`
+                        : `Top ${100 - detail.metrics.percentile}% of all CTA stations`}
+                    </span>
+                  </div>
+                )}
               </div>
             </motion.div>
 
             {/* How It Compares */}
-            {detail.comparisons && (
+            {detail.comparisons && detail.metrics.ranked !== false && (
               <motion.div variants={panelItemVariants} className="px-6 mb-6">
                 <div className="glass-solid rounded-ui p-5">
                   <div className="flex items-center gap-2 mb-4">
