@@ -93,6 +93,46 @@ describe("createSocrataSource", () => {
         expect(http.calls).toHaveLength(3);
     });
 
+    it("retries a 429, then succeeds", async () => {
+        const http = fakeHttp([{ status: 429 }, { status: 200, body: [{ max_date: "2026-07-31T00:00:00.000" }] }]);
+
+        expect(await createSocrataSource({ fetch: http.fetch, retryDelaysMs: [0] }).maxDate()).toBe("2026-07-31");
+        expect(http.calls).toHaveLength(2);
+    });
+
+    it("drops the failed request's URL and token from a network error once retries run out", async () => {
+        const url = "https://data.cityofchicago.org/resource/5neh-572f.json?$select=max(date) AS max_date&$$app_token=leaked";
+        const http = fakeHttp([new TypeError(`fetch failed: ${url}`), new TypeError(`fetch failed: ${url}`)]);
+
+        const error = await createSocrataSource({ fetch: http.fetch, appToken: "leaked", retryDelaysMs: [0] })
+            .maxDate()
+            .catch((e: Error) => e);
+        expect(error).toBeInstanceOf(Error);
+        const { message } = error as Error;
+        expect(message).toBe("Socrata request failed: network error or timeout");
+        expect(message).not.toContain(url);
+        expect(message).not.toContain("leaked");
+        expect(http.calls).toHaveLength(2);
+    });
+
+    it("rejects a body that is not an array without retrying", async () => {
+        const http = fakeHttp([
+            { status: 200, body: { error: true, message: "query failed" } },
+            { status: 200, body: [{ max_date: "2026-07-31T00:00:00.000" }] },
+        ]);
+
+        await expect(createSocrataSource({ fetch: http.fetch, retryDelaysMs: [0] }).maxDate()).rejects.toThrow(
+            "Socrata returned a body that is not an array",
+        );
+        expect(http.calls).toHaveLength(1);
+    });
+
+    it("rejects an empty max(date) response", async () => {
+        const http = fakeHttp([{ status: 200, body: [] }]);
+
+        await expect(createSocrataSource({ fetch: http.fetch }).maxDate()).rejects.toThrow("Socrata returned no max date");
+    });
+
     it("fails without the URL or token in the message once retries run out, and never retries a 400", async () => {
         const exhausted = fakeHttp([{ status: 500 }, { status: 500 }]);
         const error = await createSocrataSource({ fetch: exhausted.fetch, appToken: "test-token", retryDelaysMs: [0] })

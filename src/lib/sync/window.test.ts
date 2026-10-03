@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { addDays, monthChunks, monthOf, monthRange, trailingWindow } from "./window";
+import { addDays, isCalendarDate, monthChunks, monthOf, monthRange, trailingWindow } from "./window";
 
 describe("trailingWindow", () => {
     it("starts 60 days before an upstream max of 2026-07-31, whatever today is", () => {
@@ -44,5 +44,23 @@ describe("calendar helpers", () => {
         expect(() => monthRange("2026-13")).toThrow(/YYYY-MM/);
         expect(() => addDays("2026-02-30", 1)).toThrow(/YYYY-MM-DD/);
         expect(() => addDays("2026-13-01", 1)).toThrow(/YYYY-MM-DD/);
+    });
+});
+
+describe("isCalendarDate", () => {
+    it("accepts a real calendar date, including a leap day", () => {
+        expect(isCalendarDate("2026-07-31")).toBe(true);
+        expect(isCalendarDate("2024-02-29")).toBe(true);
+    });
+
+    it("rejects days and months the calendar does not have", () => {
+        expect(isCalendarDate("2026-02-30")).toBe(false);
+        expect(isCalendarDate("2026-13-01")).toBe(false);
+    });
+
+    it("rejects strings that are not YYYY-MM-DD", () => {
+        expect(isCalendarDate("yesterday")).toBe(false);
+        expect(isCalendarDate("2026-7-31")).toBe(false);
+        expect(isCalendarDate("2026-07-31T00:00:00Z")).toBe(false);
     });
 });

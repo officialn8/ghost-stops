@@ -126,7 +126,7 @@ function soqlDate(date: string): string {
 const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
 
 export function createSocrataSource(options: SocrataOptions = {}): RidershipSource {
-    const http = options.fetch ?? (globalThis.fetch as unknown as HttpFetch);
+    const http: HttpFetch = options.fetch ?? globalThis.fetch;
     const timeoutMs = options.timeoutMs ?? 60_000;
     const retryDelaysMs = options.retryDelaysMs ?? [2_000, 8_000];
     const pageSize = options.pageSize ?? PAGE_SIZE;

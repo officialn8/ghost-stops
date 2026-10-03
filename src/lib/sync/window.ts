@@ -13,16 +13,25 @@ export interface DateWindow {
     end: string;
 }
 
-export const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
+export const ISO_DATE = /^(\d{4})-(\d{2})-(\d{2})$/;
 export const ISO_MONTH = /^(\d{4})-(0[1-9]|1[0-2])$/;
+
+/**
+ * True for a real YYYY-MM-DD calendar date (2026-02-30 is not one). Years 0000 to 0099 are
+ * rejected too, because Date.UTC reads them as 1900 to 1999.
+ */
+export function isCalendarDate(value: string): boolean {
+    const match = ISO_DATE.exec(value);
+    if (!match) return false;
+    const [year, month, day] = [Number(match[1]), Number(match[2]), Number(match[3])];
+    const parsed = new Date(Date.UTC(year, month - 1, day));
+    return parsed.getUTCFullYear() === year && parsed.getUTCMonth() === month - 1 && parsed.getUTCDate() === day;
+}
 
 /** A YYYY-MM-DD calendar date as midnight UTC; throws on anything else, such as 2026-02-30. */
 export function toUtcDate(date: string): Date {
-    const parsed = new Date(`${date}T00:00:00Z`);
-    if (!ISO_DATE.test(date) || Number.isNaN(parsed.getTime()) || toDay(parsed) !== date) {
-        throw new Error(`Expected a YYYY-MM-DD calendar date, got "${date}"`);
-    }
-    return parsed;
+    if (!isCalendarDate(date)) throw new Error(`Expected a YYYY-MM-DD calendar date, got "${date}"`);
+    return new Date(`${date}T00:00:00Z`);
 }
 
 /** The calendar date of a UTC-midnight `Date`, as Prisma returns `@db.Date` columns. */
