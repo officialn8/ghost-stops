@@ -575,19 +575,48 @@ Retired ids 40200, 40500, 40640, and 41580 have no station, so the run lists the
 | `CRON_SECRET` in Vercel Production and Preview | set 2026-10-03 as a sensitive variable |
 | `CHICAGO_DATA_APP_TOKEN` in Vercel Production | set in Phase 0 |
 | Fluid compute for the 300-second cron | `vercel.json` sets `"fluid": true`; `src/lib/sync/schedule.test.ts` checks it |
-| Rehearsal on a production copy matched | section 6.6 |
+| Rehearsal on a production copy matched, at the commit that will merge | section 6.6; the commit is recorded there |
+| Production unchanged since the rehearsal's copy | step 0 baseline below |
+| A restore point newer than the v2 migration | step 0 snapshot below (the U8 snapshot predates the migration, so restoring it would undo Phase 1) |
 | Phase 2 PR open, CI green, no auto-merge | the PR link |
 
 ### 6.4 Steps
 
 Avoid 10:00 to 11:00 UTC for steps 2 and 3: the daily cron fires in that hour, and whichever run
-starts second records SKIPPED (the runner then exits 1; run it again afterward).
+starts second records SKIPPED (the runner then exits 1; run it again afterward). Finish before
+12:30 UTC, when the health workflow runs: until step 2 completes, `/api/health` answers 503 and the
+workflow emails Nate.
 
+0. Baseline and restore point, against production's pooled URL as the runtime role:
+   - Print the host only, never the password, and confirm it is production
+     (`ep-purple-bread-ae5a0gwi-pooler`), not a rehearsal branch:
+     `node -e 'const u=new URL(process.env.DATABASE_URL);console.log(u.host,u.username)'`.
+   - The baseline must equal the rehearsal's starting state, or stop and rehearse again:
+
+     ```sql
+     SELECT count(*), min("serviceDate"), max("serviceDate"), count(DISTINCT "stationId"), sum(entries) FROM "RidershipDaily";
+     -- 1242528 | 2001-01-02 | 2025-11-30 | 141 | 3550614440
+     SELECT (SELECT count(*) FROM "StationMetrics") AS metrics, (SELECT count(*) FROM "SyncRun") AS runs;
+     -- 143 | 0  (runs > 0 means a cron already fired: see the note under step 2)
+     ```
+
+     and upstream's `max(date)` is still 2026-07-31.
+   - Take a manual Neon snapshot of the production branch (for example
+     `pre-u10-backfill-<date>`) and note its id. If Neon refuses it, note `SELECT now()` and rely on
+     the six-hour instant restore instead.
 1. Merge the Phase 2 PR and wait for the production deployment. Then:
    - `curl -s -o /dev/null -w '%{http_code}' https://ghost-stops.vercel.app/api/cron/sync-ridership` prints 401.
    - `/api/health` answers 503 with `"status":"stale"`: no run has succeeded yet. Expected until step 2.
-2. Backfill: `npx tsx scripts/run-sync.ts --since 2001-01-01`. Expect status OK and the counts of
-   section 6.6. It takes about five minutes.
+2. Backfill: `npx tsx scripts/run-sync.ts --since 2001-01-01`, about five minutes. Expect status
+   OK, fetched 1,333,391, **inserted 74,446** and revised 65,115, and `unmatchedStationIds` exactly
+   40200, 40500, 40640, 41580. Section 6.6's rehearsal ran a daily window first, so its backfill
+   inserted 8,784 fewer rows; if a scheduled run already inserted the window on production, expect
+   65,662 here. Either way the table ends at 1,316,974 rows.
+   - If the runner is interrupted (Ctrl-C, sleep, lost network), its `SyncRun` row stays RUNNING and
+     holds the lease: a re-run within the hour records SKIPPED and exits 1. Wait until the row is an
+     hour old (the next run expires it), or have Nate approve clearing it as the owner role:
+     `UPDATE "SyncRun" SET lease = NULL, status = 'FAILED', "finishedAt" = now() WHERE status = 'RUNNING';`
+     Re-running is safe: every chunk upserts idempotently.
 3. Reconcile: `npx tsx scripts/run-sync.ts --reconcile`. Expect `"driftMonths": []`.
 4. Run the queries in section 6.5; each must match section 6.6.
 5. `/api/health` answers 200 with `"dataThrough": "2026-07-31"`. The site's charts end 2026-07-31.
@@ -595,7 +624,13 @@ starts second records SKIPPED (the runner then exits 1; run it again afterward).
    failure: `gh workflow run health.yml -f url=https://ghost-stops.vercel.app/api/health-missing`;
    it must fail, and GitHub must email Nate.
 7. The next day: the first scheduled run appears in `SyncRun` with trigger `cron-daily`, status
-   OK, `startedAt` between 10:00 and 10:59 UTC, and `durationMs` under 300,000.
+   OK, `startedAt` between 10:00 and 10:59 UTC, and `durationMs` under 300,000. The first Sunday
+   run must record trigger `cron-weekly`; anything else means the `x-vercel-cron-schedule` header did
+   not arrive as `vercel.json` spells it, and drift goes unreconciled.
+
+For the first week, read `SyncRun` and the `dataThrough` on `/api/health` directly: a FAILED or
+PARTIAL run turns health red only after 10 days without an OK run, and health does not notice
+upstream stalling (every run is OK with nothing inserted).
 
 ### 6.5 Verification queries
 
@@ -667,7 +702,11 @@ Harlem kept Oak Park (Blue) and Forest Park as neighbors.
 
 - **Stop the cron:** remove the two `crons` entries from `vercel.json` and deploy, or replace
   `CRON_SECRET` so every call answers 401.
-- **Data:** the sync only inserts rows and overwrites them with upstream's values. Within six
-  hours of a run, Neon instant restore to a time before it brings back the previous state. After
-  that, upstream is the source of truth and a re-run restores it.
+- **Data:** the sync only inserts rows and overwrites them with upstream's values. Pause the crons
+  first, then restore the step 0 snapshot, or within six hours use Neon instant restore to a time
+  before step 2. Either also discards the `SyncRun` history. Afterward upstream is the source of
+  truth, and a re-run puts its values back.
+- **Code only, after the backfill:** an Instant Rollback puts the Phase 1 routes in front of
+  State/Lake's new metrics row (0 riders, score -1), which then leads the ascending sorts and appears
+  as a 0-rider neighbor. Cosmetic; removing that row is an owner write that needs Nate's go.
 - **A failed deploy:** Vercel Instant Rollback, then revert the merge. No schema changed.
