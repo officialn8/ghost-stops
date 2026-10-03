@@ -508,6 +508,28 @@ Check at +1 hour, +4 hours, and +24 hours:
 | Storage | steady near 183 MB | Neon console |
 | Writes | none; `max("lastUpdated")` in `StationMetrics` unchanged | SQL |
 
-### 5.5 Record
+### 5.5 Record (2026-10-03, run by the agent on Nate's go)
 
-Filled in during the production run.
+| Step | UTC | Result |
+|---|---|---|
+| 1. Snapshot | 08:39:22 | `pre-u8-migration-2026-10-03` (`snap-rapid-flower-aeyqzl0l`), listed; Neon allowed a second manual snapshot, so the rehearsal one stayed |
+| 2. Guards | 08:39:39 | commit `56d5be1` (code identical to the rehearsed `0c5d313`); migration SHA-256 `b1b054de8857661f...`; CSV SHA-256 as in section 4.7; target production direct host as `neondb_owner`; 143 stations, 39,142 ridership rows; fact and narrative checksums as in section 4.7; row check identical 38,654, differ 0, absent 488 (Western); live site 30 of 30 detail requests 200 |
+| 3. Migrate | 08:40:00 to 08:40:02 | applied, no drift, recorded checksum equals the noted SHA-256, four CTA ids corrected, facts 625, narratives 143, metrics 143 |
+| 4. Seed | 08:40:15 to 08:40:33 | dry run 345, real run 345, second run 0; 144 stations, 144 slugs, 1 closed |
+| 5. Load | 08:40:46 to 08:41:13 | `COPY 1242528`; dates 2001-01-02 to 2025-11-30; 141 stations; sum 3,550,614,440; day types A 177,528, U 177,520, W 887,480; the three expected stations without rows; facts, narratives, metrics, and station checksums unchanged; 299 months equal to the CSV; 183 MB |
+| 6. Old code | 08:41:27 | `stations-raw` 200 with 144 stations (State/Lake first, as expected); detail requests **29 of 30 returned 500** (see below); fixed at 08:42:20, then 60 of 60 returned 200 |
+| 7. Merge | 08:42:53 | officialn8/ghost-stops#2 merged as `94f0ed2`; production deployment `dpl_8djStH74PNLw8yCqkuNhhrVKQSkn` live at 08:44:28 |
+| 8. New code | 08:44:35 | `stations-raw` 144 stations with State/Lake last; Harlem names Oak Park (Blue) and Forest Park with its chart to 2025-11-30; `/api/chicago/stations` 200; 60 of 60 concurrent detail requests 200; no runtime errors since the deploy; the page renders the list and map with November 2025 data |
+
+**The detail-route outage in step 6.** After the migration, warm production instances failed the
+detail route's raw ridership query with Prisma `P2010` ("Error in the underlying connector"). Fresh
+connections worked, as in every rehearsal. The likely cause is statements prepared before
+`RidershipDaily` was recreated (when `serviceDate` was a timestamp) still cached on Neon's pooler
+connections; the review had flagged this hazard. Restarting the production compute endpoint
+(`ep-purple-bread-ae5a0gwi`, 08:42:20) dropped those connections and cleared it, with no data
+change. Whether a Vercel redeploy alone would have cleared it was not tested. Detail pages could
+have failed from 08:40:02 to 08:42:20; the only errors logged were the 30 test requests.
+
+**For the next schema change that retypes or recreates a table the app queries:** restart the
+compute endpoint right after the migration, before checking the live site.
+
