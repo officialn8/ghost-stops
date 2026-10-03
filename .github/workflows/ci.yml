@@ -106,3 +106,24 @@ jobs:
       # With no --log-opts, gitleaks scans `git log --all`: every commit on every fetched ref.
       - name: Scan full git history
         run: gitleaks git --config .gitleaks.toml --gitleaks-ignore-path .gitleaksignore --redact --verbose --exit-code 1 .
+
+      # Positive control: a clean scan cannot tell "no leaks" from "rules stopped matching" (regex edit,
+      # gitleaks upgrade). Re-scan without the baseline and fail unless every baselined leak is reported.
+      - name: Verify baselined leaks are still detected
+        shell: bash
+        run: |
+          # A bare clone has no working tree to hold .gitleaksignore, and $RUNNER_TEMP has none either,
+          # so no baseline applies. --mirror also copies remote-tracking refs, matching the scan above.
+          git clone --quiet --mirror "$GITHUB_WORKSPACE" "$RUNNER_TEMP/history.git"
+          cd "$RUNNER_TEMP"
+          gitleaks git --config "$GITHUB_WORKSPACE/.gitleaks.toml" --redact --exit-code 0 \
+            --report-format json --report-path "$RUNNER_TEMP/positive-control.json" history.git
+          jq -r '.[]? | .Fingerprint' positive-control.json | sort -u > reported.txt
+          sed -E '/^[[:space:]]*(#|$)/d' "$GITHUB_WORKSPACE/.gitleaksignore" | sort -u > baselined.txt
+          missing="$(comm -13 reported.txt baselined.txt)"
+          if [ -n "$missing" ]; then
+            echo "::error::Baselined leaks no longer detected (rule stopped matching, or stale baseline entry):"
+            echo "$missing"
+            exit 1
+          fi
+          echo "Positive control passed: all $(wc -l < baselined.txt) baselined leaks are still detected."

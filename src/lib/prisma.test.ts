@@ -1,6 +1,7 @@
 import { readdirSync, readFileSync } from "node:fs";
-import { join } from "node:path";
+import { join, relative, sep } from "node:path";
 import { fileURLToPath } from "node:url";
+import ts from "typescript";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 // Count constructions across module re-evaluations; vi.resetModules() re-runs the mock factory.
@@ -14,15 +15,55 @@ vi.mock("@prisma/client", () => ({
 
 const globalForPrisma = globalThis as unknown as { prisma?: unknown };
 
-const apiDir = fileURLToPath(new URL("../app/api", import.meta.url));
+const repoRoot = fileURLToPath(new URL("../../", import.meta.url));
+const srcDir = join(repoRoot, "src");
+/** The one module allowed to construct the client. */
+const clientModule = fileURLToPath(new URL("./prisma.ts", import.meta.url));
 
-/** Every App Router route handler under src/app/api, read once. */
-const routeHandlers = readdirSync(apiDir, { recursive: true, withFileTypes: true })
-    .filter((entry) => entry.isFile() && /^route\.(ts|tsx|js)$/.test(entry.name))
-    .map((entry) => {
-        const file = join(entry.parentPath, entry.name);
-        return { file, source: readFileSync(file, "utf8") };
-    });
+const liveRouteHandlers = [
+    "app/api/chicago/stations/route.ts",
+    "app/api/chicago/stations-raw/route.ts",
+    "app/api/chicago/stations/[id]/route.ts",
+].map((path) => join(srcDir, path));
+
+const parse = (file: string, source: string) => ts.createSourceFile(file, source, ts.ScriptTarget.Latest);
+const display = (file: string) => relative(repoRoot, file);
+
+/** Tests and the src/test helpers they share may use the client freely: the db tests disconnect it. */
+const isTestCode = (file: string) => /\.test\.tsx?$/.test(file) || relative(srcDir, file).startsWith(`test${sep}`);
+
+/**
+ * Every non-test source file under src/, so a helper outside the route handlers cannot
+ * hide a violation. Each file is read once.
+ */
+const serverSource = readdirSync(srcDir, { recursive: true, withFileTypes: true })
+    .filter((entry) => entry.isFile() && /\.[cm]?[jt]sx?$/.test(entry.name))
+    .map((entry) => join(entry.parentPath, entry.name))
+    .filter((file) => !isTestCode(file))
+    .map((file) => ({ file, ast: parse(file, readFileSync(file, "utf8")) }));
+
+/**
+ * True when any node under `root` passes `test`. Comments are not visited as nodes, so prose
+ * that mentions the client (as the doc comment in src/lib/prisma.ts does) never matches.
+ */
+function someNode(root: ts.Node, test: (node: ts.Node) => boolean): boolean {
+    const visit = (node: ts.Node): boolean => test(node) || Boolean(ts.forEachChild(node, visit));
+    return visit(root);
+}
+
+/** Any identifier or string that mentions `$disconnect`: a call, element access, destructuring. */
+const mentionsDisconnect = (ast: ts.SourceFile) =>
+    someNode(
+        ast,
+        (node) => (ts.isIdentifier(node) || ts.isStringLiteralLike(node)) && node.text.includes("$disconnect"),
+    );
+
+const calleeName = (callee: ts.Expression) =>
+    ts.isIdentifier(callee) ? callee.text : ts.isPropertyAccessExpression(callee) ? callee.name.text : undefined;
+
+/** Any `new PrismaClient(...)` or `new namespace.PrismaClient(...)`. */
+const constructsPrismaClient = (ast: ts.SourceFile) =>
+    someNode(ast, (node) => ts.isNewExpression(node) && calleeName(node.expression) === "PrismaClient");
 
 describe("prisma singleton", () => {
     afterEach(() => {
@@ -51,22 +92,55 @@ describe("prisma singleton", () => {
     });
 });
 
-describe("API route handlers", () => {
-    it("finds route handlers to check", () => {
-        expect(routeHandlers.length).toBeGreaterThan(0);
+describe("server source", () => {
+    it("includes the live route handlers and the client module, so the scan cannot silently find nothing", () => {
+        const scanned = serverSource.map(({ file }) => file);
+        const missing = [...liveRouteHandlers, clientModule].filter((file) => !scanned.includes(file));
+        expect(missing.map(display)).toEqual([]);
     });
 
-    it("never disconnect the shared client", () => {
-        const offenders = routeHandlers
-            .filter(({ source }) => source.includes("$disconnect"))
-            .map(({ file }) => file);
+    it("never disconnects the shared client", () => {
+        const offenders = serverSource
+            .filter(({ ast }) => mentionsDisconnect(ast))
+            .map(({ file }) => display(file));
         expect(offenders).toEqual([]);
     });
 
-    it("never construct their own PrismaClient", () => {
-        const offenders = routeHandlers
-            .filter(({ source }) => /new\s+PrismaClient\s*\(/.test(source))
-            .map(({ file }) => file);
+    it("never constructs its own PrismaClient outside src/lib/prisma.ts", () => {
+        const offenders = serverSource
+            .filter(({ file, ast }) => file !== clientModule && constructsPrismaClient(ast))
+            .map(({ file }) => display(file));
         expect(offenders).toEqual([]);
+    });
+});
+
+// The scan above only means something if the detectors fire, so pin down what they match.
+describe("guard detection", () => {
+    const snippet = (code: string) => parse("snippet.ts", code);
+
+    it.each([
+        ["a call", "await client.$disconnect();"],
+        ["an optional call", "await client?.$disconnect();"],
+        ["element access", 'await client["$disconnect"]();'],
+        ["destructuring", "const { $disconnect } = client;"],
+        ["a line that also holds a URL", 'const docs = "http://example.com"; await client.$disconnect();'],
+    ])("finds a disconnect written as %s", (_label, code) => {
+        expect(mentionsDisconnect(snippet(code))).toBe(true);
+    });
+
+    it.each([
+        ["no arguments", "new PrismaClient();"],
+        ["options", "new PrismaClient({ log: [] });"],
+        ["a type argument", "new PrismaClient<Options>();"],
+        ["a namespace", "new Prisma.PrismaClient();"],
+    ])("finds a client construction with %s", (_label, code) => {
+        expect(constructsPrismaClient(snippet(code))).toBe(true);
+    });
+
+    it("ignores comments, so src/lib/prisma.ts can document the rule", () => {
+        const ast = snippet("/** Never call `$disconnect()` or `new PrismaClient()`. */\n// $disconnect\nexport {};");
+
+        expect(mentionsDisconnect(ast)).toBe(false);
+        expect(constructsPrismaClient(ast)).toBe(false);
     });
 });
