@@ -11,13 +11,13 @@
 import type { PrismaClient, SyncRunStatus } from "@prisma/client";
 import { todayInChicago } from "@/lib/cta/closures";
 import { computeBaseMetrics, readBaseMetricInputs, storedMaxDate, writeBaseMetrics } from "./baseMetrics";
-import { acquireLease, finishRun, type RunOutcome } from "./lease";
+import { acquireLease, finishRun, latestCompletedRun, type RunOutcome } from "./lease";
 import { dedupeDays, matchStations } from "./match";
 import { parseDriftMonths, planDriftFetches, reconcileMonths } from "./reconcile";
 import type { RidershipSource } from "./socrata";
 import { deriveStationStatuses, writeStationStatuses } from "./status";
 import { upsertRidership } from "./upsert";
-import { monthChunks, monthRange, trailingWindow, type DateWindow } from "./window";
+import { monthChunks, monthRange, toUtcDate, trailingWindow, type DateWindow } from "./window";
 
 export type SyncMode = "daily" | "weekly";
 
@@ -56,24 +56,9 @@ export interface SyncSummary {
 const TRANSACTION_OPTIONS = { timeout: 60_000, maxWait: 10_000 };
 const MAX_ERROR_LENGTH = 2_000;
 
-const toDate = (day: string) => new Date(`${day}T00:00:00Z`);
-
 function errorText(error: unknown): string {
     const text = error instanceof Error ? `${error.name}: ${error.message}` : String(error);
     return text.slice(0, MAX_ERROR_LENGTH);
-}
-
-/**
- * The drift backlog the last run that got past its start left behind. A failed run changed no
- * data, so the backlog before it still stands.
- */
-async function previousDriftBacklog(db: Pick<PrismaClient, "syncRun">, runId: string): Promise<string[]> {
-    const previous = await db.syncRun.findFirst({
-        where: { id: { not: runId }, status: { in: ["OK", "PARTIAL"] } },
-        orderBy: { startedAt: "desc" },
-        select: { driftMonths: true },
-    });
-    return previous ? parseDriftMonths(previous.driftMonths) : [];
 }
 
 export async function runSync(db: PrismaClient, source: RidershipSource, options: SyncOptions): Promise<SyncSummary> {
@@ -96,34 +81,35 @@ export async function runSync(db: PrismaClient, source: RidershipSource, options
     };
     if (!lease.acquired) return summary;
 
+    const ctaStationIds = options.ctaStationIds?.length ? options.ctaStationIds : undefined;
     const unmatched = new Set<string>();
     let status: RunOutcome["status"];
     try {
         const city = await db.city.findUniqueOrThrow({ where: { code: options.cityCode ?? "chicago" }, select: { id: true } });
-        const stations = await db.station.findMany({
-            where: { cityId: city.id, ctaStationId: { not: null } },
-            select: { id: true, ctaStationId: true },
-        });
+        const [stations, previous, upstreamMax, storedMax] = await Promise.all([
+            db.station.findMany({ where: { cityId: city.id, ctaStationId: { not: null } }, select: { id: true, ctaStationId: true } }),
+            latestCompletedRun(db),
+            source.maxDate(),
+            storedMaxDate(db, city.id),
+        ]);
         const stationIdByCtaId = new Map(stations.map((s) => [s.ctaStationId as string, s.id]));
-
-        summary.driftMonths = await previousDriftBacklog(db, lease.runId);
-        const upstreamMax = await source.maxDate();
-        const trailing = trailingWindow(upstreamMax, await storedMaxDate(db, city.id));
+        summary.driftMonths = previous ? parseDriftMonths(previous.driftMonths) : [];
+        const trailing = trailingWindow(upstreamMax, storedMax);
         const window = options.since ? { start: options.since, end: trailing.end } : trailing;
         summary.window = window;
         summary.upstreamMaxDate = upstreamMax;
         await db.syncRun.update({
             where: { id: lease.runId },
             data: {
-                windowStart: toDate(window.start),
-                windowEnd: toDate(window.end),
-                upstreamMaxDate: toDate(upstreamMax),
+                windowStart: toUtcDate(window.start),
+                windowEnd: toUtcDate(window.end),
+                upstreamMaxDate: toUtcDate(upstreamMax),
                 driftMonths: summary.driftMonths,
             },
         });
 
         const syncRange = async (range: DateWindow) => {
-            const days = await source.fetchDays(range, options.ctaStationIds);
+            const days = await source.fetchDays(range, ctaStationIds);
             summary.rowsFetched += days.length;
             const matched = matchStations(dedupeDays(days), stationIdByCtaId);
             for (const id of matched.unmatched) unmatched.add(id);
@@ -137,7 +123,7 @@ export async function runSync(db: PrismaClient, source: RidershipSource, options
 
         for (const chunk of monthChunks(window)) await syncRange(chunk);
 
-        if (options.ctaStationIds === undefined || options.ctaStationIds.length === 0) {
+        if (ctaStationIds === undefined) {
             if (options.mode === "weekly") {
                 summary.driftMonths = await reconcileMonths(db, source, city.id, new Set(stationIdByCtaId.keys()));
             } else {
@@ -155,8 +141,11 @@ export async function runSync(db: PrismaClient, source: RidershipSource, options
         }
 
         const dataThrough = await storedMaxDate(db, city.id);
-        const metrics = dataThrough === null ? [] : computeBaseMetrics(await readBaseMetricInputs(db, city.id, dataThrough));
-        const statuses = await deriveStationStatuses(db, city.id, todayInChicago(now()));
+        const [inputs, statuses] = await Promise.all([
+            dataThrough === null ? [] : readBaseMetricInputs(db, city.id, dataThrough),
+            deriveStationStatuses(db, city.id, todayInChicago(now())),
+        ]);
+        const metrics = computeBaseMetrics(inputs);
         await db.$transaction(async (tx) => {
             if (dataThrough !== null) await writeBaseMetrics(tx, metrics, dataThrough, now());
             await writeStationStatuses(tx, statuses);
@@ -172,9 +161,11 @@ export async function runSync(db: PrismaClient, source: RidershipSource, options
 
     summary.unmatchedStationIds = [...unmatched].sort();
     const finishedAt = now();
+    summary.durationMs = finishedAt.getTime() - startedAt.getTime();
     await finishRun(db, lease.runId, {
         status,
         finishedAt,
+        durationMs: summary.durationMs,
         rowsFetched: summary.rowsFetched,
         rowsInserted: summary.rowsInserted,
         rowsRevised: summary.rowsRevised,
@@ -182,6 +173,5 @@ export async function runSync(db: PrismaClient, source: RidershipSource, options
         driftMonths: summary.driftMonths,
         error: summary.error,
     });
-    summary.durationMs = finishedAt.getTime() - startedAt.getTime();
     return summary;
 }

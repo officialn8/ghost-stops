@@ -4,14 +4,13 @@
  */
 import type { Prisma, PrismaClient, StationStatus } from "@prisma/client";
 import { deriveStatus } from "@/lib/cta/closures";
+import { toDay } from "./window";
 
 export interface StationStatusRow {
     stationId: string;
     status: StationStatus;
     closedAt: string | null;
 }
-
-const toDay = (date: Date) => date.toISOString().slice(0, 10);
 
 export async function deriveStationStatuses(
     db: Pick<PrismaClient, "station">,

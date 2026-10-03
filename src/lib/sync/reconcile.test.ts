@@ -45,7 +45,7 @@ describe("findDriftMonths", () => {
 });
 
 describe("keptDuplicateRides", () => {
-    it("takes the higher count for tied rows without a request, and asks upstream otherwise", async () => {
+    it("takes the higher count for tied rows without a request, and asks upstream once per month otherwise", async () => {
         const requested: string[][] = [];
         const rows: UpstreamDay[] = [
             { ctaStationId: "40390", serviceDate: "2011-08-01", dayType: "W", rides: 4007, updatedAt: "2026-01-01T00:00:00Z" },
@@ -64,7 +64,7 @@ describe("keptDuplicateRides", () => {
         ]);
 
         expect(kept).toEqual(new Map([["40380|2011-07-03", 5_574], ["40390|2011-08-01", 3_969]]));
-        expect(requested).toEqual([["2011-08-01", "40390"]]);
+        expect(requested).toEqual([["2011-08-01"]]);
     });
 });
 

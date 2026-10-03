@@ -4,7 +4,7 @@
  * outside any transaction; the write is one set-based statement whatever the station count
  * (KTD10), so it fits inside the run's short transaction.
  */
-import type { Prisma, PrismaClient } from "@prisma/client";
+import type { Prisma, PrismaClient, StationStatus } from "@prisma/client";
 
 export interface BaseMetricInputs {
     stationId: string;
@@ -16,8 +16,20 @@ export interface BaseMetricInputs {
     daysLast60: number;
 }
 
-/** `missing` when a station has no rows in 60 days, `zero` when its 30-day average is under one rider (KTD9). */
-export type DataStatus = "normal" | "zero" | "missing";
+/**
+ * The stored `StationMetrics.dataStatus` (the UI's `DataStatus` in src/lib/utils.ts is another
+ * vocabulary): `missing` when a station has no rows in 60 days, `zero` when its 30-day average is
+ * under one rider (KTD9).
+ */
+export type MetricsDataStatus = "normal" | "zero" | "missing";
+
+/**
+ * Whether a station takes part in rankings and peer comparisons (R5, KTD9): open, with riders in
+ * its recent data. Closed State/Lake fails both: upstream reports it at 0 riders a day.
+ */
+export function isRanked(status: StationStatus, dataStatus: string): boolean {
+    return status === "ACTIVE" && dataStatus === "normal";
+}
 
 export interface BaseMetrics {
     stationId: string;
@@ -28,17 +40,24 @@ export interface BaseMetrics {
     /** The v1 columns the current UI reads, 0 when there is no data, as the Go ETL wrote them. */
     rolling30dAvg: number;
     rolling90dAvg: number;
-    dataStatus: DataStatus;
+    dataStatus: MetricsDataStatus;
 }
 
 type RawDb = Pick<PrismaClient, "$queryRaw">;
 
-/** The latest service date stored for the city, or null before any data. */
+/**
+ * The latest service date stored for the city, or null before any data. One primary-key probe per
+ * station: a plain max() over the join scans every row (452 ms against 1 ms on production's copy).
+ */
 export async function storedMaxDate(db: RawDb, cityId: string): Promise<string | null> {
     const [row] = await db.$queryRaw<{ max: string | null }[]>`
-        SELECT max(r."serviceDate")::text AS max
-        FROM "RidershipDaily" r
-        WHERE r."stationId" IN (SELECT id FROM "Station" WHERE "cityId" = ${cityId})`;
+        SELECT max(latest."serviceDate")::text AS max
+        FROM "Station" s
+        CROSS JOIN LATERAL (
+            SELECT r."serviceDate" FROM "RidershipDaily" r
+            WHERE r."stationId" = s.id ORDER BY r."serviceDate" DESC LIMIT 1
+        ) latest
+        WHERE s."cityId" = ${cityId}`;
     return row?.max ?? null;
 }
 
@@ -65,7 +84,7 @@ export async function readBaseMetricInputs(db: RawDb, cityId: string, asOf: stri
         WHERE s."cityId" = ${cityId}`;
 }
 
-export function dataStatusFor(input: Pick<BaseMetricInputs, "avg30d" | "daysLast60">): DataStatus {
+export function dataStatusFor(input: Pick<BaseMetricInputs, "avg30d" | "daysLast60">): MetricsDataStatus {
     if (input.daysLast60 === 0) return "missing";
     if (input.avg30d === null || input.avg30d < 1) return "zero";
     return "normal";

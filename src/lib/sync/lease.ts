@@ -9,7 +9,10 @@ import { Prisma, type PrismaClient, type SyncRunStatus } from "@prisma/client";
 export const SYNC_LEASE = "ridership-sync";
 export const STALE_RUN_MS = 60 * 60 * 1000;
 
-export type LeaseResult = { acquired: true; runId: string } | { acquired: false; runId: string };
+export interface LeaseResult {
+    acquired: boolean;
+    runId: string;
+}
 
 type Db = Pick<PrismaClient, "syncRun">;
 
@@ -49,6 +52,7 @@ export async function acquireLease(db: Db, trigger: string, now: Date): Promise<
 export interface RunOutcome {
     status: Exclude<SyncRunStatus, "RUNNING" | "SKIPPED">;
     finishedAt: Date;
+    durationMs: number;
     rowsFetched: number;
     rowsInserted: number;
     rowsRevised: number;
@@ -59,13 +63,17 @@ export interface RunOutcome {
 
 /** Finalizes the run's row and releases the lease. */
 export async function finishRun(db: Db, runId: string, outcome: RunOutcome): Promise<void> {
-    const run = await db.syncRun.findUniqueOrThrow({ where: { id: runId }, select: { startedAt: true } });
-    await db.syncRun.update({
-        where: { id: runId },
-        data: {
-            ...outcome,
-            lease: null,
-            durationMs: outcome.finishedAt.getTime() - run.startedAt.getTime(),
-        },
+    await db.syncRun.update({ where: { id: runId }, data: { ...outcome, lease: null } });
+}
+
+/**
+ * The latest run that got past its start: the source of the drift backlog a daily run carries and
+ * of the health warnings. A failed run changed no data, so the state before it still stands.
+ */
+export async function latestCompletedRun(db: Db) {
+    return db.syncRun.findFirst({
+        where: { status: { in: ["OK", "PARTIAL"] } },
+        orderBy: { startedAt: "desc" },
+        select: { unmatchedStationIds: true, driftMonths: true },
     });
 }

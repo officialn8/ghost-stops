@@ -2,7 +2,7 @@ import type { PrismaClient } from "@prisma/client";
 import type { RidershipRow } from "./match";
 
 /** Rows per statement: a 60-day window is about 8,800 rows, so two statements. */
-export const UPSERT_CHUNK_SIZE = 5_000;
+const UPSERT_CHUNK_SIZE = 5_000;
 
 export interface UpsertCounts {
     inserted: number;

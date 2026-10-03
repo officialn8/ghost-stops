@@ -4,7 +4,7 @@
  */
 
 /** How far back each run re-fetches, so upstream revisions to recent days are absorbed (R10). */
-export const WINDOW_DAYS = 60;
+const WINDOW_DAYS = 60;
 
 export interface DateWindow {
     /** First service day, inclusive. */
@@ -13,25 +13,31 @@ export interface DateWindow {
     end: string;
 }
 
-const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
-const ISO_MONTH = /^(\d{4})-(0[1-9]|1[0-2])$/;
+export const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
+export const ISO_MONTH = /^(\d{4})-(0[1-9]|1[0-2])$/;
 
-function toUtcDate(date: string): Date {
+/** A YYYY-MM-DD calendar date as midnight UTC; throws on anything else, such as 2026-02-30. */
+export function toUtcDate(date: string): Date {
     const parsed = new Date(`${date}T00:00:00Z`);
-    if (!ISO_DATE.test(date) || parsed.toISOString().slice(0, 10) !== date) {
+    if (!ISO_DATE.test(date) || Number.isNaN(parsed.getTime()) || toDay(parsed) !== date) {
         throw new Error(`Expected a YYYY-MM-DD calendar date, got "${date}"`);
     }
     return parsed;
 }
 
+/** The calendar date of a UTC-midnight `Date`, as Prisma returns `@db.Date` columns. */
+export function toDay(date: Date): string {
+    return date.toISOString().slice(0, 10);
+}
+
 export function addDays(date: string, days: number): string {
     const parsed = toUtcDate(date);
     parsed.setUTCDate(parsed.getUTCDate() + days);
-    return parsed.toISOString().slice(0, 10);
+    return toDay(parsed);
 }
 
 export function monthOf(date: string): string {
-    return toUtcDate(date).toISOString().slice(0, 7);
+    return toDay(toUtcDate(date)).slice(0, 7);
 }
 
 /** The first and last day of a YYYY-MM month. */
@@ -39,16 +45,16 @@ export function monthRange(month: string): DateWindow {
     const match = ISO_MONTH.exec(month);
     if (!match) throw new Error(`Expected a YYYY-MM month, got "${month}"`);
     const lastDay = new Date(Date.UTC(Number(match[1]), Number(match[2]), 0));
-    return { start: `${month}-01`, end: lastDay.toISOString().slice(0, 10) };
+    return { start: `${month}-01`, end: toDay(lastDay) };
 }
 
 /**
  * The trailing window: WINDOW_DAYS back from the later of upstream's latest date and ours (KTD4).
  * Anchored on data, never on the wall clock, so CTA's two-month publishing lag cannot leave a gap.
  */
-export function trailingWindow(upstreamMax: string, storedMax: string | null, days = WINDOW_DAYS): DateWindow {
+export function trailingWindow(upstreamMax: string, storedMax: string | null): DateWindow {
     const end = storedMax !== null && storedMax > upstreamMax ? storedMax : upstreamMax;
-    return { start: addDays(end, -days), end };
+    return { start: addDays(end, -WINDOW_DAYS), end };
 }
 
 /** Splits a window into calendar-month pieces, oldest first, so each request stays small. */

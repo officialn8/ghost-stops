@@ -2,12 +2,13 @@ import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import { prisma } from "@/lib/prisma";
 import { createSyncTestCity, deleteSyncTestCity, stationIdFor } from "./__fixtures__/db";
 import type { RidershipRow } from "./match";
+import type { DayType } from "./socrata";
 import { upsertRidership } from "./upsert";
 
 // Runs in the `db` Vitest project against the local or CI Postgres.
 const CITY = "test-sync-upsert";
 const station = (cta: string) => stationIdFor(CITY, cta);
-const row = (cta: string, serviceDate: string, entries: number, dayType = "W"): RidershipRow => ({
+const row = (cta: string, serviceDate: string, entries: number, dayType: DayType = "W"): RidershipRow => ({
     stationId: station(cta),
     serviceDate,
     entries,

@@ -3,13 +3,13 @@
  * station id only. Names never take part (R9), so a renamed station keeps matching and a retired
  * id is reported rather than guessed at.
  */
-import type { UpstreamDay } from "./socrata";
+import type { DayType, UpstreamDay } from "./socrata";
 
 export interface RidershipRow {
     stationId: string;
     serviceDate: string;
     entries: number;
-    dayType: string;
+    dayType: DayType;
 }
 
 function prefer(candidate: UpstreamDay, current: UpstreamDay): boolean {
@@ -18,10 +18,10 @@ function prefer(candidate: UpstreamDay, current: UpstreamDay): boolean {
 }
 
 /**
- * Collapses duplicate upstream rows to one per station-day, so an upsert never touches a row twice.
- * The most recently updated row wins (Nate's rule, 2026-10-03). Every duplicate pair upstream holds
- * today (618 days in July and August 2011) shares one `:updated_at`, so the higher count breaks
- * the tie. Output keeps first-seen order.
+ * Collapses duplicate upstream rows (see `DuplicateDay`) to one per station-day, so an upsert never
+ * touches a row twice. The most recently updated row wins, the rule Nate approved. Every duplicate
+ * upstream holds today shares one `:updated_at`, so the higher count breaks the tie. Output keeps
+ * first-seen order.
  */
 export function dedupeDays(rows: readonly UpstreamDay[]): UpstreamDay[] {
     const kept = new Map<string, UpstreamDay>();

@@ -5,13 +5,13 @@
  * The app token travels only in the X-App-Token header. Request URLs and headers are never put
  * in an error message or a log line.
  */
-import type { DateWindow } from "./window";
+import { ISO_DATE, type DateWindow } from "./window";
 
-export const RIDERSHIP_DATASET = "5neh-572f";
+const RIDERSHIP_DATASET = "5neh-572f";
 const RIDERSHIP_ENDPOINT = `https://data.cityofchicago.org/resource/${RIDERSHIP_DATASET}.json`;
 
 /** Rows per request; SODA 2.1 pages with $limit and $offset. */
-export const PAGE_SIZE = 50_000;
+const PAGE_SIZE = 50_000;
 
 export type DayType = "W" | "A" | "U";
 
@@ -73,8 +73,7 @@ export class SocrataError extends Error {
     override name = "SocrataError";
 }
 
-const CTA_STATION_ID = /^\d{5}$/;
-const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
+export const CTA_STATION_ID = /^\d{5}$/;
 const DAY_TYPES: ReadonlySet<string> = new Set(["W", "A", "U"]);
 
 type RawRow = Record<string, unknown>;
@@ -93,7 +92,7 @@ function count(row: RawRow, field: string): number {
     return value;
 }
 
-function stationId(row: RawRow): string {
+function readCtaStationId(row: RawRow): string {
     const id = text(row, "station_id");
     if (!CTA_STATION_ID.test(id)) throw new SocrataError(`Upstream station_id is not a CTA station id: ${id}`);
     return id;
@@ -106,11 +105,11 @@ function calendarDate(row: RawRow, field: string): string {
     return date;
 }
 
-export function parseUpstreamDay(row: RawRow): UpstreamDay {
+function parseUpstreamDay(row: RawRow): UpstreamDay {
     const dayType = text(row, "daytype");
     if (!DAY_TYPES.has(dayType)) throw new SocrataError(`Upstream daytype is not W, A, or U: ${dayType}`);
     return {
-        ctaStationId: stationId(row),
+        ctaStationId: readCtaStationId(row),
         serviceDate: calendarDate(row, "date"),
         dayType: dayType as DayType,
         rides: count(row, "rides"),
@@ -202,7 +201,7 @@ export function createSocrataSource(options: SocrataOptions = {}): RidershipSour
                 $order: "month,station_id",
             });
             return rows.map((row) => ({
-                ctaStationId: stationId(row),
+                ctaStationId: readCtaStationId(row),
                 month: calendarDate(row, "month").slice(0, 7),
                 days: count(row, "days"),
                 rides: count(row, "rides"),
@@ -219,7 +218,7 @@ export function createSocrataSource(options: SocrataOptions = {}): RidershipSour
                 $order: "date,station_id",
             });
             return rows.map((row) => ({
-                ctaStationId: stationId(row),
+                ctaStationId: readCtaStationId(row),
                 serviceDate: calendarDate(row, "date"),
                 rows: count(row, "n"),
                 totalRides: count(row, "total"),

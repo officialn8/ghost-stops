@@ -5,11 +5,12 @@
  * The report carries statuses and dates only, never a run's stored error text.
  */
 import type { PrismaClient } from "@prisma/client";
-import { STALE_RUN_MS } from "./lease";
+import { latestCompletedRun, STALE_RUN_MS } from "./lease";
 import { parseDriftMonths } from "./reconcile";
+import { toDay } from "./window";
 
-export const STALE_AFTER_DAYS = 10;
-export const DRIFT_BACKLOG_WARNING_MONTHS = 12;
+const STALE_AFTER_DAYS = 10;
+const DRIFT_BACKLOG_WARNING_MONTHS = 12;
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
@@ -40,11 +41,7 @@ export async function readHealthInputs(db: Pick<PrismaClient, "syncRun">, now: D
             orderBy: { startedAt: "asc" },
             select: { startedAt: true },
         }),
-        db.syncRun.findFirst({
-            where: { status: { in: ["OK", "PARTIAL"] } },
-            orderBy: { startedAt: "desc" },
-            select: { unmatchedStationIds: true, driftMonths: true },
-        }),
+        latestCompletedRun(db),
     ]);
     return { lastSuccess, stuckSince: stuck?.startedAt ?? null, latest };
 }
@@ -67,7 +64,7 @@ export function assessHealth(inputs: HealthInputs, now: Date): { httpStatus: 200
         report: {
             status,
             lastSuccessfulRunAt: finishedAt?.toISOString() ?? null,
-            dataThrough: inputs.lastSuccess?.windowEnd?.toISOString().slice(0, 10) ?? null,
+            dataThrough: inputs.lastSuccess?.windowEnd ? toDay(inputs.lastSuccess.windowEnd) : null,
             unmatchedStationIds: unmatched,
             driftBacklogMonths: backlog,
             warnings,

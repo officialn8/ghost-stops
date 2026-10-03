@@ -16,11 +16,9 @@
 import { parseArgs } from "node:util";
 import { prisma } from "../src/lib/prisma";
 import { runSync, type SyncOptions } from "../src/lib/sync/run";
-import { createSocrataSource } from "../src/lib/sync/socrata";
+import { createSocrataSource, CTA_STATION_ID } from "../src/lib/sync/socrata";
 import { isCliEntry } from "./cli";
 import { isCalendarDate } from "./dates";
-
-const CTA_STATION_ID = /^\d{5}$/;
 
 export type RunSyncArgs = Pick<SyncOptions, "trigger" | "mode" | "cityCode" | "since" | "ctaStationIds">;
 

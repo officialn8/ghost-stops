@@ -1,6 +1,6 @@
 /**
  * Station closures: the source of truth for Station.status and Station.closedAt, which the seed
- * (and later the sync) derive from these rows so the three never disagree.
+ * and the sync derive from these rows so the three never disagree.
  *
  * A closure covers startDate up to, not including, endDate: endDate is the day service resumed,
  * and null means the station is still closed. Dates are the first and last days the ridership

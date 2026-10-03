@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { isRanked } from "@/lib/sync/baseMetrics";
 import { normalizeDataStatus, safeJsonParse } from "@/lib/utils";
 
 export async function GET(request: NextRequest) {
@@ -45,14 +46,12 @@ export async function GET(request: NextRequest) {
       orderBy
     });
 
-    // Stations outside the ranking sort last (R5, KTD9): no metrics row, closed, or no riders in
-    // the data (State/Lake reports zeros since it closed). Postgres puts a missing row first in a
+    // Stations outside the ranking sort last: Postgres puts a missing metrics row first in a
     // descending order, and a closed station's 0 average and -1 score would lead the ascending
     // sorts. The sort is stable, so the database order holds otherwise.
-    const excluded = (s: (typeof stations)[number]) =>
-      Number(s.metrics === null || s.status !== "ACTIVE" || s.metrics.dataStatus !== "normal");
+    const unranked = (s: (typeof stations)[number]) => Number(s.metrics === null || !isRanked(s.status, s.metrics.dataStatus));
     if (sort !== "name") {
-      stations.sort((a, b) => excluded(a) - excluded(b));
+      stations.sort((a, b) => unranked(a) - unranked(b));
     }
 
     // Get max service date

@@ -13,7 +13,7 @@ const A = "40010";
 const B = "40020";
 const CLOSED = "40030"; // like State/Lake: data until January, closed since
 const NOW = new Date("2026-08-02T10:00:00Z");
-const WINDOW_DAYS = upstreamDays([A, B], { start: "2026-06-01", end: "2026-07-31" }, (id) => (id === A ? 900 : 450));
+const WINDOW_ROWS = upstreamDays([A, B], { start: "2026-06-01", end: "2026-07-31" }, (id) => (id === A ? 900 : 450));
 
 const daily = (overrides: Partial<SyncOptions> = {}): SyncOptions => ({
     trigger: "cron-daily",
@@ -47,7 +47,7 @@ afterAll(async () => {
 
 describe("runSync", () => {
     it("inserts the trailing window, then a second identical run revises nothing", async () => {
-        const first = await run(WINDOW_DAYS);
+        const first = await run(WINDOW_ROWS);
 
         expect(first.summary).toMatchObject({
             status: "OK",
@@ -62,12 +62,12 @@ describe("runSync", () => {
         expect(first.record.windowStart?.toISOString().slice(0, 10)).toBe("2026-06-01");
         expect(fetchedWindows(first.calls)).toEqual(["2026-06-01..2026-06-30", "2026-07-01..2026-07-31"]);
 
-        const second = await run(WINDOW_DAYS);
+        const second = await run(WINDOW_ROWS);
         expect(second.record).toMatchObject({ status: "OK", lease: null, rowsInserted: 0, rowsRevised: 0 });
     });
 
     it("records an unknown CTA station id without aborting the run", async () => {
-        const days = [...WINDOW_DAYS, ...upstreamDays(["40500"], { start: "2026-07-01", end: "2026-07-02" })];
+        const days = [...WINDOW_ROWS, ...upstreamDays(["40500"], { start: "2026-07-01", end: "2026-07-02" })];
 
         const { record } = await run(days);
         expect(record).toMatchObject({ status: "OK", rowsInserted: 122, unmatchedStationIds: ["40500"] });
@@ -76,7 +76,7 @@ describe("runSync", () => {
     it("records a skipped run and writes no ridership while another run holds the lease (AE5)", async () => {
         await acquireLease(prisma, "cron-daily", new Date(NOW.getTime() - 30_000));
 
-        const { summary, record, calls } = await run(WINDOW_DAYS);
+        const { summary, record, calls } = await run(WINDOW_ROWS);
         expect(summary.status).toBe("SKIPPED");
         expect(record).toMatchObject({ status: "SKIPPED", lease: null });
         expect(calls).toEqual([]);
@@ -84,7 +84,7 @@ describe("runSync", () => {
     });
 
     it("finalizes as partial with the error when upstream fails after rows were written", async () => {
-        const { record } = await run(WINDOW_DAYS, {}, (call) => call.window?.start === "2026-07-01");
+        const { record } = await run(WINDOW_ROWS, {}, (call) => call.window?.start === "2026-07-01");
 
         expect(record).toMatchObject({ status: "PARTIAL", lease: null, rowsInserted: 60 }); // June only
         expect(record.error).toMatch(/HTTP 503/);
@@ -92,7 +92,7 @@ describe("runSync", () => {
     });
 
     it("finalizes as failed when nothing was written", async () => {
-        const { record } = await run(WINDOW_DAYS, {}, (call) => call.method === "maxDate");
+        const { record } = await run(WINDOW_ROWS, {}, (call) => call.method === "maxDate");
 
         expect(record).toMatchObject({ status: "FAILED", lease: null, rowsInserted: 0 });
         expect((await acquireLease(prisma, "cron-daily", NOW)).acquired).toBe(true);
@@ -105,7 +105,7 @@ describe("runSync", () => {
             { stationId: stationA, serviceDate: "2025-03-04", entries: 5_100, dayType: "W" },
         ]);
         const restated: UpstreamDay[] = [
-            ...WINDOW_DAYS,
+            ...WINDOW_ROWS,
             { ctaStationId: A, serviceDate: "2025-03-03", dayType: "W", rides: 5_333, updatedAt: UPDATED_AT },
             { ctaStationId: A, serviceDate: "2025-03-04", dayType: "W", rides: 5_100, updatedAt: UPDATED_AT },
         ];
@@ -126,7 +126,7 @@ describe("runSync", () => {
             data: { trigger: "cron-weekly", status: "OK", finishedAt: NOW, driftMonths: ["2025-04", "2019-05", "2024-12", "2025-01"] },
         });
 
-        const { record, calls } = await run(WINDOW_DAYS);
+        const { record, calls } = await run(WINDOW_ROWS);
         expect(fetchedWindows(calls).slice(2)).toEqual(["2019-05-01..2019-05-31", "2024-12-01..2024-12-31", "2025-01-01..2025-01-31"]);
         expect(record.driftMonths).toEqual(["2025-04"]);
     });
@@ -134,7 +134,7 @@ describe("runSync", () => {
     it("carries every drift month unfetched once the deadline has passed", async () => {
         await prisma.syncRun.create({ data: { trigger: "cron-weekly", status: "OK", finishedAt: NOW, driftMonths: ["2025-03"] } });
 
-        const { record, calls } = await run(WINDOW_DAYS, { deadline: NOW.getTime() - 1 });
+        const { record, calls } = await run(WINDOW_ROWS, { deadline: NOW.getTime() - 1 });
         expect(fetchedWindows(calls)).toHaveLength(2);
         expect(record.driftMonths).toEqual(["2025-03"]);
     });
@@ -142,7 +142,7 @@ describe("runSync", () => {
     it("re-fetches only the named stations from --since, leaving the drift backlog alone", async () => {
         await prisma.syncRun.create({ data: { trigger: "cron-weekly", status: "OK", finishedAt: NOW, driftMonths: ["2025-03"] } });
 
-        const { record, calls } = await run(WINDOW_DAYS, {
+        const { record, calls } = await run(WINDOW_ROWS, {
             trigger: "local --since 2026-07-01 --station-id 40020",
             since: "2026-07-01",
             ctaStationIds: [B],
@@ -166,7 +166,7 @@ describe("runSync", () => {
             })),
         );
 
-        await run(WINDOW_DAYS);
+        await run(WINDOW_ROWS);
 
         const metrics = async (cta: string) => prisma.stationMetrics.findUniqueOrThrow({ where: { stationId: stationIdFor(CITY, cta) } });
         expect(await metrics(A)).toMatchObject({
@@ -188,7 +188,7 @@ describe("runSync", () => {
             data: { stationId: stationIdFor(CITY, CLOSED), startDate: new Date("2026-01-05"), reason: "Rebuild" },
         });
 
-        await run(WINDOW_DAYS);
+        await run(WINDOW_ROWS);
         expect(await prisma.station.findUniqueOrThrow({ where: { id: stationIdFor(CITY, CLOSED) } })).toMatchObject({
             status: "CLOSED",
             closedAt: new Date("2026-01-05"),

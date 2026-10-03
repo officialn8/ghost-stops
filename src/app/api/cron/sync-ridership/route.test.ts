@@ -1,5 +1,6 @@
 import { NextRequest } from "next/server";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { STATIONS_CACHE_TAG } from "@/lib/cacheTags";
 import type { SyncSummary } from "@/lib/sync/run";
 import { WEEKLY_SCHEDULE } from "@/lib/sync/schedule";
 
@@ -60,7 +61,7 @@ describe("GET /api/cron/sync-ridership", () => {
 
         expect(response.status).toBe(200);
         expect(runSync).toHaveBeenCalledWith({}, expect.anything(), expect.objectContaining({ trigger: "cron-daily", mode: "daily" }));
-        expect(revalidateTag).toHaveBeenCalledWith("stations");
+        expect(revalidateTag).toHaveBeenCalledWith(STATIONS_CACHE_TAG);
         expect(await response.json()).toMatchObject({ status: "OK", mode: "daily", rowsInserted: 61, rowsRevised: 3 });
     });
 

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getPrimaryLine, primaryLineNeighbors } from "@/lib/cta/sequences";
+import { isRanked } from "@/lib/sync/baseMetrics";
 import { formatValue, ARCHETYPE_TITLES, ARCHETYPE_EMOJIS } from "@/lib/narratives";
 import type { FactKey, ArchetypeKey } from "@/types/narrative";
 
@@ -137,8 +138,8 @@ export async function GET(
         where: { cityId_ctaStationId: { cityId: station.cityId, ctaStationId } },
         select: { id: true, name: true, status: true, metrics: { select: { rolling30dAvg: true, ghostScore: true, dataStatus: true } } }
       });
-      // A closed neighbor, or one with no riders in the data (State/Lake), would pull the average toward zero.
-      if (!neighbor?.metrics || neighbor.status !== "ACTIVE" || neighbor.metrics.dataStatus !== "normal") return null;
+      // An unranked neighbor (closed State/Lake reports 0 riders) would pull the average toward zero.
+      if (!neighbor?.metrics || !isRanked(neighbor.status, neighbor.metrics.dataStatus)) return null;
       return {
         id: neighbor.id,
         name: neighbor.name,

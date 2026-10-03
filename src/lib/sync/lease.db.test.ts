@@ -69,6 +69,7 @@ describe("finishRun", () => {
         await finishRun(prisma, run.runId, {
             status: "OK",
             finishedAt: new Date(NOW.getTime() + 42_000),
+            durationMs: 42_000,
             rowsFetched: 10,
             rowsInserted: 4,
             rowsRevised: 1,

@@ -7,11 +7,12 @@
 import type { PrismaClient } from "@prisma/client";
 import { dedupeDays } from "./match";
 import type { DuplicateDay, RidershipSource, StationMonthTotal } from "./socrata";
-import { monthOf, monthRange, type DateWindow } from "./window";
+import { ISO_MONTH, monthOf, monthRange, type DateWindow } from "./window";
 
-export const MAX_DRIFT_FETCHES = 3;
+const MAX_DRIFT_FETCHES = 3;
 
-const ISO_MONTH = /^\d{4}-(0[1-9]|1[0-2])$/;
+/** Keys a station-day or a station-month. */
+const stationKey = (ctaStationId: string, dateOrMonth: string) => `${ctaStationId}|${dateOrMonth}`;
 
 /** Reads a run record's `driftMonths` JSON, tolerating nothing but YYYY-MM strings. */
 export function parseDriftMonths(value: unknown): string[] {
@@ -21,7 +22,7 @@ export function parseDriftMonths(value: unknown): string[] {
     return value as string[];
 }
 
-export async function storedStationMonthTotals(
+async function storedStationMonthTotals(
     db: Pick<PrismaClient, "$queryRaw">,
     cityId: string,
 ): Promise<StationMonthTotal[]> {
@@ -36,23 +37,21 @@ export async function storedStationMonthTotals(
 }
 
 /**
- * The count each duplicate station-day keeps once deduplicated, keyed `ctaStationId|date`. When a
- * day's rows share an update time the higher count wins without a request; otherwise the rows are
- * fetched and put through the same `dedupeDays` rule the sync applies.
+ * The count each duplicate station-day keeps once deduplicated, keyed by `stationKey`. When a day's
+ * rows share an update time the higher count wins without a request; otherwise its month is
+ * fetched once and put through the same `dedupeDays` rule the sync applies.
  */
 export async function keptDuplicateRides(
     source: RidershipSource,
     duplicates: readonly DuplicateDay[],
 ): Promise<Map<string, number>> {
-    const kept = new Map<string, number>();
-    for (const dup of duplicates) {
-        let rides = dup.maxRides;
-        if (!dup.sameUpdate) {
-            const day = { start: dup.serviceDate, end: dup.serviceDate };
-            const [winner] = dedupeDays(await source.fetchDays(day, [dup.ctaStationId]));
-            rides = winner?.rides ?? dup.maxRides;
+    const kept = new Map(duplicates.map((dup) => [stationKey(dup.ctaStationId, dup.serviceDate), dup.maxRides]));
+    const untiedMonths = new Set(duplicates.filter((dup) => !dup.sameUpdate).map((dup) => monthOf(dup.serviceDate)));
+    for (const month of [...untiedMonths].sort()) {
+        for (const winner of dedupeDays(await source.fetchDays(monthRange(month)))) {
+            const key = stationKey(winner.ctaStationId, winner.serviceDate);
+            if (kept.has(key)) kept.set(key, winner.rides);
         }
-        kept.set(`${dup.ctaStationId}|${dup.serviceDate}`, rides);
     }
     return kept;
 }
@@ -71,28 +70,27 @@ export function findDriftMonths(
     keptRides: ReadonlyMap<string, number>,
     knownCtaStationIds: ReadonlySet<string>,
 ): string[] {
-    const key = (ctaStationId: string, month: string) => `${ctaStationId}|${month}`;
-    const expected = new Map<string, { days: number; rides: number }>();
+    const expected = new Map<string, StationMonthTotal>();
     for (const u of upstream) {
-        if (knownCtaStationIds.has(u.ctaStationId)) expected.set(key(u.ctaStationId, u.month), { days: u.days, rides: u.rides });
+        if (knownCtaStationIds.has(u.ctaStationId)) expected.set(stationKey(u.ctaStationId, u.month), { ...u });
     }
     for (const dup of duplicates) {
-        const total = expected.get(key(dup.ctaStationId, monthOf(dup.serviceDate)));
+        const total = expected.get(stationKey(dup.ctaStationId, monthOf(dup.serviceDate)));
         if (total === undefined) continue;
         total.days -= dup.rows - 1;
-        total.rides -= dup.totalRides - (keptRides.get(`${dup.ctaStationId}|${dup.serviceDate}`) ?? dup.maxRides);
+        total.rides -= dup.totalRides - (keptRides.get(stationKey(dup.ctaStationId, dup.serviceDate)) ?? dup.maxRides);
     }
 
     const drift = new Set<string>();
     const storedKeys = new Set<string>();
     for (const s of stored) {
-        const k = key(s.ctaStationId, s.month);
-        storedKeys.add(k);
-        const want = expected.get(k);
+        const key = stationKey(s.ctaStationId, s.month);
+        storedKeys.add(key);
+        const want = expected.get(key);
         if (want === undefined || want.days !== s.days || want.rides !== s.rides) drift.add(s.month);
     }
-    for (const k of expected.keys()) {
-        if (!storedKeys.has(k)) drift.add(k.slice(k.indexOf("|") + 1));
+    for (const [key, want] of expected) {
+        if (!storedKeys.has(key)) drift.add(want.month);
     }
     return [...drift].sort();
 }
@@ -117,14 +115,10 @@ export async function reconcileMonths(
  * Splits the backlog into the months this run re-fetches, oldest first, and the months it carries.
  * Months the trailing window has just fetched in full are dropped.
  */
-export function planDriftFetches(
-    backlog: readonly string[],
-    window: DateWindow,
-    max = MAX_DRIFT_FETCHES,
-): { fetch: string[]; carry: string[] } {
+export function planDriftFetches(backlog: readonly string[], window: DateWindow): { fetch: string[]; carry: string[] } {
     const pending = [...new Set(backlog)].sort().filter((month) => {
         const range = monthRange(month);
         return !(range.start >= window.start && range.end <= window.end);
     });
-    return { fetch: pending.slice(0, max), carry: pending.slice(max) };
+    return { fetch: pending.slice(0, MAX_DRIFT_FETCHES), carry: pending.slice(MAX_DRIFT_FETCHES) };
 }

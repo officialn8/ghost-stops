@@ -43,5 +43,6 @@ describe("calendar helpers", () => {
         expect(() => monthChunks({ start: "2026-07-31", end: "2026-07-01" })).toThrow(/ends before it starts/);
         expect(() => monthRange("2026-13")).toThrow(/YYYY-MM/);
         expect(() => addDays("2026-02-30", 1)).toThrow(/YYYY-MM-DD/);
+        expect(() => addDays("2026-13-01", 1)).toThrow(/YYYY-MM-DD/);
     });
 });
