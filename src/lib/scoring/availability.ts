@@ -3,13 +3,21 @@
  * window it reads overlaps one of the station's closures or starts before the station opened; the
  * reason, with its dates, is what the "why this score" card shows in place of the number.
  *
- * Everything here is a pure function of the data-through date, the station's closures, and its
- * opening date, all of which are stored (StationMetrics.dataThrough, StationClosure,
- * Station.openedAt), so a reader can re-derive the reason for any persisted null percentile.
+ * Year-over-year is also set aside when a station next door closed or reopened across its two
+ * windows (Nate, 2026-10-03): a closure moves riders to the stations beside it, so the trailing 90
+ * days and the same days a year earlier no longer compare like with like. State/Lake's closure
+ * swells Washington/Wabash and Clark/Lake; Lawrence and Berwyn's reopening drains Argyle and Wilson.
+ * The 12-month and 2019 comparisons, which do not set a year against a year, are unaffected.
+ *
+ * Everything here is a pure function of the data-through date, the station's closures, its
+ * opening date, and its neighbors' closures, all of which are stored (StationMetrics.dataThrough,
+ * StationClosure, Station.openedAt, and the line sequences), so a reader can re-derive the reason
+ * for any persisted null percentile.
  */
+import { adjacentStations } from "@/lib/cta/sequences";
 import { addDays, type DateWindow } from "@/lib/sync/window";
 import type { PeerBasis } from "./peers";
-import { componentWindows, YEAR_2019, type ComponentKey } from "./windows";
+import { componentWindows, scoreWindows, YEAR_2019, type ComponentKey } from "./windows";
 
 /** A closed range: startDate up to, not including, endDate; endDate null while still closed. */
 export interface ClosureRange {
@@ -17,22 +25,44 @@ export interface ClosureRange {
     endDate: string | null;
 }
 
+/** A station next to this one on a line (`adjacentStations`), with its recorded closures. */
+export interface NeighborClosures {
+    ctaStationId: string;
+    closures: readonly ClosureRange[];
+}
+
 export interface AvailabilityContext {
     dataThrough: string;
     openedAt: string | null;
     closures: readonly ClosureRange[];
+    /** The station's neighbors that have closures (`neighborClosures`); only year-over-year reads them. */
+    neighbors: readonly NeighborClosures[];
 }
 
+/**
+ * Each reason's `availableFrom` is the first data-through date at which `windowBlock` returns null
+ * for the component, every rule counted, so it never names a date another rule still blocks: a
+ * station that reopened beside a closed one is told the later of the two.
+ */
 export type NullReason =
     /** The station is closed on the data-through date. */
     | { kind: "closed"; closedFrom: string }
-    /**
-     * The station reopened, but the component's windows still reach back into the closure.
-     * `availableFrom` is the first data-through date at which they no longer do.
-     */
+    /** The station reopened, but the component's windows still reach back into the closure. */
     | { kind: "reopened"; closedFrom: string; reopenedOn: string; availableFrom: string | null }
     /** The station opened after a window starts; `availableFrom` is null when that window never moves (2019). */
     | { kind: "new"; openedAt: string; availableFrom: string | null }
+    /**
+     * Year-over-year only: a station next door was open in one window and closed in the other, or
+     * closed for part of either. `date` is the change that did it, the closure's start ("closed")
+     * or the day service resumed ("reopened"), the latest such change at any neighbor.
+     */
+    | {
+          kind: "neighbor-closure";
+          neighborCtaStationId: string;
+          change: "closed" | "reopened";
+          date: string;
+          availableFrom: string | null;
+      }
     /** The windows are clear but hold no usable rows. */
     | { kind: "no-data" }
     /** The residual has no open station on the line to compare with. */
@@ -49,11 +79,23 @@ function blocksWindow(window: DateWindow, ctx: AvailabilityContext): boolean {
     return ctx.closures.some((c) => overlaps(window, c)) || (ctx.openedAt !== null && ctx.openedAt > window.start);
 }
 
+/**
+ * Whether `windowBlock` would rule the component out on `dataThrough`: a window holds one of the
+ * station's closures or starts before it opened, or, for year-over-year, a neighbor's closure
+ * changed across the two windows. For year-over-year, `ctx.neighbors` holds merged closures
+ * (`mergeNeighbors`).
+ */
 function isBlocked(component: ComponentKey, ctx: AvailabilityContext, dataThrough: string): boolean {
-    return componentWindows(component, dataThrough).some((w) => blocksWindow(w, ctx));
+    if (componentWindows(component, dataThrough).some((w) => blocksWindow(w, ctx))) return true;
+    return component === "yoy" && neighborChanges(ctx.neighbors, dataThrough).length > 0;
 }
 
-/** The first data-through date after `ctx.dataThrough` at which the component is no longer blocked. */
+/**
+ * The first data-through date after `ctx.dataThrough` at which `windowBlock` returns null for the
+ * component, every rule counted: the station's own closures and opening, and for year-over-year its
+ * neighbors' closures. Null when the 2019 window rules it out for good, or nothing clears it within
+ * the horizon. For year-over-year, `ctx.neighbors` holds merged closures (`mergeNeighbors`).
+ */
 function availableFrom(component: ComponentKey, ctx: AvailabilityContext): string | null {
     // The 2019 window never moves: a closure in it, or an opening after it starts, blocks for good.
     if (component === "longRun" && blocksWindow(YEAR_2019, ctx)) return null;
@@ -65,8 +107,107 @@ function availableFrom(component: ComponentKey, ctx: AvailabilityContext): strin
     return null;
 }
 
-/** Why the component's windows rule it out on `ctx.dataThrough`, or null when they do not. */
-export function windowBlock(component: ComponentKey, ctx: AvailabilityContext): NullReason | null {
+export type NeighborClosureReason = Extract<NullReason, { kind: "neighbor-closure" }>;
+
+/**
+ * The neighbors of the station with CTA id `ctaStationId` that have recorded closures, from every
+ * station's closures keyed by CTA id. Scoring and the why card both build a context with it.
+ */
+export function neighborClosures(
+    ctaStationId: string | null,
+    closuresByCta: ReadonlyMap<string, readonly ClosureRange[]>,
+): NeighborClosures[] {
+    if (ctaStationId === null) return [];
+    return adjacentStations(ctaStationId).flatMap((id) => {
+        const closures = closuresByCta.get(id);
+        return closures && closures.length > 0 ? [{ ctaStationId: id, closures }] : [];
+    });
+}
+
+/** Back-to-back or overlapping closures as one, so a window across the seam reads as closed throughout. */
+function mergeClosures(closures: readonly ClosureRange[]): ClosureRange[] {
+    const merged: ClosureRange[] = [];
+    for (const c of [...closures].sort((a, b) => (a.startDate < b.startDate ? -1 : 1))) {
+        const last = merged[merged.length - 1];
+        if (last && (last.endDate === null || c.startDate <= last.endDate)) {
+            if (last.endDate !== null && (c.endDate === null || c.endDate > last.endDate)) last.endDate = c.endDate;
+        } else {
+            merged.push({ ...c });
+        }
+    }
+    return merged;
+}
+
+type WindowState = "open" | "closed" | "part-closed";
+
+function stateIn(window: DateWindow, closures: readonly ClosureRange[]): WindowState {
+    const touching = closures.filter((c) => overlaps(window, c));
+    if (touching.length === 0) return "open";
+    const covers = (c: ClosureRange) => c.startDate <= window.start && (c.endDate === null || c.endDate > window.end);
+    return touching.some(covers) ? "closed" : "part-closed";
+}
+
+interface NeighborChange {
+    change: "closed" | "reopened";
+    date: string;
+}
+
+/**
+ * The change at a neighbor (merged closures) that sets year-over-year aside on `dataThrough`, or
+ * null: none when the neighbor is open throughout both windows or closed throughout both. A start
+ * or end date counts when the day before it and the day itself both fall between the year-ago
+ * window's start and the trailing window's end; the latest such date is named.
+ */
+function neighborChange(dataThrough: string, closures: readonly ClosureRange[]): NeighborChange | null {
+    const { trailing90, yearAgo90 } = scoreWindows(dataThrough);
+    const now = stateIn(trailing90, closures);
+    if (now !== "part-closed" && now === stateIn(yearAgo90, closures)) return null;
+    const inSpan = (date: string) => date > yearAgo90.start && date <= trailing90.end;
+    const changes = closures.flatMap((c): NeighborChange[] => [
+        ...(inSpan(c.startDate) ? [{ change: "closed" as const, date: c.startDate }] : []),
+        ...(c.endDate !== null && inSpan(c.endDate) ? [{ change: "reopened" as const, date: c.endDate }] : []),
+    ]);
+    return changes.reduce<NeighborChange | null>((latest, c) => (latest === null || c.date > latest.date ? c : latest), null);
+}
+
+/** Each neighbor's change that sets year-over-year aside on `dataThrough`, in neighbor order; `neighbors` merged. */
+function neighborChanges(neighbors: readonly NeighborClosures[], dataThrough: string): (NeighborChange & { ctaStationId: string })[] {
+    return neighbors.flatMap((n) => {
+        const change = neighborChange(dataThrough, n.closures);
+        return change ? [{ ctaStationId: n.ctaStationId, ...change }] : [];
+    });
+}
+
+/** The context with each neighbor's closures merged, once, for the rule and the day-by-day scan to read. */
+function mergeNeighbors(ctx: AvailabilityContext): AvailabilityContext {
+    return { ...ctx, neighbors: ctx.neighbors.map((n) => ({ ctaStationId: n.ctaStationId, closures: mergeClosures(n.closures) })) };
+}
+
+/** Why a closure next door sets year-over-year aside on `ctx.dataThrough`, or null when none does; `ctx` merged. */
+function neighborClosureBlock(ctx: AvailabilityContext): NeighborClosureReason | null {
+    // The latest change names the reason; on a tie, the neighbor first along the lines.
+    const latest = neighborChanges(ctx.neighbors, ctx.dataThrough).reduce<ReturnType<typeof neighborChanges>[number] | null>(
+        (best, c) => (best === null || c.date > best.date ? c : best),
+        null,
+    );
+    if (latest === null) return null;
+    return {
+        kind: "neighbor-closure",
+        neighborCtaStationId: latest.ctaStationId,
+        change: latest.change,
+        date: latest.date,
+        availableFrom: availableFrom("yoy", ctx),
+    };
+}
+
+/**
+ * Why the component's windows rule it out on `ctx.dataThrough`, or null when they do not. The
+ * station's own closures and opening come first; only then, for year-over-year, its neighbors'.
+ * Every reason's `availableFrom` is the first date this returns null, whichever rule holds it.
+ */
+export function windowBlock(component: ComponentKey, unmerged: AvailabilityContext): NullReason | null {
+    // Only year-over-year reads the neighbors; merge their closures once for every day it scans.
+    const ctx = component === "yoy" ? mergeNeighbors(unmerged) : unmerged;
     const windows = componentWindows(component, ctx.dataThrough);
     const closure = ctx.closures
         .filter((c) => windows.some((w) => overlaps(w, c)))
@@ -85,7 +226,7 @@ export function windowBlock(component: ComponentKey, ctx: AvailabilityContext): 
     if (ctx.openedAt !== null && windows.some((w) => ctx.openedAt! > w.start)) {
         return { kind: "new", openedAt: ctx.openedAt, availableFrom: availableFrom(component, ctx) };
     }
-    return null;
+    return component === "yoy" ? neighborClosureBlock(ctx) : null;
 }
 
 /**

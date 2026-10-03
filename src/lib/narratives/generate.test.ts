@@ -20,6 +20,7 @@ function station(overrides: Partial<NarrativeStationInput> = {}): NarrativeStati
     yoyChangePct: 1.5,
     vs2019Pct: -10,
     closure: null,
+    nearbyClosure: null,
     facts: {},
     ...overrides,
   };
@@ -155,6 +156,51 @@ describe("generateNarratives", () => {
     }
     expect(narrativeFor(station({ tier: "HEALTHY", yoyChangePct: 0.04 })).renderedStory).toContain("Test Station is holding its own.");
     expect(narrativeFor(station({ tier: "GHOST", yoyChangePct: -0.04 })).renderedStory).toContain("Test Station ranks as a ghost station.");
+  });
+
+  it("says a closure next door set year-over-year aside, without quoting a year-over-year number or an em dash", () => {
+    const YEAR_AGO = /same days a year earlier/;
+
+    // Washington/Wabash, healthy: the 2019 change still chooses the story, as with any unknown year over year.
+    const wabash = narrativeFor(
+      station({
+        name: "Washington/Wabash",
+        yoyChangePct: null,
+        vs2019Pct: -20,
+        nearbyClosure: { stationName: "State/Lake", change: "closed", date: "2026-01-05" },
+      }),
+    );
+    expect(wabash.archetypeKey).toBe("stable");
+    expect(wabash.renderedStory).toBe(
+      "Washington/Wabash is holding its own. Over the last 12 months it averaged **2,000** riders a day.\n\n" +
+        "State/Lake, next door, closed in January 2026, so this year's numbers are not yet comparable with last year's. " +
+        "Its 12-month average is a **-20%** change from 2019, still below its pre-pandemic level.",
+    );
+    expect(wabash.evidenceMeta.metrics.yoyChangePct).toBeNull();
+
+    const growing = narrativeFor(
+      station({ name: "Bryn Mawr", yoyChangePct: null, vs2019Pct: 6, nearbyClosure: { stationName: "Berwyn", change: "reopened", date: "2025-07-20" } }),
+    );
+    expect(growing.archetypeKey).toBe("growth");
+    expect(growing.renderedStory).toContain(
+      "Berwyn, next door, reopened in July 2025, so this year's numbers are not yet comparable with last year's.",
+    );
+
+    // A fact archetype tells it in place of its year-over-year sentence.
+    const ghost = narrativeFor({
+      ...SEVENTY_PERCENT_DECLINE,
+      yoyChangePct: null,
+      nearbyClosure: { stationName: "Lawrence", change: "reopened", date: "2025-07-20" },
+    });
+    expect(ghost.archetypeKey).toBe("suburban_shift");
+    expect(ghost.renderedStory).toMatch(/Lawrence, next door, reopened in July 2025, so this year's numbers are not yet comparable with last year's\.$/);
+
+    for (const row of [wabash, growing, ghost]) {
+      expect(row.renderedStory).not.toMatch(YEAR_AGO);
+      expect(row.renderedStory).not.toContain("\u2014");
+    }
+    // Without a closure next door, nothing is said about one.
+    expect(narrativeFor(station({ yoyChangePct: null, vs2019Pct: -20 })).renderedStory).not.toMatch(/next door/);
   });
 
   it("tells a ghost station with falling riders and no long-run facts that it is losing riders", () => {

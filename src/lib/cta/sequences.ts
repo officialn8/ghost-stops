@@ -320,6 +320,47 @@ export function neighborsOnLine(ctaStationId: string, line: CTALine): LineNeighb
     };
 }
 
+/** A station's immediate neighbors from `neighborsOnLine`, line by line in canonical order, the side before first. */
+function listedNeighbors(ctaStationId: string): string[] {
+    return linesForStation(ctaStationId).flatMap((line) => {
+        const neighbors = neighborsOnLine(ctaStationId, line);
+        return neighbors ? [...neighbors.prev, ...neighbors.next] : [];
+    });
+}
+
+let adjacency: ReadonlyMap<string, readonly string[]> | undefined;
+
+/** Every station's adjacent stations, built once from the branches and junctions. */
+function adjacencyMap(): ReadonlyMap<string, readonly string[]> {
+    if (adjacency) return adjacency;
+    const ids = [...new Set(LINE_BRANCHES.flatMap((b) => b.stations))];
+    const sets = new Map(ids.map((id) => [id, new Set(listedNeighbors(id).filter((n) => n !== id))]));
+    // A Loop entry is listed one way only: Merchandise Mart's next is Washington/Wells, but a ring
+    // station's neighbors are the ring's. So every station also gets each station that lists it,
+    // after its own neighbors, line by line.
+    for (const line of CTA_LINE_ORDER) {
+        for (const id of ids) {
+            const neighbors = neighborsOnLine(id, line);
+            for (const n of neighbors ? [...neighbors.prev, ...neighbors.next] : []) {
+                if (n !== id) sets.get(n)?.add(id);
+            }
+        }
+    }
+    adjacency = new Map([...sets].map(([id, set]) => [id, [...set]]));
+    return adjacency;
+}
+
+/**
+ * The stations next to one on every line that serves it, each once: its immediate neighbors from
+ * `neighborsOnLine`, line by line in canonical order, the side before first, then any station that
+ * lists it as a neighbor but that it does not list, line by line, so the relation is symmetric. A
+ * junction or a Loop entry can put more than one on a side (Garfield's are 51st, Halsted, and King
+ * Drive; Washington/Wells gains Merchandise Mart and Clinton, whose trains enter the Loop there).
+ */
+export function adjacentStations(ctaStationId: string): string[] {
+    return [...(adjacencyMap().get(ctaStationId) ?? [])];
+}
+
 /** A station is a terminal of a line when the line's track ends there. */
 export function isTerminalOnLine(ctaStationId: string, line: CTALine): boolean {
     const neighbors = neighborsOnLine(ctaStationId, line);

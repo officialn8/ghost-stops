@@ -1,10 +1,9 @@
 import { describe, expect, it } from "vitest";
 import type { NarrativeStationRecord } from "@/lib/narratives/generate";
-import type { StationMetricsRow } from "./baseMetrics";
-import { narrativeInputs } from "./run";
+import { narrativeInputs, type ComputedStationMetrics } from "./run";
 import type { StationStatusRow } from "./status";
 
-function metricsRow(stationId: string, overrides: Partial<StationMetricsRow> = {}): StationMetricsRow {
+function metricsRow(stationId: string, overrides: Partial<ComputedStationMetrics> = {}): ComputedStationMetrics {
     return {
         stationId,
         serviceDateMax: "2026-07-31",
@@ -29,6 +28,7 @@ function metricsRow(stationId: string, overrides: Partial<StationMetricsRow> = {
         vs2019Pct: -12,
         weekdayAvg: 480,
         weekendAvg: 300,
+        yoyNeighborClosure: null,
         ...overrides,
     };
 }
@@ -79,8 +79,61 @@ describe("narrativeInputs", () => {
             yoyChangePct: 2.5,
             vs2019Pct: -12,
             closure: null,
+            nearbyClosure: null,
             facts: { ridership_2001_avg: { value: 1200, quality: "HIGH" } },
         });
+    });
+
+    it("hands on the closure next door that set year-over-year aside, naming the neighbor by its display name", () => {
+        const inputs = narrativeInputs(
+            [
+                record("wabash", { ctaStationId: "41700", name: "Washington/Wabash" }),
+                record("state-lake", { ctaStationId: "40260", name: "State/Lake", closures: [REBUILD] }),
+            ],
+            [
+                metricsRow("wabash", {
+                    yoyPct: null,
+                    yoyChangePct: null,
+                    yoyNeighborClosure: {
+                        kind: "neighbor-closure",
+                        neighborCtaStationId: "40260",
+                        change: "closed",
+                        date: "2026-01-05",
+                        availableFrom: "2027-04-04",
+                    },
+                }),
+            ],
+            [{ stationId: "wabash", status: "ACTIVE", closedAt: null }],
+        );
+
+        expect(inputs).toHaveLength(1);
+        expect(inputs[0]).toMatchObject({
+            stationId: "wabash",
+            yoyChangePct: null,
+            closure: null,
+            nearbyClosure: { stationName: "State/Lake", change: "closed", date: "2026-01-05" },
+        });
+    });
+
+    it("leaves the closure next door unsaid when no station record carries the neighbor's CTA id", () => {
+        const [input] = narrativeInputs(
+            [record("wabash", { ctaStationId: "41700", name: "Washington/Wabash" })],
+            [
+                metricsRow("wabash", {
+                    yoyPct: null,
+                    yoyChangePct: null,
+                    yoyNeighborClosure: {
+                        kind: "neighbor-closure",
+                        neighborCtaStationId: "99999",
+                        change: "closed",
+                        date: "2026-01-05",
+                        availableFrom: "2027-04-04",
+                    },
+                }),
+            ],
+            [{ stationId: "wabash", status: "ACTIVE", closedAt: null }],
+        );
+        expect(input).toMatchObject({ stationId: "wabash", yoyChangePct: null, nearbyClosure: null });
     });
 
     it("marks an open station with no recent riders unranked", () => {

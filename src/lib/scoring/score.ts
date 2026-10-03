@@ -10,11 +10,17 @@
  *
  * Ranked stations are those `isRanked` admits: open, with riders in recent data. Every other
  * station still gets its raw inputs, but no percentile, tier, or rank.
+ *
+ * A component is unknown when its windows overlap the station's closures or predate its opening,
+ * and year-over-year also when a station next door closed or reopened across its two windows
+ * (./availability.ts). The neighbors' closures come from the same inputs: every scored station
+ * carries its own, keyed here by CTA id, so a neighbor with no metrics row (never any riders)
+ * counts as open.
  */
 import type { ScoreTier, StationStatus } from "@prisma/client";
 import { getTier, type ScoreTierName } from "@/lib/utils";
 import type { StationBadge } from "@/types/station";
-import { missingDataReason, windowBlock, type ClosureRange, type NullReason } from "./availability";
+import { missingDataReason, neighborClosures, windowBlock, type ClosureRange, type NullReason } from "./availability";
 import { erraticness, residualLog, vs2019Pct, yoyChangePct, type WindowSummary } from "./components";
 import { selectPeers, type PeerBasis, type PeerCandidate, type PeerSet } from "./peers";
 import { midrankPercentiles } from "./percentile";
@@ -125,9 +131,14 @@ export function smallStationBadge(fields: {
 /** Scores every station, returning one result per input in input order. Pure. */
 export function scoreStations(dataThrough: string, stations: readonly StationScoreInput[]): StationScore[] {
     const ranked = stations.map((s) => isRanked(s.status, s.dataStatus));
-    const blocks = stations.map((s) =>
-        byComponent((k) => windowBlock(k, { dataThrough, openedAt: s.openedAt, closures: s.closures })),
-    );
+    const closuresByCta = new Map<string, ClosureRange[]>();
+    for (const s of stations) {
+        if (s.ctaStationId !== null) closuresByCta.set(s.ctaStationId, [...(closuresByCta.get(s.ctaStationId) ?? []), ...s.closures]);
+    }
+    const blocks = stations.map((s) => {
+        const ctx = { dataThrough, openedAt: s.openedAt, closures: s.closures, neighbors: neighborClosures(s.ctaStationId, closuresByCta) };
+        return byComponent((k) => windowBlock(k, ctx));
+    });
 
     // Peers are ranked stations whose own 12-month window is clear of closures and of their opening.
     const eligible = new Map<string, PeerCandidate>();

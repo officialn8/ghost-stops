@@ -23,6 +23,9 @@ const STATE_LAKE = "40260";
 const LASALLE_VAN_BUREN = "40160";
 const CLARK_LAKE = "40380";
 const DAMEN_GREEN = "41710";
+const WILSON = "40540";
+const ARGYLE = "41200";
+const WASHINGTON_WABASH = "41700";
 
 const window = (overrides: Partial<WindowSummary> = {}): WindowSummary => ({
     weekdayDays: 64,
@@ -120,11 +123,38 @@ describe("scoreStations on the fixture", () => {
     });
 
     it("persists the trailing weekday and weekend averages and the raw changes", () => {
-        const columns = scoreColumns(byCta("40540")); // Wilson
-        expect(columns.weekdayAvg).toBe(4_836.34);
-        expect(columns.weekendAvg).toBe(3_176.85);
-        expect(columns.yoyChangePct).toBeCloseTo(((5 * 4_836.34 + 2 * 3_176.85) / (5 * 5_826.38 + 2 * 4_095.36) - 1) * 100, 10);
-        expect(columns.vs2019Pct).toBeCloseTo((4_514.26 / 5_598.32 - 1) * 100, 10);
+        const logan = scoreColumns(byCta("41020")); // Logan Square
+        expect(logan.weekdayAvg).toBe(4_797.52);
+        expect(logan.weekendAvg).toBe(3_320.08);
+        expect(logan.yoyChangePct).toBeCloseTo(((5 * 4_797.52 + 2 * 3_320.08) / (5 * 4_276.57 + 2 * 2_892.64) - 1) * 100, 10);
+        expect(logan.vs2019Pct).toBeCloseTo((4_022.58 / 6_196.48 - 1) * 100, 10);
+
+        // Wilson keeps its trailing averages and 2019 change; its year-over-year is set aside (below).
+        const wilson = scoreColumns(byCta("40540"));
+        expect(wilson.weekdayAvg).toBe(4_836.34);
+        expect(wilson.weekendAvg).toBe(3_176.85);
+        expect(wilson.yoyChangePct).toBeNull();
+        expect(wilson.vs2019Pct).toBeCloseTo((4_514.26 / 5_598.32 - 1) * 100, 10);
+    });
+
+    it("sets aside year-over-year next to a closure: Lawrence's reopening for Wilson and Argyle, State/Lake's closing for its neighbors", () => {
+        const reopened = { kind: "neighbor-closure", neighborCtaStationId: LAWRENCE, change: "reopened", date: "2025-07-20", availableFrom: "2026-10-17" };
+        const closed = { kind: "neighbor-closure", neighborCtaStationId: STATE_LAKE, change: "closed", date: "2026-01-05", availableFrom: "2027-04-04" };
+        // Argyle's other neighbor, Berwyn, is not in the fixture, so Lawrence names it.
+        const expected: [string, object][] = [
+            [WILSON, reopened],
+            [ARGYLE, reopened],
+            [WASHINGTON_WABASH, closed],
+            [CLARK_LAKE, closed],
+        ];
+        for (const [cta, nullReason] of expected) {
+            const s = byCta(cta);
+            expect(s.components.yoy, cta).toEqual({ raw: null, pct: null, nullReason });
+            expect(s.yoyChangePct, cta).toBeNull();
+            expect(s.components.residual.raw, cta).not.toBeNull();
+        }
+        const setAside = scored.filter((s) => s.components.yoy.nullReason?.kind === "neighbor-closure");
+        expect(setAside.map((s) => inputs[scored.indexOf(s)].ctaStationId).sort()).toEqual([CLARK_LAKE, WILSON, ARGYLE, WASHINGTON_WABASH].sort());
     });
 
     it.each(fixture.stations.filter((s) => "expected" in s).map((s) => [s.name, s] as const))(
@@ -223,6 +253,57 @@ describe("scoreStations at the edges", () => {
         expect(scores[2]).toMatchObject({ rank: 1, score: 100, tier: "GHOST" });
         expect(scores[2].components.residual.pct).toBe(100);
         expect(scores[2].components.yoy.pct).toBe(100);
+    });
+});
+
+describe("scoreStations beside a closure", () => {
+    // Five Green Line stations in a row; Oak Park, second, was closed until 2025-07-01, inside the
+    // year-ago window (2025-05-03 to 2025-07-31) of data through 2026-07-31.
+    const OAK_PARK_REOPENED = [{ startDate: "2025-01-01", endDate: "2025-07-01" }];
+    const line = (oakParkClosures: { startDate: string; endDate: string | null }[]) =>
+        scoreStations("2026-07-31", [
+            station("40020", { avg12m: 900, trailing: window({ weekdayAvg: 900, weekendAvg: 540 }) }), // Harlem/Lake
+            station("41350", { avg12m: 1_100, closures: oakParkClosures }), // Oak Park (Green)
+            station("40610", { avg12m: 700, avg2019: 1_500, trailing: window({ weekdayAvg: 1_300, weekendAvg: 780 }) }), // Ridgeland
+            station("41260", { avg12m: 2_000, trailing: window({ weekdayAvg: 800, weekendAvg: 480 }) }), // Austin (Green)
+            station("40280", { avg12m: 1_500, trailing: window({ weekdayAvg: 1_050, weekendAvg: 630 }) }), // Central (Green)
+        ]);
+    const scores = line(OAK_PARK_REOPENED);
+
+    it("sets the outer stations' year-over-year aside and counts it as the median in the composite", () => {
+        const reason = { kind: "neighbor-closure", neighborCtaStationId: "41350", change: "reopened", date: "2025-07-01", availableFrom: "2026-09-28" };
+        for (const i of [0, 2]) {
+            const s = scores[i];
+            expect(s.components.yoy).toEqual({ raw: null, pct: null, nullReason: reason });
+            expect(scoreColumns(s)).toMatchObject({ yoyPct: null, yoyChangePct: null });
+            const { residual, longRun, erratic } = s.components;
+            expect(s.composite).toBeCloseTo(
+                COMPONENT_WEIGHTS.residual * residual.pct! +
+                    COMPONENT_WEIGHTS.yoy * 50 +
+                    COMPONENT_WEIGHTS.longRun * longRun.pct! +
+                    COMPONENT_WEIGHTS.erratic * erratic.pct!,
+                10,
+            );
+        }
+        // Oak Park's own reopening keeps its own reason.
+        expect(scores[1].components.yoy.nullReason).toMatchObject({ kind: "reopened", reopenedOn: "2025-07-01" });
+        // Austin and Central, not next to Oak Park, keep theirs, ranked between themselves.
+        expect([scores[3].components.yoy.pct, scores[4].components.yoy.pct]).toEqual([100, 0]);
+    });
+
+    it("ranks every station once, contiguously", () => {
+        expect(scores.map((s) => s.rank).sort()).toEqual([1, 2, 3, 4, 5]);
+        expect(scores.every((s) => s.ranked && s.rankedCount === 5)).toBe(true);
+    });
+
+    it("changes year-over-year only: peers, the residual, the 2019 change, and erraticness are as without the closure", () => {
+        const open = line([{ startDate: "2020-01-01", endDate: "2020-06-01" }]);
+        expect(open[0].components.yoy.nullReason).toBeNull();
+        expect(open[2].components.yoy.nullReason).toBeNull();
+        scores.forEach((s, i) => {
+            expect(s.peers).toEqual(open[i].peers);
+            for (const k of ["residual", "longRun", "erratic"] as const) expect(s.components[k], `${i} ${k}`).toEqual(open[i].components[k]);
+        });
     });
 });
 

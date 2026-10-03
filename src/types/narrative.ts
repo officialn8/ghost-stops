@@ -141,6 +141,18 @@ export interface NarrativeClosure {
 }
 
 /**
+ * A closure or reopening next door that set the station's year-over-year aside (score v2): riders
+ * moved between the two stations, so this year does not compare with last.
+ */
+export interface NarrativeNearbyClosure {
+  /** The neighbor's display name. */
+  stationName: string;
+  change: "closed" | "reopened";
+  /** YYYY-MM-DD: the day it closed, or the day service resumed. */
+  date: string;
+}
+
+/**
  * What a template is rendered from: a station's facts and the numbers its score card shows, so
  * the story and the card quote the same figures.
  */
@@ -155,6 +167,8 @@ export interface NarrativeContext {
   tier: NarrativeTier | null;
   badge: StationBadge | null;
   closure: NarrativeClosure | null;
+  /** Set when a closure next door set year-over-year aside, so `yoyChangePct` is null. */
+  nearbyClosure: NarrativeNearbyClosure | null;
 }
 
 // ═══════════════════════════════════════════════════════════════

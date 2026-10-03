@@ -769,7 +769,10 @@ Same connection as section 6.1 (the runtime role over production's pooled host),
    nothing else; then run it without `--dry-run`, and a second run reports 0 changes.
 2. Merge the Phase 3 PR and wait for the production deployment.
 3. Run the sync once: `npx tsx scripts/run-sync.ts`. Expect status OK, `narrativesWritten` 144,
-   `narrativesRejected` 0.
+   `narrativesRejected` 0. The local runner does not revalidate the `stations` cache tag (only the
+   cron route does), so `/api/chicago/stations` keeps any payload cached before this run for up to
+   an hour. Invalidate the tag in Vercel (Project, Settings, Caches, or the API's invalidate-by-tags
+   with tag `stations`, target production), then request the route twice.
 4. Verify against section 7.2: the tier counts, the top and bottom 15, all 144 narratives v2 with
    matching `dataThrough`, Logan Square's story reading as growth, and no em dash in any story.
 5. Live site: `/api/chicago/stations` returns 144 stations with `dataThrough` "2026-07-31";
@@ -828,3 +831,40 @@ stations get growth or stability stories.
   come back on their own. Restore the step 0 snapshot (or Neon instant restore within six hours) if
   they must.
 - **Opening dates:** harmless to every version of the code; leave them.
+
+### 7.4 Go-live record (2026-10-03, run by the agent on Nate's "merge and go live")
+
+All against production (`br-floral-rain-aeynqoma`) as the runtime role over the pooled host.
+
+| Step | UTC | Result |
+|---|---|---|
+| 0. Baseline and snapshot | 19:56 | 1,316,974 rows to 2026-07-31, 144 stations; 144 metrics rows all `scoreVersion` 1; no `openedAt`; 143 narratives without `dataThrough`. Snapshot `pre-u12-score-v2-2026-10-03` (`snap-silent-sun-ae789rxc`) |
+| 1. Seed | 19:56 | dry run exactly six `openedAt` updates; applied; a second run 0 changes |
+| 2. Merge and deploy | 19:56:58 to 19:58 | officialn8/ghost-stops#4 merged as `77d11da` with all five checks green; deployment `dpl_F5xVNsQfUcEjHH5SeQdQ2AdmZAcY` live by 19:58:33 |
+| 3. Sync | 19:58:37 | OK in 3.4 s; fetched 8,784, inserted 0, revised 0; 144 narratives written, 0 rejected |
+| 4. Verification | 19:59 | every station's rank, score, tier and component percentiles identical to the rehearsal (section 7.2); ghost 15, fading 22, quiet 35, healthy 71, State/Lake unranked; 144 of 144 narratives v2 with matching `dataThrough`; no em dash; Logan Square growth, State/Lake closed, O'Hare airport |
+| 5. Live site | 20:00 | `/api/health` 200; the list served the payload cached by the deploy check (no tiers, last fetch 16:06) until the `stations` tag was invalidated, then 143 ranked stations led by Oak Park (Green); Logan Square by slug and uuid 200, unknown slug 404; Lawrence's year-over-year chip "available from Oct 2026"; Washington/Wabash keeps v1 `neighbors.prev` null with State/Lake CLOSED in `lineNeighbors`; 30 of 30 concurrent detail requests 200; `stations-raw` 200; the map's list and Oak Park's panel render v2 scores and the v2 narrative with no console errors |
+
+
+### 7.5 Follow-up: year-over-year set aside beside a closure (2026-10-03)
+
+Nate's decision: a closure at an adjacent station sets a station's year-over-year aside, as its own
+closure does, because the closure moves riders between the two (State/Lake's closure swelled
+Washington/Wabash +47% and Clark/Lake +25%; Lawrence and Berwyn's reopening drained Argyle -24%
+and Wilson -13%). The 12-month and 2019 comparisons are unchanged. No schema or seed change.
+
+Go-live: merge and wait for the deploy, run `npx tsx scripts/run-sync.ts` (expect OK, 144
+narratives, 0 rejected), invalidate the `stations` cache tag as in section 7.1 step 3, and check
+that Washington/Wabash, Clark/Lake, Wilson, Argyle and Bryn Mawr carry `yoyPct` null with the
+neighbor-closure reason. Until that run, the why card keeps showing the stored year-over-year
+number, so no page contradicts itself.
+
+Rehearsal on `rehearsal-neighbor-closures` (`br-broad-bread-aeyjqsxp`, a copy of production taken
+at 20:22 UTC), at the reviewed commit:
+
+| Check | Result |
+|---|---|
+| Daily run | OK in 4.9 s; 144 narratives written, 0 rejected; a re-run after the review fixes gave identical scores |
+| Year-over-year set aside | Washington/Wabash and Clark/Lake (State/Lake closed 2026-01-05, comparable again from 2027-04-04); Wilson, Argyle and Bryn Mawr (Lawrence and Berwyn reopened 2025-07-20, from 2026-10-17) |
+| Ranks | 84 stations moved; big moves Argyle 66 to 98 (quiet to healthy), Bryn Mawr 126 to 99, Wilson 104 to 129, Clark/Lake 137 to 118, Washington/Wabash 140 to 127; Clark/Division 49 to 50 crosses into quiet; every other station moved at most three places |
+| Stories | e.g. Wilson: "Lawrence, next door, reopened in July 2025, so this year's numbers are not yet comparable with last year's."; no em dash |

@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import { resolveSlugAlias } from "@/lib/cta/slug";
-import { getPrimaryLine, primaryLineNeighbors } from "@/lib/cta/sequences";
+import { adjacentStations, getPrimaryLine, primaryLineNeighbors } from "@/lib/cta/sequences";
 import { formatValue, getArchetypeInfo, getFactLabel } from "@/lib/narratives";
 import { mean, median } from "@/lib/scoring/components";
 import { SCORE_VERSION } from "@/lib/scoring/score";
@@ -83,6 +83,8 @@ export async function GET(
     type Neighbor = { ranked: true; entry: RankedNeighborEntry } | { ranked: false; entry: NeighborEntry };
     const neighborIds = station.ctaStationId ? primaryLineNeighbors(station.ctaStationId, stationLines) : null;
     const neighborCtaIds = [neighborIds?.prev, neighborIds?.next].filter((id): id is string => !!id);
+    // Every station next door on any line: a closure at one sets the why card's year-over-year aside.
+    const adjacentCtaIds = station.ctaStationId ? adjacentStations(station.ctaStationId) : [];
 
     // Peer comparisons (average, percentile, medians) use ranked stations only, the isRanked rule:
     // closed State/Lake's metrics row reports 0 riders and would drag every comparison down.
@@ -98,6 +100,7 @@ export async function GET(
       facts,
       narrative,
       peerStations,
+      stationsNextDoor,
       freshness,
     ] = await Promise.all([
       // The last 91 days of the station's data, reaching back to the score's 90 days if they start earlier
@@ -159,6 +162,13 @@ export async function GET(
         ? prisma.station.findMany({
             where: { id: { in: peerRecord.stationIds } },
             select: { id: true, slug: true, name: true, displayName: true },
+          })
+        : Promise.resolve([]),
+      // Those stations with their recorded closures: a handful of rows at most.
+      adjacentCtaIds.length > 0
+        ? prisma.station.findMany({
+            where: { cityId: station.cityId, ctaStationId: { in: adjacentCtaIds } },
+            select: { ctaStationId: true, name: true, displayName: true, closures: { select: { startDate: true, endDate: true } } },
           })
         : Promise.resolve([]),
       readFreshness(prisma),
@@ -372,6 +382,17 @@ export async function GET(
       trend = ((rolling30d - rolling90d) / rolling90d) * 100;
     }
 
+    // The closures next door, one entry per station, for the why card's year-over-year row.
+    const neighborClosures = stationsNextDoor.flatMap((s) =>
+      s.ctaStationId === null
+        ? []
+        : [{
+            ctaStationId: s.ctaStationId,
+            displayName: s.displayName ?? s.name,
+            closures: s.closures.map((c) => ({ startDate: toDay(c.startDate), endDate: optionalDay(c.endDate) })),
+          }]
+    );
+
     // The why card needs score v2 metrics, which carry the date they were computed for. A v1 row
     // that a Phase 2 sync stamped with dataThrough still holds the v1 score and no v2 columns.
     const m = station.metrics;
@@ -382,6 +403,8 @@ export async function GET(
           closedAt: optionalDay(station.closedAt),
           openedAt: optionalDay(station.openedAt),
           closures: station.closures.map(c => ({ startDate: toDay(c.startDate), endDate: optionalDay(c.endDate) })),
+          ctaStationId: station.ctaStationId,
+          neighborClosures,
           metrics: {
             ghostScore: m.ghostScore,
             dataStatus: m.dataStatus,

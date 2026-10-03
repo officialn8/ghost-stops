@@ -22,9 +22,11 @@ import {
     type NarrativeStationInput,
     type NarrativeStationRecord,
 } from "@/lib/narratives/generate";
+import type { NeighborClosureReason } from "@/lib/scoring/availability";
 import { summarizeWindow } from "@/lib/scoring/components";
 import { scoreColumns, scoreStations, smallStationBadge, type StationScoreInput } from "@/lib/scoring/score";
 import { readScoreWindows } from "@/lib/scoring/windows";
+import type { NarrativeNearbyClosure } from "@/types/narrative";
 import {
     computeBaseMetrics,
     isRanked,
@@ -82,6 +84,13 @@ export interface SyncSummary {
 }
 
 /**
+ * A station's metrics row as scoring computed it, with one thing the row does not store: the
+ * closure next door that set its year-over-year aside, if one did, which the narrative mentions.
+ * The metrics write names its columns (`jsonb_to_recordset`), so it ignores the extra field.
+ */
+export type ComputedStationMetrics = StationMetricsRow & { yoyNeighborClosure: NeighborClosureReason | null };
+
+/**
  * Every station's metrics row for `dataThrough`: base metrics and score v2, computed from reads
  * alone. Stations with no ridership at all get no row. `statuses` are this run's derived statuses,
  * which decide who is ranked; a run passes their pending read, so it overlaps the metric reads.
@@ -92,7 +101,7 @@ export async function computeStationMetrics(
     dataThrough: string,
     statuses: readonly StationStatusRow[] | Promise<readonly StationStatusRow[]>,
     score: typeof scoreStations = scoreStations,
-): Promise<StationMetricsRow[]> {
+): Promise<ComputedStationMetrics[]> {
     const [inputs, windows, statusRows] = await Promise.all([
         readBaseMetricInputs(db, cityId, dataThrough),
         readScoreWindows(db, cityId, dataThrough),
@@ -122,22 +131,29 @@ export async function computeStationMetrics(
     return metrics.map((m) => {
         const s = scores.get(m.stationId);
         if (!s) throw new Error(`Scoring returned no score for station ${m.stationId}`);
-        return { ...m, ...scoreColumns(s) };
+        const yoyReason = s.components.yoy.nullReason;
+        return { ...m, ...scoreColumns(s), yoyNeighborClosure: yoyReason?.kind === "neighbor-closure" ? yoyReason : null };
     });
 }
 
 /**
  * The narrative job's input for every station with metrics: score v2's numbers handed over as
  * plain data, so neither scoring nor narratives imports the other (KTD21), with the station's
- * facts, its closures, and this run's status.
+ * facts, its closures, this run's status, and the closure next door, named, that set its
+ * year-over-year aside. A neighbor with no record (none in the city) leaves that unsaid.
  */
 export function narrativeInputs(
     stations: readonly NarrativeStationRecord[],
-    metrics: readonly StationMetricsRow[],
+    metrics: readonly ComputedStationMetrics[],
     statuses: readonly StationStatusRow[],
 ): NarrativeStationInput[] {
     const stationById = new Map(stations.map((s) => [s.stationId, s]));
     const statusById = new Map(statuses.map((s) => [s.stationId, s]));
+    const nameByCtaId = new Map(stations.flatMap((s) => (s.ctaStationId === null ? [] : [[s.ctaStationId, s.name] as const])));
+    const nearbyClosure = ({ yoyNeighborClosure: reason }: ComputedStationMetrics): NarrativeNearbyClosure | null => {
+        const stationName = reason && nameByCtaId.get(reason.neighborCtaStationId);
+        return reason && stationName ? { stationName, change: reason.change, date: reason.date } : null;
+    };
     return metrics.map((m) => {
         const station = stationById.get(m.stationId);
         const status = statusById.get(m.stationId);
@@ -155,6 +171,7 @@ export function narrativeInputs(
             yoyChangePct: m.yoyChangePct,
             vs2019Pct: m.vs2019Pct,
             closure: status.closedAt === null ? null : (station.closures.find((c) => c.startDate === status.closedAt) ?? null),
+            nearbyClosure: nearbyClosure(m),
             facts: station.facts,
         };
     });

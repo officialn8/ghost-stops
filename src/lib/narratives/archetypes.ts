@@ -60,8 +60,14 @@ const LONG_RUN =
 
 const TODAY = "{{#if has_today}}Over the last 12 months it averaged **{{today_avg|number}}** riders a day.{{/if}}";
 
+/**
+ * The year-over-year change, or, when a closure next door set it aside, why there is none: the
+ * riders it moved make this year incomparable with last.
+ */
 const YEAR_OVER_YEAR =
-  "{{#if has_yoy}}The last 90 days show a **{{yoy_change|change}}** change from the same days a year earlier.{{/if}}";
+  "{{#if has_yoy}}The last 90 days show a **{{yoy_change|change}}** change from the same days a year earlier." +
+  "{{else}}{{#if nearby_station}}{{nearby_station}}, next door, {{nearby_change}} in {{nearby_month}}, " +
+  "so this year's numbers are not yet comparable with last year's.{{/if}}{{/if}}";
 
 const VS_2019 =
   "{{#if has_vs2019}}Its 12-month average is a **{{vs2019_change|change}}** change from 2019{{vs2019_clause}}.{{/if}}";
