@@ -14,7 +14,6 @@
     "test:db": "vitest run --project db",
     "test:watch": "vitest --project unit",
     "migrate:data": "tsx scripts/migrate-to-postgres.ts",
-    "db:push": "prisma db push",
     "db:generate": "prisma generate",
     "tracks:reconcile": "tsx scripts/reconcile-track-segments.ts public/data/cta/chicago_track_segments.geojson"
   },

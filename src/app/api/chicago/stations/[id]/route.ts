@@ -1,10 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
-import { PrismaClient } from "@prisma/client";
+import { prisma } from "@/lib/prisma";
 import { findNeighbors, getPrimaryLine } from "@/lib/cta/stationSequences";
 import { formatValue, ARCHETYPE_TITLES, ARCHETYPE_EMOJIS } from "@/lib/narratives";
 import type { FactKey, ArchetypeKey } from "@/types/narrative";
-
-const prisma = new PrismaClient();
 
 // Helper to calculate median from an array of numbers
 function calculateMedian(values: number[]): number {
@@ -418,7 +416,5 @@ export async function GET(
     return NextResponse.json({
       error: "Failed to fetch station details"
     }, { status: 500 });
-  } finally {
-    await prisma.$disconnect();
   }
 }
