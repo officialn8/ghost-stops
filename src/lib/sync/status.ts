@@ -2,7 +2,7 @@
  * Station.status and closedAt, recomputed on every run from the StationClosure rows (KTD9), so a
  * closure that starts or ends changes the status without anyone re-running the seed.
  */
-import type { Prisma, PrismaClient, StationStatus } from "@prisma/client";
+import type { Prisma, PrismaClient, StationStatus } from "@/generated/prisma/client";
 import { deriveStatus } from "@/lib/cta/closures";
 import { toDay } from "./window";
 

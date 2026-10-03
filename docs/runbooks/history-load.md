@@ -19,10 +19,15 @@ Migrations, the seed, and the load run from an operator machine as the database 
 - Get the owner string from the Neon console or the Neon connector's `get_connection_string`
   with `role_name: neondb_owner` and the target branch. Never paste it into a file, a commit,
   or a chat; export it in the shell only.
-- Set **both** variables. The schema's `directUrl` reads `DATABASE_URL_UNPOOLED`, and
-  `prisma validate`, `migrate deploy`, and `migrate diff` fail without it.
-- The repo's `.env` points `DATABASE_URL` at the local SQLite snapshot and Prisma loads it
-  automatically, so always export both variables explicitly in the shell that runs a command.
+- Set **both** variables. The Prisma CLI (`migrate deploy`, `migrate diff`, `migrate status`)
+  reads `DATABASE_URL_UNPOOLED` from `prisma.config.ts`; the seed, the local runner, and the app
+  read `DATABASE_URL` through `src/lib/prisma.ts`.
+- Since Prisma 7 (plan U15) nothing loads `.env` for these commands, and the repo's `.env` still
+  points `DATABASE_URL` at the old SQLite file. Always export both variables explicitly in the
+  shell that runs a command.
+- Prisma 7 removed `migrate diff --from-url` and `--to-schema-datamodel`. The drift check that
+  section 3.1 shows with the old flags is now
+  `npx prisma migrate diff --from-config-datasource --to-schema prisma/schema.prisma --exit-code`.
 
 ```bash
 export DATABASE_URL='<neondb_owner direct URL for the target branch>'
@@ -868,3 +873,12 @@ at 20:22 UTC), at the reviewed commit:
 | Year-over-year set aside | Washington/Wabash and Clark/Lake (State/Lake closed 2026-01-05, comparable again from 2027-04-04); Wilson, Argyle and Bryn Mawr (Lawrence and Berwyn reopened 2025-07-20, from 2026-10-17) |
 | Ranks | 84 stations moved; big moves Argyle 66 to 98 (quiet to healthy), Bryn Mawr 126 to 99, Wilson 104 to 129, Clark/Lake 137 to 118, Washington/Wabash 140 to 127; Clark/Division 49 to 50 crosses into quiet; every other station moved at most three places |
 | Stories | e.g. Wilson: "Lawrence, next door, reopened in July 2025, so this year's numbers are not yet comparable with last year's."; no em dash |
+
+Go-live record (2026-10-03, on Nate's "merge and go live"): snapshot `pre-neighbor-closures-2026-10-03`
+(`snap-orange-mode-aepxiiue`) at 21:02 UTC; officialn8/ghost-stops#5 merged as `35f329e` at 21:02:15
+with every code check green; deployment `dpl_BppfttMS7zGwbZan2ENjA4fb44VD` ready; sync at 21:03:50
+OK in 3.5 s, 144 narratives, 0 rejected; `stations` tag invalidated. Production matches the
+rehearsal: Argyle 98, Bryn Mawr 99, Clark/Lake 118, Washington/Wabash 127 and Wilson 129, all
+healthy with year-over-year set aside and the "next door" reason on the card and in the story;
+Clark/Division quiet; tiers 15/22/35/71; health 200. The rehearsal and PR preview branches were
+deleted on Nate's approval; Neon is production-only.

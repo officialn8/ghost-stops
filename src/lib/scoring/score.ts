@@ -17,7 +17,7 @@
  * carries its own, keyed here by CTA id, so a neighbor with no metrics row (never any riders)
  * counts as open.
  */
-import type { ScoreTier, StationStatus } from "@prisma/client";
+import type { ScoreTier, StationStatus } from "@/generated/prisma/client";
 import { getTier, type ScoreTierName } from "@/lib/utils";
 import type { StationBadge } from "@/types/station";
 import { missingDataReason, neighborClosures, windowBlock, type ClosureRange, type NullReason } from "./availability";

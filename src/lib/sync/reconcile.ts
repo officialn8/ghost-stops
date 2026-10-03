@@ -4,7 +4,7 @@
  * at most three of those months, oldest first, as month-bounded requests, and carries the rest in
  * its run record, so an upstream restatement of years of data never lands in one 300-second run.
  */
-import type { PrismaClient } from "@prisma/client";
+import type { PrismaClient } from "@/generated/prisma/client";
 import { dedupeDays } from "./match";
 import type { DuplicateDay, RidershipSource, StationMonthTotal } from "./socrata";
 import { ISO_MONTH, monthOf, monthRange, type DateWindow } from "./window";

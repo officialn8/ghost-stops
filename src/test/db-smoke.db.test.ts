@@ -20,4 +20,15 @@ describe("database tier", () => {
         expect(rows).toHaveLength(1);
         expect(rows[0].finished_at).not.toBeNull();
     });
+
+    // Every database test file disconnects the shared client in afterAll, and scripts disconnect
+    // when they finish, which also ends the pg pool. A client cached on globalThis must still work
+    // afterwards: the pg adapter opens a fresh pool on the next query.
+    it("reconnects the shared client after a disconnect", async () => {
+        await prisma.$disconnect();
+
+        const [row] = await prisma.$queryRaw<{ ok: number }[]>`SELECT 1::int AS ok`;
+
+        expect(row.ok).toBe(1);
+    });
 });

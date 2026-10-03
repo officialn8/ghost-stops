@@ -8,7 +8,7 @@
  *   year-over-year change and the erraticness.
  * - 2019: the pre-pandemic year the long-run change compares against.
  */
-import type { PrismaClient } from "@prisma/client";
+import type { PrismaClient } from "@/generated/prisma/client";
 import type { DayType } from "@/lib/sync/socrata";
 import { addDays, optionalDay, toDay, toUtcDate, type DateWindow } from "@/lib/sync/window";
 import type { ScoreComponentKey } from "@/types/station";

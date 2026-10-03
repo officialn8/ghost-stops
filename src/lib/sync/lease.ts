@@ -4,7 +4,7 @@
  * hold null. A run that dies without finishing (the function is killed at 300 seconds) is
  * expired by the next run after an hour.
  */
-import { Prisma, type PrismaClient, type SyncRunStatus } from "@prisma/client";
+import { Prisma, type PrismaClient, type SyncRunStatus } from "@/generated/prisma/client";
 
 export const SYNC_LEASE = "ridership-sync";
 export const STALE_RUN_MS = 60 * 60 * 1000;

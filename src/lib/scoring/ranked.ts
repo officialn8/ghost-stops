@@ -1,4 +1,4 @@
-import type { StationStatus } from "@prisma/client";
+import type { StationStatus } from "@/generated/prisma/client";
 
 /**
  * The stored `StationMetrics.dataStatus` (the UI's `DataStatus` in src/types/station.ts is another

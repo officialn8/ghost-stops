@@ -14,6 +14,7 @@ import { runCensusIngestion } from "./sources/census";
 import { runLodesIngestion } from "./sources/lodes";
 import { runFhwaIngestion } from "./sources/fhwa";
 import { runCtaHistoricalIngestion } from "./sources/ctaHistorical";
+import { requireDatabaseUrl } from "../cli";
 import { prisma } from "./utils";
 
 const jobs: IngestionJob[] = [
@@ -47,6 +48,7 @@ function logSummary(results: IngestionResult[]) {
 }
 
 async function main() {
+  requireDatabaseUrl();
   console.log("🚧 Phase 2 ingestion scaffolding\n");
   const results: IngestionResult[] = [];
 

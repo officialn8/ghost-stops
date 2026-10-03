@@ -8,7 +8,7 @@
  *   signal (Nate's decision, 2026-10-03, review finding #5).
  * The report carries statuses and dates only, never a run's stored error text.
  */
-import type { PrismaClient } from "@prisma/client";
+import type { PrismaClient } from "@/generated/prisma/client";
 import { freshnessOf, lastSuccessfulRun, type LastSuccessfulRun } from "./freshness";
 import { latestCompletedRun, STALE_RUN_MS } from "./lease";
 import { parseDriftMonths } from "./reconcile";

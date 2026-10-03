@@ -17,6 +17,7 @@ const forbidden = [
     "@/lib/sync/run",
     "@/lib/scoring/ghost",
     "@/lib/narratives/generate",
+    "@/generated/prisma/client",
 ];
 const allowed = ["@/lib/utils", "@/lib/narratives"];
 

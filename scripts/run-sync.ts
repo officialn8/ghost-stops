@@ -17,7 +17,7 @@ import { parseArgs } from "node:util";
 import { prisma } from "../src/lib/prisma";
 import { runSync, type SyncOptions } from "../src/lib/sync/run";
 import { createSocrataSource, CTA_STATION_ID } from "../src/lib/sync/socrata";
-import { isCliEntry } from "./cli";
+import { isCliEntry, requireDatabaseUrl } from "./cli";
 import { isCalendarDate } from "./dates";
 
 export type RunSyncArgs = Pick<SyncOptions, "trigger" | "mode" | "cityCode" | "since" | "ctaStationIds">;
@@ -60,6 +60,7 @@ export function parseRunSyncArgs(argv: string[]): RunSyncArgs {
 
 async function main(): Promise<void> {
     const args = parseRunSyncArgs(process.argv.slice(2));
+    requireDatabaseUrl();
     const source = createSocrataSource({ appToken: process.env.CHICAGO_DATA_APP_TOKEN });
     try {
         const summary = await runSync(prisma, source, { ...args, log: (line) => console.error(line) });

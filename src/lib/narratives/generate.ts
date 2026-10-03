@@ -24,7 +24,7 @@
  *    change is up, recent_decline when down, stable when it is level or unknown.
  */
 
-import type { DataQuality, Prisma, PrismaClient, StationStatus } from "@prisma/client";
+import type { DataQuality, Prisma, PrismaClient, StationStatus } from "@/generated/prisma/client";
 import { optionalDay, toDay } from "@/lib/sync/window";
 import type {
   ArchetypeKey,
