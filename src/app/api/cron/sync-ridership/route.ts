@@ -38,7 +38,11 @@ export async function GET(request: NextRequest) {
             // counts in the summary line below cannot name.
             log: (message) => console.info("sync-ridership", message),
         });
-        if (summary.status === "OK" || summary.status === "PARTIAL") revalidateTag(STATIONS_CACHE_TAG);
+        // Expire now rather than serve the old list while it refreshes: the next request reads
+        // the new data (Next 16 needs the profile; { expire: 0 } is what the one-argument form did).
+        if (summary.status === "OK" || summary.status === "PARTIAL") {
+            revalidateTag(STATIONS_CACHE_TAG, { expire: 0 });
+        }
 
         // Status and counts only; the error text stays in the SyncRun row.
         const body = {

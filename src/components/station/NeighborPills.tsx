@@ -1,7 +1,7 @@
 "use client";
 
 import { ChevronLeft, ChevronRight } from "lucide-react";
-import { motion } from "framer-motion";
+import { motion } from "motion/react";
 import { cn, getGhostScoreColor } from "@/lib/utils";
 import { CTA_LINE_COLORS, type CTALine } from "@/lib/cta/explodeAndStitchSegments";
 

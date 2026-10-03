@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useMemo, useRef } from "react";
-import { AnimatePresence } from "framer-motion";
+import { AnimatePresence } from "motion/react";
 import Map, { Source, Layer, MapMouseEvent } from "react-map-gl/mapbox";
 import type { FeatureCollection, Point, Feature, LineString } from "geojson";
 import type { MapRef } from "react-map-gl/mapbox";

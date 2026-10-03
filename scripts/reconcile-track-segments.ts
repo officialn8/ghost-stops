@@ -137,7 +137,7 @@ function inferLoopSide(feature: SegmentFeature): "north" | "south" | "east" | "w
   return Object.entries(edgeDistance).sort((x, y) => x[1] - y[1])[0][0] as "north" | "south" | "east" | "west";
 }
 
-function lineDistanceKm(nearestResult: any): number {
+function lineDistanceKm(nearestResult: { properties?: { dist?: number; pointDistance?: number } } | undefined): number {
   return nearestResult?.properties?.dist ?? nearestResult?.properties?.pointDistance ?? Number.POSITIVE_INFINITY;
 }
 

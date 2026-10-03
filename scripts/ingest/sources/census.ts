@@ -625,7 +625,7 @@ export async function runCensusIngestion(): Promise<IngestionResult> {
 
     let populationChangeSource: "block_group" | "tract" = "block_group";
     let populationChangeTotal = decennialAgg.total;
-    let populationChangeAcs = acsPopAgg.total;
+    const populationChangeAcs = acsPopAgg.total;
 
     if (decennialAgg.total <= 0 || acsPopAgg.total <= 0) {
       if (decennialTractAgg.total > 0 && acsPopAgg.total > 0) {
@@ -653,9 +653,6 @@ export async function runCensusIngestion(): Promise<IngestionResult> {
         : isLowPopulation
         ? "LOW"
         : decennialAgg.weightSum >= 0.75 && acsPopAgg.weightSum >= 0.75
-        ? "HIGH"
-        : "MEDIUM";
-      decennialAgg.weightSum >= 0.75 && acsPopAgg.weightSum >= 0.75
         ? "HIGH"
         : "MEDIUM";
 

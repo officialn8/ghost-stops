@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { motion, AnimatePresence } from "framer-motion";
+import { motion, AnimatePresence } from "motion/react";
 import { ChevronLeft, ChevronRight, Ghost } from "lucide-react";
 import StationRow from "./StationRow";
 import StationCardSkeleton from "./StationCardSkeleton";

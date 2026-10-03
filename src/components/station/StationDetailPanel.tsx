@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useMemo } from "react";
-import { motion } from "framer-motion";
+import { motion } from "motion/react";
 import { X, TrendingDown, TrendingUp, Users, Ghost, BarChart3 } from "lucide-react";
 import CTALineBadge from "./CTALineBadge";
 import GhostScoreGauge from "@/components/ghost/GhostScoreGauge";

@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { motion, AnimatePresence } from "framer-motion";
+import { motion, AnimatePresence } from "motion/react";
 import { ChevronDown, ExternalLink, Database } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { DataSourceInfo } from "@/types/narrative";
