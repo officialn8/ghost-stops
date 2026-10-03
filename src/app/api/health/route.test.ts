@@ -10,11 +10,22 @@ const { GET } = await import("./route");
 const NOW = new Date("2026-08-12T12:30:00Z");
 const daysAgo = (days: number) => new Date(NOW.getTime() - days * 24 * 60 * 60 * 1000);
 
-type FindFirstArgs = { where: { status: string | { in: string[] } }; select: Record<string, boolean> };
+type FindFirstArgs = { where: { status: string | { in: string[] }; OR?: unknown[] }; select: Record<string, boolean> };
 
-/** Answers the three health queries: last ok run, stuck running row, latest finished run. */
-function stubRuns(runs: { lastOk?: object | null; stuck?: object | null; latest?: object | null }) {
+/**
+ * Answers the four health queries: last ok run, last ok reconciliation (the one with an OR on the
+ * trigger; two days old unless given), stuck running row, latest finished run.
+ */
+function stubRuns(runs: {
+    lastOk?: object | null;
+    lastReconcile?: object | null;
+    stuck?: object | null;
+    latest?: object | null;
+}) {
     prismaMock.syncRun.findFirst.mockImplementation((async (args: FindFirstArgs) => {
+        if (args.where.status === "OK" && args.where.OR) {
+            return runs.lastReconcile === undefined ? { finishedAt: daysAgo(2) } : runs.lastReconcile;
+        }
         if (args.where.status === "OK") return runs.lastOk ?? null;
         if (args.where.status === "RUNNING") return runs.stuck ?? null;
         return runs.latest ?? null;
@@ -42,6 +53,7 @@ describe("GET /api/health", () => {
         expect(await response.json()).toEqual({
             status: "ok",
             lastSuccessfulRunAt: daysAgo(1).toISOString(),
+            lastReconciliationAt: daysAgo(2).toISOString(),
             dataThrough: "2026-07-31",
             unmatchedStationIds: [],
             driftBacklogMonths: 0,
@@ -55,6 +67,38 @@ describe("GET /api/health", () => {
         const response = await GET();
         expect(response.status).toBe(503);
         expect((await response.json()).status).toBe("stale");
+    });
+
+    it("returns 503 when no weekly reconciliation has succeeded in 15 days, though daily runs do", async () => {
+        const lastOk = { finishedAt: daysAgo(1), windowEnd: new Date("2026-07-31") };
+
+        stubRuns({ lastOk, lastReconcile: { finishedAt: daysAgo(16) } });
+        const response = await GET();
+        expect(response.status).toBe(503);
+        expect(await response.json()).toMatchObject({ status: "reconcile-stale", lastReconciliationAt: daysAgo(16).toISOString() });
+
+        stubRuns({ lastOk, lastReconcile: null });
+        expect((await (await GET()).json()).status).toBe("reconcile-stale");
+
+        stubRuns({ lastOk, lastReconcile: { finishedAt: daysAgo(14) } });
+        expect((await GET()).status).toBe(200);
+    });
+
+    it("reports a stale daily sync before a stale reconciliation", async () => {
+        stubRuns({ lastOk: { finishedAt: daysAgo(11), windowEnd: null }, lastReconcile: null });
+        expect((await (await GET()).json()).status).toBe("stale");
+    });
+
+    it("asks for the last reconciliation by the weekly cron's and the runner's triggers", async () => {
+        stubRuns({ lastOk: { finishedAt: daysAgo(1), windowEnd: null } });
+        await GET();
+        const reconcileQuery = prismaMock.syncRun.findFirst.mock.calls
+            .map(([args]) => args as FindFirstArgs)
+            .find((args) => args.where.OR !== undefined);
+        expect(reconcileQuery?.where).toEqual({
+            status: "OK",
+            OR: [{ trigger: "cron-weekly" }, { trigger: { contains: "--reconcile" } }],
+        });
     });
 
     it("returns 503 when no run has ever succeeded", async () => {

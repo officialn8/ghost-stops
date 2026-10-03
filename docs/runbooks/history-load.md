@@ -617,9 +617,13 @@ workflow emails Nate.
      hour old (the next run expires it), or have Nate approve clearing it as the owner role:
      `UPDATE "SyncRun" SET lease = NULL, status = 'FAILED', "finishedAt" = now() WHERE status = 'RUNNING';`
      Re-running is safe: every chunk upserts idempotently.
-3. Reconcile: `npx tsx scripts/run-sync.ts --reconcile`. Expect `"driftMonths": []`.
+3. Reconcile: `npx tsx scripts/run-sync.ts --reconcile`. Expect `"driftMonths": []`. Until this
+   succeeds, `/api/health` answers 503 with `"status":"reconcile-stale"`: health also requires a
+   successful weekly reconciliation within 15 days (review finding #5, Nate's call), and this run
+   is the first one.
 4. Run the queries in section 6.5; each must match section 6.6.
-5. `/api/health` answers 200 with `"dataThrough": "2026-07-31"`. The site's charts end 2026-07-31.
+5. `/api/health` answers 200 with `"dataThrough": "2026-07-31"` and a `lastReconciliationAt` from
+   step 3. The site's charts end 2026-07-31.
 6. Run the health workflow once: `gh workflow run health.yml`; it must pass. Then rehearse a
    failure: `gh workflow run health.yml -f url=https://ghost-stops.vercel.app/api/health-missing`;
    it must fail, and GitHub must email Nate.

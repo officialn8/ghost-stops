@@ -51,6 +51,22 @@ describe("readHealthInputs", () => {
         expect((await readHealthInputs(prisma, NOW)).lastSuccess).toEqual({ finishedAt: hoursAgo(2), windowEnd: day("2026-07-31") });
     });
 
+    it("takes the last reconciliation from OK weekly-cron and --reconcile runs only", async () => {
+        await prisma.syncRun.createMany({
+            data: [
+                { trigger: "cron-weekly", status: "OK", startedAt: hoursAgo(300), finishedAt: hoursAgo(300) },
+                { trigger: "local --reconcile", status: "OK", startedAt: hoursAgo(200), finishedAt: hoursAgo(200) },
+                { trigger: "cron-weekly", status: "FAILED", startedAt: hoursAgo(30), finishedAt: hoursAgo(30) },
+                { trigger: "cron-daily", status: "OK", startedAt: hoursAgo(2), finishedAt: hoursAgo(2) },
+                { trigger: "local --since 2001-01-01", status: "OK", startedAt: hoursAgo(1), finishedAt: hoursAgo(1) },
+            ],
+        });
+        expect((await readHealthInputs(prisma, NOW)).lastReconcile).toEqual({ finishedAt: hoursAgo(200) });
+
+        await prisma.syncRun.create({ data: { trigger: "cron-weekly", status: "OK", startedAt: hoursAgo(5), finishedAt: hoursAgo(5) } });
+        expect((await readHealthInputs(prisma, NOW)).lastReconcile).toEqual({ finishedAt: hoursAgo(5) });
+    });
+
     it("reads the backlog and unmatched ids from the latest completed run, passing over skipped and failed runs", async () => {
         await prisma.syncRun.createMany({
             data: [
