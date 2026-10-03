@@ -21,71 +21,168 @@ enum DataSourceStatus {
   DEPRECATED
 }
 
+enum StationStatus {
+  ACTIVE
+  CLOSED
+  TEMP_CLOSED
+}
+
+enum ScoreTier {
+  GHOST
+  FADING
+  QUIET
+  HEALTHY
+}
+
+enum SyncRunStatus {
+  RUNNING
+  OK
+  PARTIAL
+  FAILED
+  SKIPPED
+}
+
 model City {
-  id        String     @id @default(uuid())
-  code      String     @unique // "chicago", "phoenix"
-  name      String     // "Chicago CTA", "Phoenix Metro"
-  stations  Station[]
+  id       String    @id @default(uuid())
+  code     String    @unique // "chicago", "phoenix"
+  name     String // "Chicago CTA", "Phoenix Metro"
+  stations Station[]
 }
 
 model Station {
-  id              String           @id @default(uuid())
-  cityId          String
-  externalId      String?          // GTFS stop_id or agency ID
-  ctaStationId    String?          // CTA station number from Socrata (e.g., "41240")
-  name            String
-  latitude        Float
-  longitude       Float
-  lines           String           // JSON array like '["Red", "Blue"]' for multi-line stations
+  id           String        @id @default(uuid())
+  cityId       String
+  externalId   String? // GTFS stop_id or agency ID
+  ctaStationId String? // CTA station number from Socrata (e.g., "41240")
+  name         String
+  slug         String? // URL key, unique per city; nullable until the roster seed fills it
+  displayName  String? // Name shown in the UI
+  status       StationStatus @default(ACTIVE) // Denormalized from StationClosure by the seed and the sync
+  openedAt     DateTime?     @db.Date
+  closedAt     DateTime?     @db.Date
+  latitude     Float
+  longitude    Float
+  lines        String // JSON array like '["Red", "Blue"]' for multi-line stations
 
-  city            City             @relation(fields: [cityId], references: [id])
-  aliases         StationAlias[]
-  ridershipDaily  RidershipDaily[]
-  metrics         StationMetrics?
-  facts           StationFact[]
-  narrative       StationNarrative?
+  city           City                  @relation(fields: [cityId], references: [id])
+  aliases        StationAlias[]
+  ridershipDaily RidershipDaily[]
+  metrics        StationMetrics?
+  facts          StationFact[]
+  narrative      StationNarrative?
+  closures       StationClosure[]
+  lineSequences  StationLineSequence[]
 
-  @@index([cityId, name])
-  @@index([cityId, ctaStationId])
+  @@unique([cityId, ctaStationId])
+  @@unique([cityId, slug])
   @@unique([cityId, externalId])
+  @@index([cityId, name])
+}
+
+// A closed date range for a station; the source of truth for Station.status and closedAt.
+model StationClosure {
+  id        String    @id @default(uuid())
+  stationId String
+  startDate DateTime  @db.Date
+  endDate   DateTime? @db.Date // null while the station is still closed
+  reason    String
+
+  station Station @relation(fields: [stationId], references: [id])
+
+  @@unique([stationId, startDate])
+}
+
+// A station's position on one branch of one line. The Loop is its own branch.
+model StationLineSequence {
+  id        String @id @default(uuid())
+  stationId String
+  line      String
+  branch    String
+  seq       Int
+
+  station Station @relation(fields: [stationId], references: [id])
+
+  @@unique([line, branch, seq])
+  @@index([stationId])
 }
 
 model StationAlias {
-  id              String   @id @default(uuid())
-  stationId       String
-  aliasName       String   // Alternative name from ridership data
-  normalized      String   // Normalized version for matching
+  id         String @id @default(uuid())
+  stationId  String
+  aliasName  String // Alternative name from ridership data
+  normalized String // Normalized version for matching
 
-  station         Station  @relation(fields: [stationId], references: [id])
+  station Station @relation(fields: [stationId], references: [id])
 
-  @@index([normalized])
   @@unique([stationId, aliasName])
+  @@index([normalized])
 }
 
 model RidershipDaily {
-  id              String   @id @default(uuid())
-  stationId       String
-  serviceDate     DateTime
-  entries         Int      // Total boardings for the day
+  stationId   String
+  serviceDate DateTime @db.Date
+  entries     Int // Total boardings for the day
+  dayType     String   @db.Char(1) // W weekday, A Saturday, U Sunday or holiday
 
-  station         Station  @relation(fields: [stationId], references: [id])
+  station Station @relation(fields: [stationId], references: [id])
 
-  @@index([stationId, serviceDate])
-  @@unique([stationId, serviceDate])
+  @@id([stationId, serviceDate])
+  @@index([serviceDate])
 }
 
 model StationMetrics {
-  id              String   @id @default(uuid())
-  stationId       String   @unique
-  lastDayEntries  Int?     // Most recent day's ridership
-  rolling30dAvg   Float?   // 30-day rolling average
-  rolling90dAvg   Float?   // 90-day rolling average (optional)
-  ghostScore      Int      // 0-100, higher = more "ghost"
-  lastUpdated     DateTime
-  serviceDateMax  DateTime // Latest data date
-  dataStatus      String   @default("normal") // "normal" or "missing"
+  id             String   @id @default(uuid())
+  stationId      String   @unique
+  lastDayEntries Int? // Most recent day's ridership
+  rolling30dAvg  Float? // 30-day rolling average
+  rolling90dAvg  Float? // 90-day rolling average (optional)
+  ghostScore     Int // 0-100, higher = more "ghost"
+  lastUpdated    DateTime
+  serviceDateMax DateTime // Latest data date
+  dataStatus     String   @default("normal") // "normal" or "missing"
 
-  station         Station  @relation(fields: [stationId], references: [id])
+  // Score v2: component percentiles, their raw inputs, and the peers used
+  scoreVersion   Int        @default(1)
+  tier           ScoreTier?
+  rank           Int? // null for stations excluded from ranking
+  rankedCount    Int?
+  residualPct    Float?
+  yoyPct         Float?
+  longRunPct     Float?
+  erraticPct     Float?
+  avg12m         Float?
+  avg30d         Float?
+  baselineAvg    Float?
+  peerStationIds Json?
+  yoyChangePct   Float?
+  vs2019Pct      Float?
+  weekdayAvg     Float?
+  weekendAvg     Float?
+  dataThrough    DateTime?  @db.Date
+
+  station Station @relation(fields: [stationId], references: [id])
+}
+
+// One refresh of ridership from upstream. Inserted as RUNNING before any fetch, then finalized.
+model SyncRun {
+  id                  String        @id @default(uuid())
+  trigger             String // "cron-daily", "cron-weekly", "local"
+  startedAt           DateTime      @default(now())
+  finishedAt          DateTime?
+  status              SyncRunStatus
+  lease               String?       @unique // held by the one running row; null otherwise
+  windowStart         DateTime?     @db.Date
+  windowEnd           DateTime?     @db.Date
+  upstreamMaxDate     DateTime?     @db.Date
+  rowsFetched         Int           @default(0)
+  rowsInserted        Int           @default(0)
+  rowsRevised         Int           @default(0)
+  unmatchedStationIds Json          @default("[]")
+  driftMonths         Json          @default("[]")
+  error               String?
+  durationMs          Int?
+
+  @@index([status, startedAt])
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -94,59 +191,60 @@ model StationMetrics {
 // ═══════════════════════════════════════════════════════════════
 
 model DataSource {
-  id             String        @id @default(uuid())
-  code           String        @unique  // "cta_socrata", "census_acs_5yr", "census_decennial", "lodes", "fhwa"
-  name           String        // "CTA L Station Entries Daily Totals"
-  url            String        // Landing page URL
-  apiUrl         String?       // Socrata API endpoint or Census API base
-  datasetId      String?       // "5neh-572f" for Socrata
-  license        String?       // "Public Domain", "CC BY 4.0", etc.
-  lastFetched    DateTime?
+  id                  String           @id @default(uuid())
+  code                String           @unique // "cta_socrata", "census_acs_5yr", "census_decennial", "lodes", "fhwa"
+  name                String // "CTA L Station Entries Daily Totals"
+  url                 String // Landing page URL
+  apiUrl              String? // Socrata API endpoint or Census API base
+  datasetId           String? // "5neh-572f" for Socrata
+  license             String? // "Public Domain", "CC BY 4.0", etc.
+  lastFetched         DateTime?
   lastSuccessfulFetch DateTime?
-  lastError      String?
-  status         DataSourceStatus @default(ACTIVE)
-  refreshCadence String?       // "daily", "annual", "static"
+  lastError           String?
+  status              DataSourceStatus @default(ACTIVE)
+  refreshCadence      String? // "daily", "annual", "static"
 
-  facts          StationFact[]
+  facts StationFact[]
 }
 
 model StationFact {
-  id             String     @id @default(uuid())
+  id             String      @id @default(uuid())
   stationId      String
-  factKey        String     // "ridership_2001_avg", "population_change"
-  value          Float      // Percents stored as decimals: 0.52 = 52%
-  valueType      String     // "number" | "percent" | "currency"
-  unit           String     // "riders/day", "%", "lane-miles"
-  geography      String     // "station", "walkshed_0.5mi", "region_il"
-  timeframeStart Int?       // 2001, 2010, etc.
-  timeframeEnd   Int?       // 2024, 2023, etc.
-  methodology    String     // "Daily average for calendar year 2001"
-  sourceId       String     // Primary source
-  sourceNote     String?    // For multi-source facts: "Baseline: 2010 Decennial SF1 P001001"
+  factKey        String // "ridership_2001_avg", "population_change"
+  value          Float // Percents stored as decimals: 0.52 = 52%
+  valueType      String // "number" | "percent" | "currency"
+  unit           String // "riders/day", "%", "lane-miles"
+  geography      String // "station", "walkshed_0.5mi", "region_il"
+  timeframeStart Int? // 2001, 2010, etc.
+  timeframeEnd   Int? // 2024, 2023, etc.
+  methodology    String // "Daily average for calendar year 2001"
+  sourceId       String // Primary source
+  sourceNote     String? // For multi-source facts: "Baseline: 2010 Decennial SF1 P001001"
   quality        DataQuality @default(UNKNOWN)
   qualityNote    String?
   evidenceMeta   Json?
-  computedAt     DateTime   @default(now())
+  computedAt     DateTime    @default(now())
 
-  station        Station    @relation(fields: [stationId], references: [id])
-  source         DataSource @relation(fields: [sourceId], references: [id])
+  station Station    @relation(fields: [stationId], references: [id])
+  source  DataSource @relation(fields: [sourceId], references: [id])
 
   @@unique([stationId, factKey])
   @@index([stationId])
 }
 
 model StationNarrative {
-  id               String   @id @default(uuid())
-  stationId        String   @unique
-  archetypeKey     String   // "suburban_shift", "car_culture", "jobs_exodus"
-  renderedStory    String   // Pre-rendered markdown
-  evidenceFactKeys String   // JSON array: '["ridership_2001_avg", "population_change"]'
-  templateVersion  String   // "v1.0" - bump when template copy changes
-  confidence       Float    // 0-1, how well facts match archetype
+  id               String      @id @default(uuid())
+  stationId        String      @unique
+  archetypeKey     String // "suburban_shift", "car_culture", "jobs_exodus"
+  renderedStory    String // Pre-rendered markdown
+  evidenceFactKeys String // JSON array: '["ridership_2001_avg", "population_change"]'
+  templateVersion  String // "v1.0" - bump when template copy changes
+  confidence       Float // 0-1, how well facts match archetype
   quality          DataQuality @default(UNKNOWN)
   qualityNote      String?
   evidenceMeta     Json?
-  lastComputed     DateTime @default(now())
+  lastComputed     DateTime    @default(now())
+  dataThrough      DateTime?   @db.Date // the metrics date this story describes
 
-  station          Station  @relation(fields: [stationId], references: [id])
+  station Station @relation(fields: [stationId], references: [id])
 }
