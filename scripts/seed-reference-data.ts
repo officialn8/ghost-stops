@@ -13,7 +13,7 @@
  */
 import { parseArgs } from "node:util";
 import { Prisma, PrismaClient } from "@prisma/client";
-import { STATION_CLOSURES, closuresFor, deriveStatus } from "../src/lib/cta/closures";
+import { STATION_CLOSURES, closuresFor, deriveStatus, todayInChicago } from "../src/lib/cta/closures";
 import { CTA_ROSTER } from "../src/lib/cta/roster";
 import { linesForStation, sequenceRows } from "../src/lib/cta/sequences";
 import { displayNameFor, generateSlugs } from "../src/lib/cta/slug";
@@ -63,10 +63,6 @@ function normalizeAliasName(name: string): string {
         .replace(/\bstation\b/g, "")
         .replace(/\s+/g, " ")
         .trim();
-}
-
-function todayInChicago(now = new Date()): string {
-    return new Intl.DateTimeFormat("en-CA", { timeZone: "America/Chicago" }).format(now);
 }
 
 const toDate = (day: string) => new Date(`${day}T00:00:00Z`);

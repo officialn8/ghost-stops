@@ -1,0 +1,119 @@
+/**
+ * Base metrics for every station with ridership: the 12-month, 90-day, and 30-day averages, the
+ * latest day, and a data status, all as of the city's data-through date. Reads and computation run
+ * outside any transaction; the write is one set-based statement whatever the station count
+ * (KTD10), so it fits inside the run's short transaction.
+ */
+import type { Prisma, PrismaClient } from "@prisma/client";
+
+export interface BaseMetricInputs {
+    stationId: string;
+    lastDate: string;
+    lastEntries: number;
+    avg12m: number | null;
+    avg90d: number | null;
+    avg30d: number | null;
+    daysLast60: number;
+}
+
+/** `missing` when a station has no rows in 60 days, `zero` when its 30-day average is under one rider (KTD9). */
+export type DataStatus = "normal" | "zero" | "missing";
+
+export interface BaseMetrics {
+    stationId: string;
+    serviceDateMax: string;
+    lastDayEntries: number;
+    avg12m: number | null;
+    avg30d: number | null;
+    /** The v1 columns the current UI reads, 0 when there is no data, as the Go ETL wrote them. */
+    rolling30dAvg: number;
+    rolling90dAvg: number;
+    dataStatus: DataStatus;
+}
+
+type RawDb = Pick<PrismaClient, "$queryRaw">;
+
+/** The latest service date stored for the city, or null before any data. */
+export async function storedMaxDate(db: RawDb, cityId: string): Promise<string | null> {
+    const [row] = await db.$queryRaw<{ max: string | null }[]>`
+        SELECT max(r."serviceDate")::text AS max
+        FROM "RidershipDaily" r
+        WHERE r."stationId" IN (SELECT id FROM "Station" WHERE "cityId" = ${cityId})`;
+    return row?.max ?? null;
+}
+
+/** One row per station that has any ridership; stations with none get no metrics row. */
+export async function readBaseMetricInputs(db: RawDb, cityId: string, asOf: string): Promise<BaseMetricInputs[]> {
+    return db.$queryRaw<BaseMetricInputs[]>`
+        SELECT s.id AS "stationId", latest."serviceDate"::text AS "lastDate", latest."entries" AS "lastEntries",
+               w.avg12m AS "avg12m", w.avg90d AS "avg90d", w.avg30d AS "avg30d", w.days60 AS "daysLast60"
+        FROM "Station" s
+        CROSS JOIN LATERAL (
+            SELECT r."serviceDate", r."entries" FROM "RidershipDaily" r
+            WHERE r."stationId" = s.id ORDER BY r."serviceDate" DESC LIMIT 1
+        ) latest
+        CROSS JOIN LATERAL (
+            SELECT avg(r."entries")::float8 AS avg12m,
+                   (avg(r."entries") FILTER (WHERE r."serviceDate" > ${asOf}::date - 90))::float8 AS avg90d,
+                   (avg(r."entries") FILTER (WHERE r."serviceDate" > ${asOf}::date - 30))::float8 AS avg30d,
+                   (count(*) FILTER (WHERE r."serviceDate" > ${asOf}::date - 60))::int AS days60
+            FROM "RidershipDaily" r
+            WHERE r."stationId" = s.id
+              AND r."serviceDate" > ${asOf}::date - interval '1 year'
+              AND r."serviceDate" <= ${asOf}::date
+        ) w
+        WHERE s."cityId" = ${cityId}`;
+}
+
+export function dataStatusFor(input: Pick<BaseMetricInputs, "avg30d" | "daysLast60">): DataStatus {
+    if (input.daysLast60 === 0) return "missing";
+    if (input.avg30d === null || input.avg30d < 1) return "zero";
+    return "normal";
+}
+
+export function computeBaseMetrics(inputs: readonly BaseMetricInputs[]): BaseMetrics[] {
+    return inputs.map((input) => ({
+        stationId: input.stationId,
+        serviceDateMax: input.lastDate,
+        lastDayEntries: input.lastEntries,
+        avg12m: input.avg12m,
+        avg30d: input.avg30d,
+        rolling30dAvg: input.avg30d ?? 0,
+        rolling90dAvg: input.avg90d ?? 0,
+        dataStatus: dataStatusFor(input),
+    }));
+}
+
+/**
+ * Upserts every station's base metrics in one statement. `ghostScore` is left alone: the v1 score
+ * stays until score v2 (U12) writes it. A station's first metrics row gets -1, the Go ETL's marker
+ * for no score, which sorts it last.
+ */
+export async function writeBaseMetrics(
+    tx: Pick<Prisma.TransactionClient, "$executeRaw">,
+    metrics: readonly BaseMetrics[],
+    dataThrough: string,
+    now: Date,
+): Promise<number> {
+    return tx.$executeRaw`
+        INSERT INTO "StationMetrics" (
+            "id", "stationId", "lastDayEntries", "rolling30dAvg", "rolling90dAvg", "ghostScore",
+            "lastUpdated", "serviceDateMax", "dataStatus", "avg12m", "avg30d", "dataThrough"
+        )
+        SELECT gen_random_uuid()::text, m."stationId", m."lastDayEntries", m."rolling30dAvg", m."rolling90dAvg", -1,
+               ${now}, m."serviceDateMax"::date, m."dataStatus", m."avg12m", m."avg30d", ${dataThrough}::date
+        FROM jsonb_to_recordset(${JSON.stringify(metrics)}::jsonb) AS m(
+            "stationId" text, "serviceDateMax" text, "lastDayEntries" int, "avg12m" float8, "avg30d" float8,
+            "rolling30dAvg" float8, "rolling90dAvg" float8, "dataStatus" text
+        )
+        ON CONFLICT ("stationId") DO UPDATE SET
+            "lastDayEntries" = EXCLUDED."lastDayEntries",
+            "rolling30dAvg" = EXCLUDED."rolling30dAvg",
+            "rolling90dAvg" = EXCLUDED."rolling90dAvg",
+            "lastUpdated" = EXCLUDED."lastUpdated",
+            "serviceDateMax" = EXCLUDED."serviceDateMax",
+            "dataStatus" = EXCLUDED."dataStatus",
+            "avg12m" = EXCLUDED."avg12m",
+            "avg30d" = EXCLUDED."avg30d",
+            "dataThrough" = EXCLUDED."dataThrough"`;
+}
