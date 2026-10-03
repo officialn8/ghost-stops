@@ -45,11 +45,14 @@ export async function GET(request: NextRequest) {
       orderBy
     });
 
-    // Postgres sorts a missing metrics row first in a descending order, which would rank an
-    // unscored station (State/Lake, closed) as the ghostiest. Keep unscored stations last; the
-    // sort is stable, so the database order holds otherwise.
+    // Stations outside the ranking sort last (R5, KTD9): no metrics row, closed, or no riders in
+    // the data (State/Lake reports zeros since it closed). Postgres puts a missing row first in a
+    // descending order, and a closed station's 0 average and -1 score would lead the ascending
+    // sorts. The sort is stable, so the database order holds otherwise.
+    const excluded = (s: (typeof stations)[number]) =>
+      Number(s.metrics === null || s.status !== "ACTIVE" || s.metrics.dataStatus !== "normal");
     if (sort !== "name") {
-      stations.sort((a, b) => Number(a.metrics === null) - Number(b.metrics === null));
+      stations.sort((a, b) => excluded(a) - excluded(b));
     }
 
     // Get max service date
@@ -63,7 +66,7 @@ export async function GET(request: NextRequest) {
 
     // Format response
     const formattedStations = stations.map(station => {
-      const dataStatus = !station.metrics?.serviceDateMax 
+      const dataStatus = !station.metrics?.serviceDateMax || station.metrics.dataStatus === "missing"
         ? 'missing'
         : station.metrics.rolling30dAvg === 0 
           ? 'zero' 

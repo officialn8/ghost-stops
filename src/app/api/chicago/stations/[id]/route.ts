@@ -135,9 +135,10 @@ export async function GET(
       if (!ctaStationId) return null;
       const neighbor = await prisma.station.findUnique({
         where: { cityId_ctaStationId: { cityId: station.cityId, ctaStationId } },
-        select: { id: true, name: true, metrics: { select: { rolling30dAvg: true, ghostScore: true } } }
+        select: { id: true, name: true, status: true, metrics: { select: { rolling30dAvg: true, ghostScore: true, dataStatus: true } } }
       });
-      if (!neighbor?.metrics) return null;
+      // A closed neighbor, or one with no riders in the data (State/Lake), would pull the average toward zero.
+      if (!neighbor?.metrics || neighbor.status !== "ACTIVE" || neighbor.metrics.dataStatus !== "normal") return null;
       return {
         id: neighbor.id,
         name: neighbor.name,

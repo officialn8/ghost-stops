@@ -8,24 +8,34 @@ vi.mock("@/lib/prisma", async () => ({
 
 const { GET } = await import("@/app/api/chicago/stations-raw/route");
 
-function station(name: string, ghostScore: number | null) {
+function station(name: string, ghostScore: number | null, dataStatus = "normal", status = "ACTIVE") {
     return {
         id: name,
         name,
+        status,
         latitude: 41.88,
         longitude: -87.63,
         lines: '["Red"]',
         metrics:
             ghostScore === null
                 ? null
-                : { ghostScore, rolling30dAvg: 100, lastDayEntries: 90, serviceDateMax: new Date("2025-11-30") },
+                : {
+                      ghostScore,
+                      rolling30dAvg: dataStatus === "normal" ? 100 : 0,
+                      lastDayEntries: 90,
+                      serviceDateMax: new Date("2025-11-30"),
+                      dataStatus,
+                  },
     };
 }
 
-async function names(sort: string): Promise<string[]> {
+async function body(sort: string) {
     const response = await GET(new NextRequest(`http://localhost/api/chicago/stations-raw?sort=${sort}`));
-    const body = (await response.json()) as { stations: { name: string }[] };
-    return body.stations.map((s) => s.name);
+    return (await response.json()) as { stations: { name: string; dataStatus: string }[] };
+}
+
+async function names(sort: string): Promise<string[]> {
+    return (await body(sort)).stations.map((s) => s.name);
 }
 
 beforeEach(() => {
@@ -45,6 +55,25 @@ describe("GET /api/chicago/stations-raw", () => {
 
         expect(await names("ghost_score_desc")).toEqual(["Halsted", "Kostner", "State/Lake"]);
         expect(await names("ridership")).toEqual(["Halsted", "Kostner", "State/Lake"]);
+    });
+
+    it("ranks closed and no-data stations last in every score sort", async () => {
+        // After the sync, closed State/Lake has a metrics row: upstream reports 0 riders a day.
+        prismaMock.station.findMany.mockResolvedValue([
+            station("State/Lake", -1, "zero", "CLOSED"),
+            station("Gone Quiet", 40, "missing"),
+            station("Just Closed", 50, "normal", "CLOSED"), // closed this week; its 30 days still look normal
+            station("Kostner", 70),
+            station("Halsted", 72),
+        ] as never);
+
+        const last = ["State/Lake", "Gone Quiet", "Just Closed"];
+        expect(await names("ghost_score_asc")).toEqual(["Kostner", "Halsted", ...last]);
+        expect(await names("ghost_score_desc")).toEqual(["Kostner", "Halsted", ...last]);
+        expect((await body("ridership")).stations.slice(-3, -1)).toMatchObject([
+            { name: "State/Lake", dataStatus: "zero" },
+            { name: "Gone Quiet", dataStatus: "missing" },
+        ]);
     });
 
     it("keeps the database order for the name sort", async () => {

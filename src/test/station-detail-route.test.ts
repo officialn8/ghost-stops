@@ -9,14 +9,15 @@ vi.mock("@/lib/prisma", async () => ({
 const { GET } = await import("@/app/api/chicago/stations/[id]/route");
 
 const CITY = "c";
-const metrics = (rolling30dAvg: number, ghostScore: number) => ({ rolling30dAvg, ghostScore });
+const metrics = (rolling30dAvg: number, ghostScore: number, dataStatus = "normal") => ({ rolling30dAvg, ghostScore, dataStatus });
 
 // Stations the neighbor lookup may ask for, keyed by CTA station id.
-const BY_CTA_ID: Record<string, { id: string; name: string; metrics: ReturnType<typeof metrics> | null }> = {
-    "40180": { id: "oak-park-blue", name: "Oak Park (Blue)", metrics: metrics(1200, 55) },
-    "40390": { id: "forest-park", name: "Forest Park", metrics: metrics(1800, 40) },
-    "40260": { id: "state-lake", name: "State/Lake", metrics: null },
-    "40680": { id: "adams-wabash", name: "Adams/Wabash", metrics: metrics(5000, 20) },
+type Neighbor = { id: string; name: string; status: string; metrics: ReturnType<typeof metrics> | null };
+const BY_CTA_ID: Record<string, Neighbor> = {
+    "40180": { id: "oak-park-blue", name: "Oak Park (Blue)", status: "ACTIVE", metrics: metrics(1200, 55) },
+    "40390": { id: "forest-park", name: "Forest Park", status: "ACTIVE", metrics: metrics(1800, 40) },
+    "40260": { id: "state-lake", name: "State/Lake", status: "CLOSED", metrics: null },
+    "40680": { id: "adams-wabash", name: "Adams/Wabash", status: "ACTIVE", metrics: metrics(5000, 20) },
 };
 
 function stubStation(ctaStationId: string | null, lines: string[]) {
@@ -77,6 +78,27 @@ describe("GET /api/chicago/stations/[id] neighbors", () => {
         const result = await neighbors("no-cta-id");
         expect(result).toEqual({ prev: null, next: null, neighborAvg: 0 });
         expect(prismaMock.station.findUnique).toHaveBeenCalledTimes(1);
+    });
+
+    it("drops a neighbor that is closed or has no riders in the data, even with a metrics row", async () => {
+        const stateLake = BY_CTA_ID["40260"];
+        const variants: Neighbor[] = [
+            { ...stateLake, metrics: metrics(0, -1, "zero") }, // what the sync writes for State/Lake
+            { ...stateLake, metrics: metrics(300, 30) }, // closed this week; its 30 days still look normal
+            { ...stateLake, status: "ACTIVE", metrics: metrics(0, -1, "missing") },
+        ];
+        try {
+            for (const variant of variants) {
+                BY_CTA_ID["40260"] = variant;
+                stubStation("41700", ["Brown", "Green", "Orange", "Purple", "Pink"]);
+
+                const result = await neighbors("washington-wabash");
+                expect(result.prev).toBeNull();
+                expect(result.neighborAvg).toBe(5000);
+            }
+        } finally {
+            BY_CTA_ID["40260"] = stateLake;
+        }
     });
 
     it("drops a neighbor that has no metrics and averages the other side", async () => {

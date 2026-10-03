@@ -33,6 +33,8 @@ export interface SyncOptions {
     /** Epoch ms after which no further drift month is fetched; the window always runs. */
     deadline?: number;
     now?: () => Date;
+    /** Progress lines for the local runner, one per fetched range. */
+    log?: (message: string) => void;
 }
 
 export interface SyncSummary {
@@ -128,6 +130,9 @@ export async function runSync(db: PrismaClient, source: RidershipSource, options
             const counts = await upsertRidership(db, matched.rows);
             summary.rowsInserted += counts.inserted;
             summary.rowsRevised += counts.revised;
+            options.log?.(
+                `${range.start}..${range.end}: fetched ${days.length}, inserted ${counts.inserted}, revised ${counts.revised}`,
+            );
         };
 
         for (const chunk of monthChunks(window)) await syncRange(chunk);

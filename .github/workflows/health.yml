@@ -1,0 +1,48 @@
+name: Health
+
+# Requests the production health route once a day. A non-200 fails the run, and GitHub emails
+# the person who last changed this file's schedule, so a stale or stuck sync reaches Nate
+# without anyone polling (revival plan U10, R13).
+on:
+  schedule:
+    # Two and a half hours after the daily sync's window (vercel.json: 10:00 UTC, up to 59 minutes late).
+    - cron: "30 12 * * *"
+  workflow_dispatch:
+    inputs:
+      url:
+        description: Health URL to request (to rehearse a failure, point it at a URL that answers non-200)
+        required: false
+        default: https://ghost-stops.vercel.app/api/health
+
+permissions:
+  # Re-enabling this workflow below needs it; scheduled workflows in a public repository are
+  # disabled after 60 days without a commit, and the sync commits nothing.
+  actions: write
+  contents: read
+
+jobs:
+  health:
+    name: Request /api/health
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Request the health route
+        env:
+          HEALTH_URL: ${{ inputs.url || 'https://ghost-stops.vercel.app/api/health' }}
+        run: |
+          # One retry a minute later, so a single network blip does not send an email.
+          for attempt in 1 2; do
+            status="$(curl --silent --show-error --max-time 60 --output body.json --write-out '%{http_code}' "$HEALTH_URL" || echo 000)"
+            echo "Attempt $attempt: HTTP $status"
+            cat body.json 2>/dev/null && echo
+            if [ "$status" = "200" ]; then exit 0; fi
+            if [ "$attempt" = "1" ]; then sleep 60; fi
+          done
+          echo "::error::Health check failed with HTTP $status. Data may be stale or the sync stuck; see the body above and the SyncRun table."
+          exit 1
+
+      - name: Keep the schedule enabled
+        if: always() && github.event_name == 'schedule'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh api --method PUT "repos/${{ github.repository }}/actions/workflows/health.yml/enable"
