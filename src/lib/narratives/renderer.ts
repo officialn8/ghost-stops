@@ -194,6 +194,11 @@ function computeVariables(ctx: NarrativeContext): Record<string, Variable> {
     lane_miles_removed: when(lanes !== null, () => lanes! < 0, LANES),
     lane_miles_abs: v(lanes === null ? null : Math.abs(lanes), LANES),
 
+    // A closure next door that set year-over-year aside
+    nearby_station: v(ctx.nearbyClosure === null ? null : withoutEmDash(ctx.nearbyClosure.stationName)),
+    nearby_change: v(ctx.nearbyClosure?.change ?? null),
+    nearby_month: v(ctx.nearbyClosure === null ? null : formatMonthYear(ctx.nearbyClosure.date)),
+
     // A closure
     closed_since: v(ctx.closure === null ? null : formatMonthYear(ctx.closure.startDate)),
     closure_purpose: v(closure?.purpose ?? null),

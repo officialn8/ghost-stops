@@ -5,7 +5,8 @@
     "Percentiles are relative to these 26 stations, not the full system.",
     "Numbers come from the cleaned snapshot (data through 2025-11-30) and are relabelled as of dataThrough 2026-07-31 so the real closures apply: Lawrence reopened 2025-07-20 and State/Lake closed 2026-01-05.",
     "Lawrence's avg12m is its post-reopening average (2025-07-20 to 2025-11-30) and its year-ago window holds the closure's zero-rider days, which the closure blocks.",
-    "Western (O'Hare) comes from the rows the SQLite snapshot filed under the swapped Western id (KTD3); State/Lake is not in the snapshot, so its numbers are illustrative."
+    "Western (O'Hare) comes from the rows the SQLite snapshot filed under the swapped Western id (KTD3); State/Lake is not in the snapshot, so its numbers are illustrative.",
+    "A closure next door sets year-over-year aside (Nate, 2026-10-03): Wilson and Argyle beside reopened Lawrence, and Washington/Wabash and Clark/Lake beside closed State/Lake, have none. Wilson's expected values carry the neighbor-closure reason."
   ],
   "dataThrough": "2026-07-31",
   "stations": [
@@ -43,7 +44,7 @@
         "score": 100,
         "tier": "GHOST",
         "rank": 1,
-        "composite": 88.05,
+        "composite": 90,
         "baselineAvg": 547.13,
         "peers": {
           "basis": "neighbors",
@@ -62,7 +63,7 @@
           },
           "yoy": {
             "raw": -6.5465,
-            "pct": 86.96,
+            "pct": 94.74,
             "nullReason": null
           },
           "longRun": {
@@ -113,7 +114,7 @@
         "score": 8,
         "tier": "HEALTHY",
         "rank": 23,
-        "composite": 24.89,
+        "composite": 25.12,
         "baselineAvg": 2984.32,
         "peers": {
           "basis": "neighbors",
@@ -132,7 +133,7 @@
           },
           "yoy": {
             "raw": 12.7341,
-            "pct": 4.35,
+            "pct": 5.26,
             "nullReason": null
           },
           "longRun": {
@@ -264,9 +265,9 @@
       "named": true,
       "expected": {
         "ranked": true,
-        "score": 50,
+        "score": 58,
         "tier": "QUIET",
-        "rank": 13,
+        "rank": 11,
         "composite": 50,
         "baselineAvg": 1034.76,
         "peers": {
@@ -421,7 +422,7 @@
         "score": 96,
         "tier": "GHOST",
         "rank": 2,
-        "composite": 79.15,
+        "composite": 79.89,
         "baselineAvg": 3747.38,
         "peers": {
           "basis": "loop",
@@ -443,7 +444,7 @@
           },
           "yoy": {
             "raw": 5.6247,
-            "pct": 39.13,
+            "pct": 42.11,
             "nullReason": null
           },
           "longRun": {
@@ -491,10 +492,10 @@
       "named": true,
       "expected": {
         "ranked": true,
-        "score": 17,
+        "score": 4,
         "tier": "HEALTHY",
-        "rank": 21,
-        "composite": 33.99,
+        "rank": 24,
+        "composite": 22.57,
         "baselineAvg": 2096.45,
         "peers": {
           "basis": "neighbors",
@@ -512,9 +513,15 @@
             "nullReason": null
           },
           "yoy": {
-            "raw": -18.1853,
-            "pct": 95.65,
-            "nullReason": null
+            "raw": null,
+            "pct": null,
+            "nullReason": {
+              "kind": "neighbor-closure",
+              "neighborCtaStationId": "40770",
+              "change": "reopened",
+              "date": "2025-07-20",
+              "availableFrom": "2026-10-17"
+            }
           },
           "longRun": {
             "raw": -19.364,
@@ -564,7 +571,7 @@
         "score": 0,
         "tier": "HEALTHY",
         "rank": 25,
-        "composite": 18.24,
+        "composite": 19.44,
         "baselineAvg": 2656.77,
         "peers": {
           "basis": "neighbors",
@@ -583,7 +590,7 @@
           },
           "yoy": {
             "raw": 3.3521,
-            "pct": 47.83,
+            "pct": 52.63,
             "nullReason": null
           },
           "longRun": {
@@ -631,10 +638,10 @@
       "named": true,
       "expected": {
         "ranked": true,
-        "score": 33,
+        "score": 38,
         "tier": "HEALTHY",
-        "rank": 17,
-        "composite": 44.47,
+        "rank": 16,
+        "composite": 44.75,
         "baselineAvg": 3402.6,
         "peers": {
           "basis": "neighbors",
@@ -653,7 +660,7 @@
           },
           "yoy": {
             "raw": 8.3613,
-            "pct": 30.43,
+            "pct": 31.58,
             "nullReason": null
           },
           "longRun": {

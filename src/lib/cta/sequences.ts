@@ -320,6 +320,19 @@ export function neighborsOnLine(ctaStationId: string, line: CTALine): LineNeighb
     };
 }
 
+/**
+ * The stations next to one on every line that serves it: its immediate neighbors from
+ * `neighborsOnLine`, line by line in canonical order, the side before first, each once. A junction
+ * or a Loop entry can put more than one on a side (Garfield's are 51st, Halsted, and King Drive).
+ */
+export function adjacentStations(ctaStationId: string): string[] {
+    const ids = linesForStation(ctaStationId).flatMap((line) => {
+        const neighbors = neighborsOnLine(ctaStationId, line);
+        return neighbors ? [...neighbors.prev, ...neighbors.next] : [];
+    });
+    return [...new Set(ids)].filter((id) => id !== ctaStationId);
+}
+
 /** A station is a terminal of a line when the line's track ends there. */
 export function isTerminalOnLine(ctaStationId: string, line: CTALine): boolean {
     const neighbors = neighborsOnLine(ctaStationId, line);

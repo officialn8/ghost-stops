@@ -12,6 +12,8 @@ function input(overrides: Partial<WhyCardInput> = {}, metrics: Partial<WhyCardIn
         closedAt: null,
         openedAt: null,
         closures: [],
+        ctaStationId: null,
+        neighborClosures: [],
         peers: { basis: "loop", line: "Brown", branch: "loop", stationIds: [], ctaStationIds: [], avg12m: [] },
         peerStations: new Map(),
         days: [],
@@ -161,6 +163,57 @@ describe("buildWhyCard nulls and chips", () => {
     it("badges a small station whose riders are steady", () => {
         const card = buildWhyCard(input({}, { residualPct: 80, yoyPct: 30, longRunPct: 40, yoyChangePct: -0.5 }));
         expect(card.badge).toBe("small-but-steady");
+    });
+});
+
+describe("buildWhyCard beside a closure", () => {
+    const STATE_LAKE = { ctaStationId: "40260", displayName: "State/Lake", closures: [{ startDate: "2026-01-05", endDate: null }] };
+    const LAWRENCE = { ctaStationId: "40770", displayName: "Lawrence", closures: [{ startDate: "2021-05-16", endDate: "2025-07-20" }] };
+    // What scoring stores for a station whose year-over-year it set aside.
+    const setAside = { yoyPct: null, yoyChangePct: null };
+
+    it("sets Washington/Wabash's year-over-year aside for State/Lake's closing next door, with the nearby-closure chip", () => {
+        const card = buildWhyCard(
+            input({ ctaStationId: "41700", openedAt: "2017-08-31", neighborClosures: [STATE_LAKE, LAWRENCE] }, setAside),
+        );
+        const text = "State/Lake closed next door in Jan 2026; year-over-year comparable again from Apr 2027";
+        expect(row(card, "yoy")).toEqual({
+            key: "yoy",
+            label: "Change from last year",
+            weight: 0.25,
+            pct: null,
+            value: null,
+            sentence: `${text}.`,
+            nullReason: { kind: "neighbor-closure", text },
+        });
+        expect(card.chips).toEqual([{ kind: "nearby-closure", text: "State/Lake closed next door in Jan 2026" }]);
+        for (const key of ["residual", "longRun", "erratic"] as const) expect(row(card, key).nullReason?.kind, key).not.toBe("neighbor-closure");
+        expect(row(card, "longRun").value).toBe(-38.4);
+    });
+
+    it("says when Wilson's year-over-year is comparable again after Lawrence reopened next door", () => {
+        const card = buildWhyCard(input({ ctaStationId: "40540", neighborClosures: [LAWRENCE] }, setAside));
+        expect(row(card, "yoy").nullReason).toEqual({
+            kind: "neighbor-closure",
+            text: "Lawrence reopened next door in Jul 2025; year-over-year comparable again from Oct 2026",
+        });
+        expect(row(card, "yoy").sentence).toBe("Lawrence reopened next door in Jul 2025; year-over-year comparable again from Oct 2026.");
+        expect(card.chips).toEqual([{ kind: "nearby-closure", text: "Lawrence reopened next door in Jul 2025" }]);
+        for (const c of card.components) expect(c.sentence).not.toContain("\u2014");
+    });
+
+    it("ignores the closures of stations that are not next door", () => {
+        const card = buildWhyCard(input({ ctaStationId: "40680", neighborClosures: [STATE_LAKE, LAWRENCE] })); // Adams/Wabash
+        expect(row(card, "yoy")).toMatchObject({ value: -4, nullReason: null, sentence: "Down 4% from the same 90 days last year." });
+        expect(card.chips).toEqual([]);
+    });
+
+    it("keeps a station's own reopening first, with its own chip", () => {
+        // Lawrence, with a closure invented at Wilson next door.
+        const wilsonClosed = { ctaStationId: "40540", displayName: "Wilson", closures: [{ startDate: "2026-01-05", endDate: null }] };
+        const card = buildWhyCard(input({ ctaStationId: "40770", closures: LAWRENCE.closures, neighborClosures: [wilsonClosed] }, setAside));
+        expect(row(card, "yoy").nullReason).toEqual({ kind: "reopened", text: "reopened Jul 2025, year-over-year available from Oct 2026" });
+        expect(card.chips).toEqual([{ kind: "reopened", text: "reopened Jul 2025" }]);
     });
 });
 

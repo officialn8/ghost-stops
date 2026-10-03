@@ -4,6 +4,7 @@ import { CTA_LINE_ORDER } from "./normalizeStationLines";
 import { CTA_ROSTER } from "./roster";
 import {
     LINE_BRANCHES,
+    adjacentStations,
     getPrimaryLine,
     isTerminalOnLine,
     linesForStation,
@@ -110,6 +111,33 @@ describe("neighborsOnLine", () => {
     it("returns null for a station that is not on the line", () => {
         expect(neighborsOnLine("40980", "Green")).toBeNull();
         expect(isTerminalOnLine("40980", "Green")).toBe(false);
+    });
+});
+
+describe("adjacentStations", () => {
+    const adjacentTo = (ctaStationId: string) =>
+        CTA_ROSTER.map((s) => s.ctaStationId)
+            .filter((id) => adjacentStations(id).includes(ctaStationId))
+            .sort();
+
+    it("names the immediate neighbors on every line, the side before first, each once", () => {
+        // Wilson: Lawrence and Sheridan on Red, Howard and Belmont on the Purple Express.
+        expect(adjacentStations("40540")).toEqual(["40770", "40080", "40900", "41320"]);
+        // State/Lake: Clark/Lake and Washington/Wabash on all five lines that serve it.
+        expect(adjacentStations("40260")).toEqual(["40380", "41700"]);
+        // Garfield (Green) across its junction, and a terminal with one side only.
+        expect(adjacentStations(GARFIELD_GREEN)).toEqual(["40130", "40940", "41140"]);
+        expect(adjacentStations("40390")).toEqual(["40980"]);
+    });
+
+    it("finds, from the sequences, the stations next to each closed or reopened station", () => {
+        expect(adjacentTo("40260")).toEqual(["40380", "41700"]); // State/Lake: Clark/Lake, Washington/Wabash
+        expect(adjacentTo("40770")).toEqual(["40540", "41200"]); // Lawrence: Wilson, Argyle
+        expect(adjacentTo("40340")).toEqual(["41200", "41380"]); // Berwyn: Argyle, Bryn Mawr
+    });
+
+    it("returns nothing for a station on no line", () => {
+        expect(adjacentStations("99999")).toEqual([]);
     });
 });
 

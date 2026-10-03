@@ -15,6 +15,7 @@ function context(overrides: Partial<NarrativeContext> = {}): NarrativeContext {
     tier: "QUIET",
     badge: null,
     closure: null,
+    nearbyClosure: null,
     ...overrides,
   };
 }
@@ -147,6 +148,27 @@ describe("renderTemplate", () => {
       missing: [],
     });
     expect(renderNarrative(archetype, context()).missing).toEqual(["airport_arrivals"]);
+  });
+
+  it("tells a closure next door in place of a year-over-year change, in every archetype that tells one", () => {
+    const nearby = { stationName: "State/Lake", change: "closed" as const, date: "2026-01-05" };
+    const sentence = "State/Lake, next door, closed in January 2026, so this year's numbers are not yet comparable with last year's.";
+    for (const key of Object.keys(ARCHETYPE_DEFINITIONS) as ArchetypeKey[]) {
+      const closure = { startDate: "2026-01-05", endDate: null, reason: "Closed for repairs" };
+      const ctx = context({ facts: facts(-1), yoyChangePct: null, vs2019Pct: -18, tier: "GHOST", closure, nearbyClosure: nearby });
+      const rendered = renderNarrative(ARCHETYPE_DEFINITIONS[key], ctx);
+      const tellsYearOverYear = ARCHETYPE_DEFINITIONS[key].template.includes("has_yoy");
+      expect(rendered.story.includes(sentence), key).toBe(tellsYearOverYear);
+      expect(rendered.story, key).not.toMatch(EM_DASH);
+      expect(rendered.story, key).not.toMatch(/\{\{|\}\}/);
+      expect(rendered.missing, key).toEqual([]);
+    }
+    // A neighbor's reopening, and an em dash in its stored name.
+    expect(
+      story("{{#if has_yoy}}yoy{{else}}{{#if nearby_station}}{{nearby_station}} {{nearby_change}} {{nearby_month}}{{/if}}{{/if}}", {
+        nearbyClosure: { stationName: "Lawrence \u2014 Red", change: "reopened", date: "2025-07-20" },
+      }),
+    ).toBe("Lawrence, Red reopened July 2025");
   });
 
   it("replaces an em dash that arrives in stored text", () => {

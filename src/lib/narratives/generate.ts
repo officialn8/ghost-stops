@@ -15,7 +15,8 @@
  * 2. Closed or temporarily closed: closed, saying since when and why. No score framing.
  * 3. Open but not ranked (no riders in recent data): no_recent_data.
  * 4. Tier HEALTHY, or a small-station badge: growth when the recent change is up, stable
- *    otherwise. The recent change is the year-over-year change, else the change since 2019, and
+ *    otherwise. The recent change is the year-over-year change, else the change since 2019 (as
+ *    when a closure next door set year-over-year aside, which the story then says), and
  *    is level when it prints as 0% (renderer.ts `recentDirection`, the score card's band). The
  *    badge reads the same change with a strict sign, so the two differ only under 0.05 points.
  * 5. Tier GHOST, FADING, or QUIET: the fact archetype that best fits the 12-month average.
@@ -31,6 +32,7 @@ import type {
   NarrativeClosure,
   NarrativeContext,
   NarrativeFacts,
+  NarrativeNearbyClosure,
   NarrativeTier,
   StationBadge,
 } from "@/types/narrative";
@@ -77,6 +79,8 @@ export interface NarrativeStationInput {
   vs2019Pct: number | null;
   /** The closure a closed station is in; null when open. */
   closure: NarrativeClosure | null;
+  /** The closure next door that set year-over-year aside, which the story mentions; null otherwise. */
+  nearbyClosure: NarrativeNearbyClosure | null;
   /** Every stored fact; the job decides which it may use. */
   facts: NarrativeFacts;
 }
@@ -228,6 +232,7 @@ export function generateNarratives(
       tier: station.tier,
       badge: station.badge,
       closure: station.closure,
+      nearbyClosure: station.nearbyClosure,
     };
     const rendered = renderNarrative(
       { template: options.templates?.[key] ?? definition.template, requiredFacts: definition.requiredFacts },

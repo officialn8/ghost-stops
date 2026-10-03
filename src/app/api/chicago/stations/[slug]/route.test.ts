@@ -165,6 +165,7 @@ beforeEach(() => {
     prismaMock.station.findMany.mockResolvedValue([]);
     prismaMock.stationFact.findMany.mockResolvedValue([]);
     prismaMock.stationNarrative.findUnique.mockResolvedValue(null);
+    prismaMock.stationClosure.findMany.mockResolvedValue([]);
     prismaMock.syncRun.findFirst.mockResolvedValue({
         finishedAt: new Date("2026-08-02T11:04:00Z"),
         windowEnd: day(DATA_THROUGH),
@@ -731,6 +732,46 @@ describe("GET /api/chicago/stations/[slug] why card", () => {
         for (const c of body.whyCard!.components) {
             expect(c).toMatchObject({ pct: null, value: null, nullReason: { kind: "closed", text: "closed since Jan 2026" } });
         }
+    });
+
+    it("sets Washington/Wabash's year-over-year aside for closed State/Lake next door, with the nearby-closure chip", async () => {
+        stubStation("41700", ["Brown", "Green", "Orange", "Purple", "Pink"], {
+            slug: "washington-wabash",
+            name: "Washington/Wabash",
+            displayName: "Washington/Wabash",
+            openedAt: day("2017-08-31"),
+            // What scoring stores for it: no year-over-year percentile or change.
+            metrics: v2Metrics({ yoyPct: null, yoyChangePct: null }),
+        });
+        prismaMock.stationClosure.findMany.mockResolvedValue([
+            { startDate: day("2026-01-05"), endDate: null, station: { ctaStationId: "40260", name: "State/Lake", displayName: "State/Lake" } },
+        ] as never);
+
+        const body = await detail("washington-wabash");
+        expect(body.whyCard!.chips).toEqual([{ kind: "nearby-closure", text: "State/Lake closed next door in Jan 2026" }]);
+        expect(component(body, "yoy")).toEqual({
+            key: "yoy",
+            label: "Change from last year",
+            weight: 0.25,
+            pct: null,
+            value: null,
+            sentence: "State/Lake closed next door in Jan 2026; year-over-year comparable again from Apr 2027.",
+            nullReason: {
+                kind: "neighbor-closure",
+                text: "State/Lake closed next door in Jan 2026; year-over-year comparable again from Apr 2027",
+            },
+        });
+        expect(component(body, "longRun")).toMatchObject({ value: -30, nullReason: null });
+        // One small read: the closures of the stations next door on every line.
+        expect(prismaMock.stationClosure.findMany).toHaveBeenCalledWith(
+            expect.objectContaining({ where: { station: { cityId: CITY, ctaStationId: { in: ["40260", "40680"] } } } }),
+        );
+    });
+
+    it("reads no closures next door for a station without a CTA id", async () => {
+        stubStation(null, ["Blue"], { metrics: v2Metrics() });
+        expect((await detail()).whyCard!.chips).toEqual([]);
+        expect(prismaMock.stationClosure.findMany).not.toHaveBeenCalled();
     });
 
     it("has no card for a station without score v2 metrics", async () => {

@@ -82,12 +82,18 @@ export interface StationListResponse extends Freshness {
 
 export type ScoreComponentKey = "residual" | "yoy" | "longRun" | "erratic";
 
-/** Why a component has no value; mirrors src/lib/scoring/availability.ts. */
-export type WhyNullKind = "closed" | "reopened" | "new" | "no-data" | "no-peers";
+/**
+ * Why a component has no value; mirrors src/lib/scoring/availability.ts. "neighbor-closure" is
+ * year-over-year only: a station next door closed or reopened across its two windows.
+ */
+export type WhyNullKind = "closed" | "reopened" | "new" | "neighbor-closure" | "no-data" | "no-peers";
 
 export interface WhyNullReason {
   kind: WhyNullKind;
-  /** The chip text, e.g. "reopened Jul 2025, year-over-year available from Oct 2026". */
+  /**
+   * The chip text, e.g. "reopened Jul 2025, year-over-year available from Oct 2026", or
+   * "State/Lake closed next door in Jan 2026; year-over-year comparable again from Apr 2027".
+   */
   text: string;
 }
 
@@ -109,9 +115,12 @@ export interface WhyComponent {
   nullReason: WhyNullReason | null;
 }
 
-export type ChipKind = "new" | "reopened" | "closed" | "stale";
+export type ChipKind = "new" | "reopened" | "closed" | "nearby-closure" | "stale";
 
-/** A station-level data-quality chip (R18), e.g. "reopened Jul 2025". */
+/**
+ * A station-level data-quality chip (R18), e.g. "reopened Jul 2025", or "State/Lake closed next
+ * door in Jan 2026" when a closure next door set the station's year-over-year aside.
+ */
 export interface Chip {
   kind: ChipKind;
   text: string;

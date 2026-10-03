@@ -5,7 +5,8 @@
  * the small-station badge, and the station's data-quality chips.
  *
  * Pure. Every null is explained by the same rules that nulled it (./availability.ts), fed the
- * stored data-through date, closures, and opening date. Two raw values have no column and are
+ * stored data-through date, closures, and opening date, and the closures of the stations next
+ * door, which can set year-over-year aside. Two raw values have no column and are
  * re-derived exactly as scoring derived them: the residual from the 12-month average and the
  * peers' baseline, the erraticness from the trailing 90 days of rows.
  *
@@ -18,7 +19,14 @@ import { formatCalendarDate, formatChange, isLevelChange } from "@/lib/format";
 import { addDays } from "@/lib/sync/window";
 import { tierName } from "@/lib/utils";
 import type { Chip, PeerBasis, WhyCard, WhyComponent, WhyNullReason, WhyPeer } from "@/types/station";
-import { missingDataReason, windowBlock, type ClosureRange, type NullReason } from "./availability";
+import {
+    missingDataReason,
+    neighborClosures,
+    windowBlock,
+    type ClosureRange,
+    type NeighborClosureReason,
+    type NullReason,
+} from "./availability";
 import { erraticness, residualLog, summarizeWindow, type DayRow } from "./components";
 import { isRanked } from "./ranked";
 import { COMPONENT_WEIGHTS, smallStationBadge, type PeerRecord } from "./score";
@@ -49,6 +57,13 @@ export interface WhyCardInput {
     closedAt: string | null;
     openedAt: string | null;
     closures: readonly ClosureRange[];
+    /** The station's CTA id, which names the stations next to it; null off the map. */
+    ctaStationId: string | null;
+    /**
+     * Other stations' recorded closures, with their display names. Those of the stations next to
+     * this one decide whether its year-over-year is set aside; any others are ignored.
+     */
+    neighborClosures: readonly { ctaStationId: string; displayName: string; closures: readonly ClosureRange[] }[];
     metrics: {
         ghostScore: number;
         dataStatus: string;
@@ -117,9 +132,14 @@ function changeSize(changePct: number): string {
 const closedSince = (date: string) => `closed since ${monthLabel(date)}`;
 const reopenedOn = (date: string) => `reopened ${monthLabel(date)}`;
 const openedOn = (date: string) => `opened ${monthLabel(date)}`;
+/** "State/Lake closed next door in Jan 2026". */
+const changedNextDoor = (name: string, reason: NeighborClosureReason) => `${name} ${reason.change} next door in ${monthLabel(reason.date)}`;
 
-/** The chip text for a null component: "reopened Jul 2025, year-over-year available from Oct 2026". */
-function nullReasonText(component: ComponentKey, reason: NullReason): string {
+/**
+ * The chip text for a null component: "reopened Jul 2025, year-over-year available from Oct 2026",
+ * or "State/Lake closed next door in Jan 2026; year-over-year comparable again from Apr 2027".
+ */
+function nullReasonText(component: ComponentKey, reason: NullReason, nameOf: (ctaStationId: string) => string): string {
     const name = CHIP_NAMES[component];
     const availability = (from: string | null) =>
         from ? `${name} available from ${monthLabel(from)}` : component === "longRun" ? "no 2019 comparison" : `no ${name} yet`;
@@ -130,6 +150,10 @@ function nullReasonText(component: ComponentKey, reason: NullReason): string {
             return `${reopenedOn(reason.reopenedOn)}, ${availability(reason.availableFrom)}`;
         case "new":
             return `${openedOn(reason.openedAt)}, ${availability(reason.availableFrom)}`;
+        case "neighbor-closure":
+            return `${changedNextDoor(nameOf(reason.neighborCtaStationId), reason)}; ${
+                reason.availableFrom ? `${name} comparable again from ${monthLabel(reason.availableFrom)}` : `no ${name} yet`
+            }`;
         case "no-peers":
             return "no station on the line to compare with";
         case "no-data":
@@ -178,8 +202,8 @@ function firstBlock<K extends NullReason["kind"]>(blocks: ComponentBlocks, kind:
     return COMPONENT_KEYS.map((k) => blocks[k]).find((b): b is Extract<NullReason, { kind: K }> => b?.kind === kind);
 }
 
-/** The station-level chips: closed, reopened, new, stale, in that order, at most one of each. */
-function stationChips(input: WhyCardInput, blocks: ComponentBlocks): Chip[] {
+/** The station-level chips: closed, reopened, new, nearby closure, stale, in that order, at most one of each. */
+function stationChips(input: WhyCardInput, blocks: ComponentBlocks, nameOf: (ctaStationId: string) => string): Chip[] {
     const chips: Chip[] = [];
     const openClosure = input.closures.find((c) => c.endDate === null || c.endDate > input.dataThrough);
     const closedFrom =
@@ -191,6 +215,8 @@ function stationChips(input: WhyCardInput, blocks: ComponentBlocks): Chip[] {
     if (reopened) chips.push({ kind: "reopened", text: reopenedOn(reopened.reopenedOn) });
     const opened = firstBlock(blocks, "new");
     if (opened) chips.push({ kind: "new", text: openedOn(opened.openedAt) });
+    const nextDoor = firstBlock(blocks, "neighbor-closure");
+    if (nextDoor) chips.push({ kind: "nearby-closure", text: changedNextDoor(nameOf(nextDoor.neighborCtaStationId), nextDoor) });
 
     // A closed station has no riders by definition; the closed chip already says why.
     if (chips[0]?.kind !== "closed") {
@@ -222,7 +248,15 @@ function componentSentence(key: ComponentKey, value: number, peers: PeerRecord |
 
 export function buildWhyCard(input: WhyCardInput): WhyCard {
     const { metrics, peers } = input;
-    const ctx = { dataThrough: input.dataThrough, openedAt: input.openedAt, closures: input.closures };
+    const closuresByCta = new Map(input.neighborClosures.map((n) => [n.ctaStationId, n.closures]));
+    const names = new Map(input.neighborClosures.map((n) => [n.ctaStationId, n.displayName]));
+    const nameOf = (ctaStationId: string) => names.get(ctaStationId) ?? ctaStationId;
+    const ctx = {
+        dataThrough: input.dataThrough,
+        openedAt: input.openedAt,
+        closures: input.closures,
+        neighbors: neighborClosures(input.ctaStationId, closuresByCta),
+    };
     const blocks = byComponent((k) => windowBlock(k, ctx));
     const blocked = (k: ComponentKey) => blocks[k] !== null;
 
@@ -255,7 +289,7 @@ export function buildWhyCard(input: WhyCardInput): WhyCard {
         const value = raws[key];
         if (value === null) {
             const reason = blocks[key] ?? missingDataReason(key, peers?.basis ?? null);
-            const nullReason: WhyNullReason = { kind: reason.kind, text: nullReasonText(key, reason) };
+            const nullReason: WhyNullReason = { kind: reason.kind, text: nullReasonText(key, reason, nameOf) };
             return { key, label: LABELS[key], weight: COMPONENT_WEIGHTS[key], pct: null, value, sentence: `${capitalize(nullReason.text)}.`, nullReason };
         }
         const sentence = componentSentence(key, value, peers, peerList);
@@ -270,7 +304,7 @@ export function buildWhyCard(input: WhyCardInput): WhyCard {
         rankedCount: metrics.rankedCount,
         badge: smallStationBadge(metrics),
         components,
-        chips: stationChips(input, blocks),
+        chips: stationChips(input, blocks, nameOf),
         peers: {
             basis: peers?.basis ?? "none",
             line: peers?.line ?? null,
