@@ -10,14 +10,15 @@
  * peers' baseline, the erraticness from the trailing 90 days of rows.
  *
  * Changes are worded with the formatter the narratives use (src/lib/format.ts), so the card and
- * the story quote one number.
+ * the story quote one number, and read as level by the same band (`isLevelChange`), so they agree
+ * on its direction.
  */
 import type { StationStatus } from "@prisma/client";
-import { formatCalendarDate, formatChange } from "@/lib/format";
+import { formatCalendarDate, formatChange, isLevelChange } from "@/lib/format";
 import { addDays } from "@/lib/sync/window";
 import { tierName } from "@/lib/utils";
 import type { Chip, PeerBasis, WhyCard, WhyComponent, WhyNullReason, WhyPeer } from "@/types/station";
-import { explainMissingComponent, windowBlock, type ClosureRange, type NullReason } from "./availability";
+import { missingDataReason, windowBlock, type ClosureRange, type NullReason } from "./availability";
 import { erraticness, residualLog, summarizeWindow, type DayRow } from "./components";
 import { isRanked } from "./ranked";
 import { COMPONENT_WEIGHTS, smallStationBadge, type PeerRecord } from "./score";
@@ -152,16 +153,17 @@ function residualSentence(raw: number, peers: PeerRecord | null, names: readonly
     }
 }
 
+/** Level, the band the narratives read too: a change that prints as 0%. */
+const isLevel = (changePct: number) => isLevelChange(changePct / 100);
+
 function yoySentence(changePct: number): string {
-    const size = changeSize(changePct);
-    if (size === "0%") return "Unchanged from the same 90 days last year.";
-    return `${changePct < 0 ? "Down" : "Up"} ${size} from the same 90 days last year.`;
+    if (isLevel(changePct)) return "Unchanged from the same 90 days last year.";
+    return `${changePct < 0 ? "Down" : "Up"} ${changeSize(changePct)} from the same 90 days last year.`;
 }
 
 function longRunSentence(changePct: number): string {
-    const size = changeSize(changePct);
-    if (size === "0%") return "Carries about as many riders as in 2019.";
-    return `Carries ${size} ${changePct < 0 ? "fewer" : "more"} riders than in 2019.`;
+    if (isLevel(changePct)) return "Carries about as many riders as in 2019.";
+    return `Carries ${changeSize(changePct)} ${changePct < 0 ? "fewer" : "more"} riders than in 2019.`;
 }
 
 function erraticSentence(ratio: number): string {
@@ -252,7 +254,7 @@ export function buildWhyCard(input: WhyCardInput): WhyCard {
     const components = COMPONENT_KEYS.map((key): WhyComponent => {
         const value = raws[key];
         if (value === null) {
-            const reason = explainMissingComponent(key, { ...ctx, peerBasis: peers?.basis ?? null });
+            const reason = blocks[key] ?? missingDataReason(key, peers?.basis ?? null);
             const nullReason: WhyNullReason = { kind: reason.kind, text: nullReasonText(key, reason) };
             return { key, label: LABELS[key], weight: COMPONENT_WEIGHTS[key], pct: null, value, sentence: `${capitalize(nullReason.text)}.`, nullReason };
         }

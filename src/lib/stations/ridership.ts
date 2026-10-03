@@ -6,6 +6,7 @@
  * Server code: the routes call these with the Prisma client. Dates are YYYY-MM-DD (KTD17).
  */
 import type { PrismaClient } from "@prisma/client";
+import type { DayRow } from "@/lib/scoring/components";
 import { addDays } from "@/lib/sync/window";
 import type { StationSeries, StationSparkline } from "@/types/station";
 
@@ -22,11 +23,8 @@ export interface SparklineRow {
     entries: number;
 }
 
-export interface StationDay {
-    serviceDate: string;
-    entries: number;
-    dayType: string;
-}
+/** One station day as scoring reads it, so the detail route hands its rows to the why card as they are. */
+export type StationDay = DayRow;
 
 /**
  * Every station's rows in the seven days ending at its own last service date
@@ -42,6 +40,10 @@ export function readSparklineRows(db: RawDb, cityId: string): Promise<SparklineR
             SELECT d."serviceDate", d."entries" FROM "RidershipDaily" d
             WHERE d."stationId" = s.id
               AND d."serviceDate" BETWEEN m."serviceDateMax"::date - ${SPARKLINE_DAYS - 1}::int AND m."serviceDateMax"::date
+            -- The window holds at most SPARKLINE_DAYS rows, so the limit drops none; it stops the
+            -- planner flattening the subquery into a hash join over a scan of the whole table.
+            ORDER BY d."serviceDate" DESC
+            LIMIT ${SPARKLINE_DAYS}::int
         ) r
         WHERE s."cityId" = ${cityId}
         ORDER BY s.id, r."serviceDate"`;
@@ -60,6 +62,7 @@ export function sparklineFor(end: string, entriesByDate: ReadonlyMap<string, num
  * trail a station's last row when a run stored rows and then failed before scoring them.
  */
 export function readStationDays(db: RawDb, stationId: string, alsoFrom: string | null): Promise<StationDay[]> {
+    // RidershipDaily.dayType is char(1) holding the upstream code, so it is typed DayType here, once.
     return db.$queryRaw<StationDay[]>`
         SELECT r."serviceDate"::text AS "serviceDate", r."entries" AS "entries", r."dayType"::text AS "dayType"
         FROM "RidershipDaily" r

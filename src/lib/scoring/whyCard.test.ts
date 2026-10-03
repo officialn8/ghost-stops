@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { ScoreComponentKey } from "@/types/station";
+import type { DayRow } from "./components";
 import { buildWhyCard, monthLabel, parsePeerRecord, type WhyCardInput } from "./whyCard";
 
 const DATA_THROUGH = "2026-07-31";
@@ -44,6 +45,10 @@ describe("buildWhyCard sentences", () => {
             [12.4, "Up 12% from the same 90 days last year.", "Carries 12% more riders than in 2019."],
             [0.3, "Up 0.3% from the same 90 days last year.", "Carries 0.3% more riders than in 2019."],
             [-0.02, "Unchanged from the same 90 days last year.", "Carries about as many riders as in 2019."],
+            // The level band the narratives share (isLevelChange): under 0.05 points either way.
+            [-0.04, "Unchanged from the same 90 days last year.", "Carries about as many riders as in 2019."],
+            [0.04, "Unchanged from the same 90 days last year.", "Carries about as many riders as in 2019."],
+            [0.05, "Up 0.1% from the same 90 days last year.", "Carries 0.1% more riders than in 2019."],
         ];
         for (const [change, yoy, longRun] of cases) {
             const card = buildWhyCard(input({}, { yoyChangePct: change, vs2019Pct: change }));
@@ -84,7 +89,7 @@ describe("buildWhyCard sentences", () => {
     });
 
     it("states erraticness from the trailing 90 days only", () => {
-        const days = [
+        const days: DayRow[] = [
             // Outside the window (before 2026-05-03): ignored.
             { serviceDate: "2026-05-01", entries: 5000, dayType: "W" },
             { serviceDate: "2026-07-28", entries: 100, dayType: "W" },
@@ -146,6 +151,11 @@ describe("buildWhyCard nulls and chips", () => {
         );
         expect(card).toMatchObject({ score: null, tier: null, rank: null });
         expect(card.chips).toEqual([{ kind: "closed", text: "closed since Jan 2026" }]);
+    });
+
+    it("scores the healthiest ranked station 0, the other side of the -1 unranked sentinel", () => {
+        const card = buildWhyCard(input({}, { ghostScore: 0, tier: "HEALTHY", rank: 143, rankedCount: 143 }));
+        expect(card).toMatchObject({ score: 0, tier: "healthy", rank: 143, rankedCount: 143 });
     });
 
     it("badges a small station whose riders are steady", () => {

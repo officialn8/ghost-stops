@@ -322,17 +322,25 @@ describe("GET /api/chicago/stations/[slug] neighbors", () => {
         expect(result.neighborAvg).toBe(1500);
     });
 
+    it("names the same ranked neighbors in the line walk", async () => {
+        stubStation("40980", ["Blue"]);
+
+        const { neighbors: ranked, lineNeighbors } = (await detail()).comparisons;
+        expect(lineNeighbors).toEqual({ prev: ranked.prev, next: ranked.next });
+    });
+
     it("returns no neighbors for a station without a CTA id", async () => {
         stubStation(null, ["Blue"]);
 
-        const result = await neighbors();
-        expect(result).toEqual({ prev: null, next: null, neighborAvg: 0 });
+        const body = await detail();
+        expect(body.comparisons.neighbors).toEqual({ prev: null, next: null, neighborAvg: 0 });
+        expect(body.comparisons.lineNeighbors).toEqual({ prev: null, next: null });
         expect(prismaMock.station.findMany).not.toHaveBeenCalledWith(
             expect.objectContaining({ where: expect.objectContaining({ ctaStationId: expect.anything() }) }),
         );
     });
 
-    it("names a closed or no-rider neighbor without a score and leaves it out of the average", async () => {
+    it("names a closed or no-rider neighbor without a score in the line walk, and leaves it out of the v1 pills and the average", async () => {
         const stateLake = BY_CTA_ID["40260"];
         const variants: Neighbor[] = [
             { ...stateLake, metrics: metrics(0, -1, "zero") }, // what the sync writes for State/Lake
@@ -345,9 +353,16 @@ describe("GET /api/chicago/stations/[slug] neighbors", () => {
                 stubStation("41700", ["Brown", "Green", "Orange", "Purple", "Pink"]);
 
                 const body = await detail();
-                const result = body.comparisons.neighbors;
-                expect(result.prev).toMatchObject({ id: "state-lake-uuid", slug: "state-lake", status: variant.status, ghostScore: null, tier: null });
-                expect(result.neighborAvg).toBe(5000);
+                expect(body.comparisons.lineNeighbors.prev).toMatchObject({
+                    id: "state-lake-uuid",
+                    slug: "state-lake",
+                    status: variant.status,
+                    ghostScore: null,
+                    tier: null,
+                });
+                // v1: an unranked neighbor is null, so the v1 pills show no badge for it.
+                expect(body.comparisons.neighbors.prev).toBeNull();
+                expect(body.comparisons.neighbors.neighborAvg).toBe(5000);
                 expect(body.comparisons.vsNeighbors).toBe(-94);
             }
         } finally {
@@ -360,13 +375,16 @@ describe("GET /api/chicago/stations/[slug] neighbors", () => {
 
         const body = await detail();
         expect(body.comparisons.primaryLine).toBe("Brown");
-        expect(body.comparisons.neighbors.prev).toMatchObject({
+        expect(body.comparisons.lineNeighbors.prev).toMatchObject({
             name: "State/Lake",
             slug: "state-lake",
             status: "CLOSED",
             ghostScore: null,
             tier: null,
         });
+        expect(body.comparisons.lineNeighbors.next).toMatchObject({ name: "Adams/Wabash", slug: "adams-wabash", ghostScore: 20 });
+        // v1 compatibility: the closed neighbor is null where the v1 pills read it.
+        expect(body.comparisons.neighbors.prev).toBeNull();
         expect(body.comparisons.neighbors.next).toMatchObject({ name: "Adams/Wabash", slug: "adams-wabash", ghostScore: 20 });
         expect(body.comparisons.neighbors.neighborAvg).toBe(5000);
     });
@@ -429,6 +447,12 @@ describe("GET /api/chicago/stations/[slug] peer comparisons", () => {
         expect(prismaMock.station.count).toHaveBeenCalledWith({
             where: { cityId: CITY, status: "ACTIVE", metrics: { dataStatus: "normal", rolling30dAvg: { lt: 300 } } },
         });
+    });
+
+    it("gives a station with no metrics row percentile 0, not the share of every ranked station", async () => {
+        stubStation("40980", ["Blue"], { metrics: null });
+        // The count mock answers 143 for any filter: a dropped ridership filter would read as 100.
+        expect((await detail()).metrics.percentile).toBe(0);
     });
 });
 
@@ -712,5 +736,13 @@ describe("GET /api/chicago/stations/[slug] why card", () => {
     it("has no card for a station without score v2 metrics", async () => {
         stubStation("40980", ["Blue"], { metrics: metrics(300, 67) });
         expect((await detail()).whyCard).toBeNull();
+    });
+
+    it("has no card for a v1 metrics row that a Phase 2 sync stamped with a data-through date", async () => {
+        // Phase 2's base metrics write sets dataThrough but leaves the v1 score and scoreVersion 1.
+        stubStation("40980", ["Blue"], { metrics: { ...metrics(300, 67), dataThrough: day(DATA_THROUGH), scoreVersion: 1 } });
+        const body = await detail();
+        expect(body.whyCard).toBeNull();
+        expect(body.metrics).toMatchObject({ dataThrough: DATA_THROUGH, scoreVersion: 1 });
     });
 });

@@ -12,12 +12,13 @@
  *
  * Changes are in percent. Every function returns null rather than a number it cannot stand behind.
  */
+import type { DayType } from "@/lib/sync/socrata";
 
 export interface DayRow {
     serviceDate: string;
     entries: number;
-    /** W weekday, A Saturday, U Sunday or holiday. */
-    dayType: string;
+    /** W weekday, A Saturday, U Sunday or holiday: RidershipDaily.dayType, the upstream code. */
+    dayType: DayType;
 }
 
 /** One window's ridership, weekdays apart from weekends (Saturdays, Sundays, and holidays). */

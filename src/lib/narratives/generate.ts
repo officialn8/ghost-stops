@@ -14,12 +14,13 @@
  *    and Western (O'Hare) carry the same placeholder fact but are neighborhood stations.
  * 2. Closed or temporarily closed: closed, saying since when and why. No score framing.
  * 3. Open but not ranked (no riders in recent data): no_recent_data.
- * 4. Tier HEALTHY, or a small-station badge: growth when the recent change is positive, stable
- *    otherwise. The recent change is the year-over-year change, else the change since 2019: the
- *    badge's own sign rule, so a "small but growing" badge always sits beside a growth story.
+ * 4. Tier HEALTHY, or a small-station badge: growth when the recent change is up, stable
+ *    otherwise. The recent change is the year-over-year change, else the change since 2019, and
+ *    is level when it prints as 0% (renderer.ts `recentDirection`, the score card's band). The
+ *    badge reads the same change with a strict sign, so the two differ only under 0.05 points.
  * 5. Tier GHOST, FADING, or QUIET: the fact archetype that best fits the 12-month average.
  * 6. No fact archetype fits (the station has no usable 2001 average): growth when the recent
- *    change is positive, recent_decline when negative, stable when it is unknown.
+ *    change is up, recent_decline when down, stable when it is level or unknown.
  */
 
 import type { DataQuality, Prisma, PrismaClient, StationStatus } from "@prisma/client";
@@ -34,7 +35,7 @@ import type {
   StationBadge,
 } from "@/types/narrative";
 import { ARCHETYPE_DEFINITIONS, findBestArchetype } from "./archetypes";
-import { renderNarrative } from "./renderer";
+import { recentDirection, renderNarrative } from "./renderer";
 
 /** StationNarrative.templateVersion for every story this job writes. */
 export const TEMPLATE_VERSION = "v2";
@@ -147,10 +148,10 @@ function selectArchetype(station: NarrativeStationInput, facts: NarrativeFacts):
   if (station.status !== "ACTIVE") return { key: "closed", confidence: 1, selectedBy: "closed" };
   if (!station.ranked) return { key: "no_recent_data", confidence: 1, selectedBy: "unranked" };
 
-  const recent = station.yoyChangePct ?? station.vs2019Pct;
+  const recent = recentDirection(station.yoyChangePct, station.vs2019Pct);
   if (station.tier === "HEALTHY" || station.badge !== null) {
     return {
-      key: recent !== null && recent > 0 ? "growth" : "stable",
+      key: recent === "up" ? "growth" : "stable",
       confidence: 1,
       selectedBy: station.tier === "HEALTHY" ? "healthy" : "badge",
     };
@@ -159,7 +160,7 @@ function selectArchetype(station: NarrativeStationInput, facts: NarrativeFacts):
     const best = findBestArchetype(facts, station.avg12m);
     if (best.confidence > 0) return { key: best.archetype.key, confidence: best.confidence, selectedBy: "facts" };
   }
-  const key: ArchetypeKey = recent === null || recent === 0 ? "stable" : recent > 0 ? "growth" : "recent_decline";
+  const key: ArchetypeKey = recent === "up" ? "growth" : recent === "down" ? "recent_decline" : "stable";
   return { key, confidence: 1, selectedBy: "components" };
 }
 

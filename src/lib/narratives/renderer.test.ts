@@ -94,6 +94,17 @@ describe("renderTemplate", () => {
     expect(withBaseline(3810)).toBe("has held near **3,810**, a **+0.4%** change");
   });
 
+  it("reads the recent direction with the score card's level band: a change that rounds to 0.0% is neither up nor down", () => {
+    const template = "{{#if recent_up}}up {{/if}}{{#if recent_down}}down {{/if}}{{#if has_yoy}}{{yoy_change|change}}{{/if}}";
+    expect(story(template, { yoyChangePct: 0.04 })).toBe("0%");
+    expect(story(template, { yoyChangePct: -0.04 })).toBe("0%");
+    expect(story(template, { yoyChangePct: 0.05 })).toBe("up +0.1%");
+    expect(story(template, { yoyChangePct: -0.05 })).toBe("down -0.1%");
+    // With no year-over-year change, the 2019 change decides, banded the same way.
+    expect(story("{{#if recent_up}}up{{/if}}{{#if recent_down}}down{{/if}}", { vs2019Pct: -0.04 })).toBe("");
+    expect(story("{{#if recent_up}}up{{/if}}{{#if recent_down}}down{{/if}}", { vs2019Pct: -0.06 })).toBe("down");
+  });
+
   it("renders every change with an explicit sign", () => {
     const template = "{{yoy_change|change}} {{vs2019_change|change}} {{population_change|change}} {{jobs_walkshed_change|change}}";
     expect(

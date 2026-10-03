@@ -5,6 +5,7 @@ import { resolveSlugAlias } from "@/lib/cta/slug";
 import { getPrimaryLine, primaryLineNeighbors } from "@/lib/cta/sequences";
 import { formatValue, getArchetypeInfo, getFactLabel } from "@/lib/narratives";
 import { mean, median } from "@/lib/scoring/components";
+import { SCORE_VERSION } from "@/lib/scoring/score";
 import { scoreWindows } from "@/lib/scoring/windows";
 import { buildWhyCard, parsePeerRecord } from "@/lib/scoring/whyCard";
 import { readStationDays, seriesFor, SERIES_DAYS_BEFORE_END } from "@/lib/stations/ridership";
@@ -13,7 +14,13 @@ import { readFreshness } from "@/lib/sync/freshness";
 import { addDays, optionalDay, toDay } from "@/lib/sync/window";
 import { safeJsonParse, tierName, toUiDataStatus } from "@/lib/utils";
 import type { FactKey, ArchetypeKey, DataSourceInfo } from "@/types/narrative";
-import type { NeighborEntry, StationDetailFacts, StationDetailNarrative, StationDetailResponse } from "@/types/station";
+import type {
+  NeighborEntry,
+  RankedNeighborEntry,
+  StationDetailFacts,
+  StationDetailNarrative,
+  StationDetailResponse,
+} from "@/types/station";
 
 const CITY_CODE = "chicago";
 
@@ -71,13 +78,16 @@ export async function GET(
     const peerRecord = parsePeerRecord(station.metrics?.peerStationIds);
 
     // Neighbor stations on the primary line, looked up by CTA station id in one query. Closed and
-    // no-data neighbors are named (State/Lake on the Brown Line Loop) but carry no score.
-    type Neighbor = { entry: NeighborEntry; ranked: boolean };
+    // no-data neighbors are named in the line walk (State/Lake on the Brown Line Loop) but carry
+    // no score; the v1 neighbors keep them null.
+    type Neighbor = { ranked: true; entry: RankedNeighborEntry } | { ranked: false; entry: NeighborEntry };
     const neighborIds = station.ctaStationId ? primaryLineNeighbors(station.ctaStationId, stationLines) : null;
     const neighborCtaIds = [neighborIds?.prev, neighborIds?.next].filter((id): id is string => !!id);
 
     // Peer comparisons (average, percentile, medians) use ranked stations only, the isRanked rule:
     // closed State/Lake's metrics row reports 0 riders and would drag every comparison down.
+    // A station with no 30-day average (no metrics row) has no percentile: it reports 0.
+    const ownRolling30dAvg = station.metrics?.rolling30dAvg ?? null;
     const [
       days,
       systemStats,
@@ -104,16 +114,16 @@ export async function GET(
       prisma.station.count({
         where: { cityId: station.cityId, status: "ACTIVE", metrics: { dataStatus: "normal" } }
       }),
-      prisma.station.count({
-        where: {
-          cityId: station.cityId,
-          status: "ACTIVE",
-          metrics: {
-            dataStatus: "normal",
-            rolling30dAvg: station.metrics?.rolling30dAvg != null ? { lt: station.metrics.rolling30dAvg } : undefined
-          }
-        }
-      }),
+      // Without the station's own average Prisma would drop the filter and count every ranked station.
+      ownRolling30dAvg === null
+        ? Promise.resolve(0)
+        : prisma.station.count({
+            where: {
+              cityId: station.cityId,
+              status: "ACTIVE",
+              metrics: { dataStatus: "normal", rolling30dAvg: { lt: ownRolling30dAvg } }
+            }
+          }),
       // Ranked station metrics for median calculations
       prisma.stationMetrics.findMany({
         where: {
@@ -158,27 +168,29 @@ export async function GET(
     const neighbor = (ctaStationId: string | null | undefined): Neighbor | null => {
       const found = ctaStationId ? neighborByCtaId.get(ctaStationId) : undefined;
       if (!found) return null;
-      const ranked = found.metrics != null && isRanked(found.status, found.metrics.dataStatus);
-      return {
-        ranked,
-        entry: {
-          id: found.id,
-          slug: found.slug,
-          name: found.name,
-          displayName: found.displayName ?? found.name,
-          status: found.status,
-          rolling30dAvg: found.metrics?.rolling30dAvg ?? 0,
-          ghostScore: ranked ? found.metrics!.ghostScore : null,
-          tier: ranked ? tierName(found.metrics!.tier) : null
-        }
+      const named = {
+        id: found.id,
+        slug: found.slug,
+        name: found.name,
+        displayName: found.displayName ?? found.name,
+        status: found.status,
+        rolling30dAvg: found.metrics?.rolling30dAvg ?? 0,
       };
+      const m = found.metrics;
+      return m !== null && isRanked(found.status, m.dataStatus)
+        ? { ranked: true, entry: { ...named, ghostScore: m.ghostScore, tier: tierName(m.tier) } }
+        : { ranked: false, entry: { ...named, ghostScore: null, tier: null } };
     };
     const prevNeighbor = neighbor(neighborIds?.prev);
     const nextNeighbor = neighbor(neighborIds?.next);
+    // v1: an unranked neighbor is null, so the v1 pills show no badge for a station with no score.
+    const rankedOnly = (n: Neighbor | null): RankedNeighborEntry | null => (n?.ranked ? n.entry : null);
+    const prevRanked = rankedOnly(prevNeighbor);
+    const nextRanked = rankedOnly(nextNeighbor);
 
     const systemAverage = systemStats._avg.rolling30dAvg ?? 0;
 
-    const percentile = totalStations > 0
+    const percentile = ownRolling30dAvg !== null && totalStations > 0
       ? Math.round((stationsWithLowerRidership / totalStations) * 100)
       : 0;
 
@@ -204,9 +216,9 @@ export async function GET(
 
     // Calculate neighbor average over ranked neighbors only
     const neighborAvg = mean(
-      [prevNeighbor, nextNeighbor]
-        .filter((n): n is Neighbor => n !== null && n.ranked)
-        .map(n => n.entry.rolling30dAvg)
+      [prevRanked, nextRanked]
+        .filter((n): n is RankedNeighborEntry => n !== null)
+        .map(n => n.rolling30dAvg)
     ) ?? 0;
 
     // Calculate percentage differences
@@ -360,9 +372,10 @@ export async function GET(
       trend = ((rolling30d - rolling90d) / rolling90d) * 100;
     }
 
-    // The why card needs score v2 metrics, which carry the date they were computed for.
+    // The why card needs score v2 metrics, which carry the date they were computed for. A v1 row
+    // that a Phase 2 sync stamped with dataThrough still holds the v1 score and no v2 columns.
     const m = station.metrics;
-    const whyCard = m && metricsDataThrough
+    const whyCard = m && metricsDataThrough && m.scoreVersion >= SCORE_VERSION
       ? buildWhyCard({
           dataThrough: metricsDataThrough,
           status: station.status,
@@ -431,9 +444,13 @@ export async function GET(
         primaryLine: primaryLine,
         lineMedian: Math.round(lineMedian),
         neighbors: {
-          prev: prevNeighbor?.entry ?? null,
-          next: nextNeighbor?.entry ?? null,
+          prev: prevRanked,
+          next: nextRanked,
           neighborAvg: Math.round(neighborAvg)
+        },
+        lineNeighbors: {
+          prev: prevNeighbor?.entry ?? null,
+          next: nextNeighbor?.entry ?? null
         },
         vsSystemMedian,
         vsLineMedian,

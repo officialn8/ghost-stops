@@ -88,18 +88,10 @@ export function windowBlock(component: ComponentKey, ctx: AvailabilityContext): 
     return null;
 }
 
-/** Why a component whose windows are clear still has no value: no peers for the residual, else no data. */
+/**
+ * Why a component whose windows are clear still has no value: no peers for the residual, else no
+ * data. A reader explaining a null component uses its `windowBlock` first, then this.
+ */
 export function missingDataReason(component: ComponentKey, peerBasis: PeerBasis | null): NullReason {
     return component === "residual" && peerBasis === "none" ? { kind: "no-peers" } : { kind: "no-data" };
-}
-
-/**
- * The reason a component has no value: its window block if it has one, otherwise
- * `missingDataReason`. For a reader explaining a ranked station's null percentile.
- */
-export function explainMissingComponent(
-    component: ComponentKey,
-    ctx: AvailabilityContext & { peerBasis: PeerBasis | null },
-): NullReason {
-    return windowBlock(component, ctx) ?? missingDataReason(component, ctx.peerBasis);
 }

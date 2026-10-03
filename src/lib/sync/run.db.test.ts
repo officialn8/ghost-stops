@@ -479,6 +479,39 @@ describe("runSync", () => {
         expect((await prisma.station.findUniqueOrThrow({ where: { id: stationIdFor(CITY, A) } })).status).toBe("ACTIVE");
     });
 
+    it("tells a closed station with metrics the closed story, naming the closure its status came from", async () => {
+        const closed = stationIdFor(CITY, CLOSED);
+        // An ended closure first, so the story must pick the one whose start is the derived closedAt.
+        await prisma.stationClosure.createMany({
+            data: [
+                { stationId: closed, startDate: new Date("2023-03-01"), endDate: new Date("2023-06-01"), reason: "Track work" },
+                { stationId: closed, startDate: new Date("2026-01-05"), reason: "Rebuild" },
+            ],
+        });
+        // Stored January rows, outside the window: the closed station's last data, so it has a metrics row.
+        await upsertRidership(
+            prisma,
+            ["2026-01-01", "2026-01-02", "2026-01-03", "2026-01-04"].map((serviceDate) => ({
+                stationId: closed,
+                serviceDate,
+                entries: 300,
+                dayType: "W",
+            })),
+        );
+
+        const { summary } = await run(WINDOW_ROWS);
+
+        expect(summary).toMatchObject({ status: "OK", narrativesWritten: 3, narrativesRejected: 0 });
+        expect(await prisma.stationMetrics.findUnique({ where: { stationId: closed } })).not.toBeNull();
+        const narrative = (await cityNarratives()).find((n) => n.stationId === closed);
+        expect(narrative).toMatchObject({
+            archetypeKey: "closed",
+            renderedStory: "Station 40030 has been closed since **January 2026**. Reason given: Rebuild.",
+            qualityNote: "Based on the station's closure dates.",
+            evidenceMeta: expect.objectContaining({ selectedBy: "closed", tier: null }),
+        });
+    });
+
     it("reopens a station whose closure has ended, and keeps one with an open closure closed", async () => {
         const reopened = stationIdFor(CITY, B);
         const closed = stationIdFor(CITY, CLOSED);

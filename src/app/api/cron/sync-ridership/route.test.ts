@@ -132,6 +132,17 @@ describe("GET /api/cron/sync-ridership", () => {
         }
     });
 
+    it("passes the run a log that writes each line, a rejected narrative's included, to the function log", async () => {
+        const info = vi.spyOn(console, "info").mockImplementation(() => {});
+
+        await GET(request({ authorization: "Bearer test-cron-secret" }));
+
+        const options = runSync.mock.calls[0][2] as { log?: (message: string) => void };
+        expect(typeof options.log).toBe("function");
+        options.log!("narrative rejected for station s-1 (stable): missing population_change");
+        expect(info).toHaveBeenCalledWith("sync-ridership", "narrative rejected for station s-1 (stable): missing population_change");
+    });
+
     it("gives the run a drift deadline 240 seconds from the start of the request", async () => {
         const now = new Date("2026-08-12T10:00:00Z");
         vi.useFakeTimers({ now, toFake: ["Date"] });

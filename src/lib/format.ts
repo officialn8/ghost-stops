@@ -44,14 +44,25 @@ export function formatPercentChange(value: number, decimals = 0): string {
 }
 
 /**
+ * Whether a change reads as level: exactly when `formatChange` prints it as "0%", under 0.05
+ * percentage points either way. The score card's "Unchanged" and the narratives' direction (their
+ * archetype and their gaining or losing wording) both read this one band, so a story never says
+ * "losing riders" beside a card that says "Unchanged".
+ *
+ * CONVENTION: Input is a decimal (0.0004 = 0.04%).
+ */
+export function isLevelChange(value: number): boolean {
+  return Math.round(Math.abs(value * 100) * 10) === 0;
+}
+
+/**
  * A change as narratives and the score card show it: always signed, in whole percents, with one
  * decimal when a whole percent would read as zero, so a small rise still shows as one.
  * Examples: 0.0398 → "+4%", -0.384 → "-38%", 0.003 → "+0.3%", 0.0004 → "0%"
  */
 export function formatChange(value: number): string {
-  const percent = Math.abs(value * 100);
-  if (Math.round(percent * 10) === 0) return "0%";
-  return formatPercentChange(value, Math.round(percent) >= 1 ? 0 : 1);
+  if (isLevelChange(value)) return "0%";
+  return formatPercentChange(value, Math.round(Math.abs(value * 100)) >= 1 ? 0 : 1);
 }
 
 /**

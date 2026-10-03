@@ -9,6 +9,7 @@
  * - 2019: the pre-pandemic year the long-run change compares against.
  */
 import type { PrismaClient } from "@prisma/client";
+import type { DayType } from "@/lib/sync/socrata";
 import { addDays, optionalDay, toDay, toUtcDate, type DateWindow } from "@/lib/sync/window";
 import type { ScoreComponentKey } from "@/types/station";
 import type { ClosureRange } from "./availability";
@@ -90,7 +91,8 @@ type ScoreDb = Pick<PrismaClient, "$queryRaw" | "station">;
 export async function readScoreWindows(db: ScoreDb, cityId: string, dataThrough: string): Promise<StationWindowRows[]> {
     const { trailing90, yearAgo90 } = scoreWindows(dataThrough);
     const [windows, stations] = await Promise.all([
-        db.$queryRaw<{ stationId: string; days: [string, number, string][]; avg2019: number | null }[]>`
+        // RidershipDaily.dayType is char(1) holding the upstream code, so it is typed DayType here, once.
+        db.$queryRaw<{ stationId: string; days: [string, number, DayType][]; avg2019: number | null }[]>`
             SELECT s.id AS "stationId", d.days AS "days", y.avg2019 AS "avg2019"
             FROM "Station" s
             CROSS JOIN LATERAL (

@@ -19,7 +19,9 @@ export function glass(opacity: number = 0.72, blur: number = 16) {
   }
 }
 
-// Ghost score color mapping (calibrated for multi-factor composite scores, max ~75)
+// Ghost score color mapping on the v1 scale (cutoffs 65/50/35/20, set for the v1 composite's
+// ceiling of about 75). Knowingly miscalibrated for score v2's 0-100 percentile until U18
+// replaces it with `getTier`.
 export function getGhostScoreColor(score: number): string {
   if (score >= 65) return "#DC2626" // red-600 (top tier ghost)
   if (score >= 50) return "#EA580C" // orange-600

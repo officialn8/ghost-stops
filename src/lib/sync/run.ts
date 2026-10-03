@@ -55,7 +55,7 @@ export interface SyncOptions {
     /** Epoch ms after which no further drift month is fetched; the window always runs. */
     deadline?: number;
     now?: () => Date;
-    /** Progress lines for the local runner, one per fetched range. */
+    /** Progress lines, one per fetched range, and one per rejected narrative naming its station. */
     log?: (message: string) => void;
     /** Stands in for score v2's computation; tests pass one that throws. */
     scoreStations?: typeof scoreStations;

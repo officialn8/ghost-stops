@@ -34,6 +34,9 @@ export async function GET(request: NextRequest) {
             trigger: `cron-${mode}`,
             mode,
             deadline: Date.now() + DRIFT_BUDGET_MS,
+            // Range progress and each rejected narrative's station and missing facts, which the
+            // counts in the summary line below cannot name.
+            log: (message) => console.info("sync-ridership", message),
         });
         if (summary.status === "OK" || summary.status === "PARTIAL") revalidateTag(STATIONS_CACHE_TAG);
 

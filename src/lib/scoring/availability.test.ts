@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { STATION_CLOSURES } from "@/lib/cta/closures";
-import { explainMissingComponent, windowBlock, type AvailabilityContext } from "./availability";
+import { missingDataReason, windowBlock, type AvailabilityContext } from "./availability";
 
 const closures = (ctaStationId: string) =>
     STATION_CLOSURES.filter((c) => c.ctaStationId === ctaStationId).map(({ startDate, endDate }) => ({ startDate, endDate }));
@@ -66,13 +66,22 @@ describe("windowBlock", () => {
     });
 });
 
-describe("explainMissingComponent", () => {
+describe("missingDataReason", () => {
     const open: AvailabilityContext = { dataThrough: "2026-07-31", openedAt: null, closures: [] };
+    /** How readers compose a null component's reason: the window block first, then missing data. */
+    const reason = (component: "residual" | "yoy", ctx: AvailabilityContext, basis: "neighbors" | "none") =>
+        windowBlock(component, ctx) ?? missingDataReason(component, basis);
 
-    it("prefers the window block, then names missing peers for the residual, then missing data", () => {
-        expect(explainMissingComponent("yoy", { ...lawrence("2026-07-31"), peerBasis: "neighbors" })).toMatchObject({ kind: "reopened" });
-        expect(explainMissingComponent("residual", { ...open, peerBasis: "none" })).toEqual({ kind: "no-peers" });
-        expect(explainMissingComponent("residual", { ...open, peerBasis: "neighbors" })).toEqual({ kind: "no-data" });
-        expect(explainMissingComponent("yoy", { ...open, peerBasis: "none" })).toEqual({ kind: "no-data" });
+    it("names missing peers for the residual only, and missing data otherwise", () => {
+        expect(missingDataReason("residual", "none")).toEqual({ kind: "no-peers" });
+        expect(missingDataReason("residual", "neighbors")).toEqual({ kind: "no-data" });
+        expect(missingDataReason("residual", null)).toEqual({ kind: "no-data" });
+        expect(missingDataReason("yoy", "none")).toEqual({ kind: "no-data" });
+    });
+
+    it("is the fallback behind a window block, which readers check first", () => {
+        expect(reason("yoy", lawrence("2026-07-31"), "neighbors")).toMatchObject({ kind: "reopened" });
+        expect(reason("residual", open, "none")).toEqual({ kind: "no-peers" });
+        expect(reason("yoy", open, "none")).toEqual({ kind: "no-data" });
     });
 });

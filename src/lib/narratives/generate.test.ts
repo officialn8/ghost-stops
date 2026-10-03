@@ -125,7 +125,7 @@ describe("generateNarratives", () => {
     expect(growing.renderedStory).toContain("**+6%** change from 2019, above its pre-pandemic level");
   });
 
-  it("agrees with the small-station badge, which reads the same year-over-year sign", () => {
+  it("agrees with the small-station badge on a change outside the level band", () => {
     const growing = narrativeFor(station({ tier: "FADING", badge: "small-but-growing", yoyChangePct: 0.3 }));
     expect(growing.archetypeKey).toBe("growth");
     expect(growing.renderedStory).toContain("carries fewer riders than comparable stations, but its ridership is growing");
@@ -134,6 +134,27 @@ describe("generateNarratives", () => {
     const steady = narrativeFor(station({ tier: "FADING", badge: "small-but-steady", yoyChangePct: -2 }));
     expect(steady.archetypeKey).toBe("stable");
     expect(steady.renderedStory).toContain("its ridership is holding up better than most");
+  });
+
+  it("reads a change that rounds to 0.0% as level, as the score card does: stable, neither gaining nor losing", () => {
+    const cases: Partial<NarrativeStationInput>[] = [
+      { yoyChangePct: -0.04, vs2019Pct: -20 },
+      { yoyChangePct: 0.04, vs2019Pct: -20 },
+      { yoyChangePct: null, vs2019Pct: 0.04 }, // year over year unknown: the 2019 change decides
+    ];
+    for (const change of cases) {
+      for (const tier of ["HEALTHY", "GHOST"] as const) {
+        const label = `${tier} ${JSON.stringify(change)}`;
+        const row = narrativeFor(station({ tier, ...change }));
+        expect(row.archetypeKey, label).toBe("stable");
+        expect(row.renderedStory, label).not.toMatch(/gaining|losing|is growing|recent gains/i);
+        if (change.yoyChangePct !== null) {
+          expect(row.renderedStory, label).toContain("a **0%** change from the same days a year earlier");
+        }
+      }
+    }
+    expect(narrativeFor(station({ tier: "HEALTHY", yoyChangePct: 0.04 })).renderedStory).toContain("Test Station is holding its own.");
+    expect(narrativeFor(station({ tier: "GHOST", yoyChangePct: -0.04 })).renderedStory).toContain("Test Station ranks as a ghost station.");
   });
 
   it("tells a ghost station with falling riders and no long-run facts that it is losing riders", () => {

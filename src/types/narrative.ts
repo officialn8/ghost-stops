@@ -181,36 +181,3 @@ export interface NarrativeAPIResponse {
   narrative: StationNarrativeData | null;
   sources: DataSourceInfo[] | null;
 }
-
-// ═══════════════════════════════════════════════════════════════
-// SEED DATA TYPES
-// ═══════════════════════════════════════════════════════════════
-
-export interface SeedFactData {
-  value: number;
-  unit: string;
-  geography: Geography;
-  timeframeStart?: number;
-  timeframeEnd?: number;
-  sourceCode: string;
-  sourceNote?: string;
-  methodology: string;
-  quality?: DataQuality;
-  qualityNote?: string;
-  evidenceMeta?: EvidenceMeta;
-}
-
-export interface SeedStationData {
-  name: string;
-  facts: Partial<Record<FactKey, SeedFactData>>;
-  archetypeOverride?: ArchetypeKey | null;
-}
-
-export interface SeedDataFile {
-  sources: DataSourceInfo[];
-  stations: SeedStationData[];
-  regionalFacts: Partial<Record<FactKey, SeedFactData>>;
-  defaultFactQuality?: DataQuality;
-  defaultFactQualityNote?: string;
-  defaultEvidenceMeta?: EvidenceMeta;
-}

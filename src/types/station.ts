@@ -159,9 +159,9 @@ export interface WhyCard {
 // ═══════════════════════════════════════════════════════════════
 
 /**
- * An adjacent station on the primary line. Closed and unranked neighbors appear with a null
- * score; they never enter the neighbor average. `id`, `name`, `rolling30dAvg`, and `ghostScore`
- * are the fields the v1 pills read.
+ * An adjacent station on the primary line. A closed or unranked neighbor has a null score and
+ * tier; it never enters the neighbor average. `id`, `name`, `rolling30dAvg`, and `ghostScore` are
+ * the fields the v1 pills read.
  */
 export interface NeighborEntry {
   id: string;
@@ -173,6 +173,9 @@ export interface NeighborEntry {
   ghostScore: number | null;
   tier: ScoreTierName | null;
 }
+
+/** A ranked neighbor, the only kind `comparisons.neighbors` carries: it always has a score. */
+export type RankedNeighborEntry = NeighborEntry & { ghostScore: number };
 
 export interface StationSeriesDay {
   date: string;
@@ -230,10 +233,23 @@ export interface StationDetailComparisons {
   systemMedian: number;
   primaryLine: string | null;
   lineMedian: number;
+  /**
+   * v1: the ranked neighbors either side on the primary line. A closed or unranked neighbor is
+   * null here, as in v1, so the v1 pills never show a badge without a score.
+   */
   neighbors: {
+    prev: RankedNeighborEntry | null;
+    next: RankedNeighborEntry | null;
+    neighborAvg: number;
+  };
+  /**
+   * Every adjacent station on the primary line, closed and unranked ones included (State/Lake on
+   * the Brown Line Loop), with a null score and tier for those. Null when there is no station on
+   * that side: past a terminal, or for a station with no CTA id.
+   */
+  lineNeighbors: {
     prev: NeighborEntry | null;
     next: NeighborEntry | null;
-    neighborAvg: number;
   };
   vsSystemMedian: number;
   vsLineMedian: number;

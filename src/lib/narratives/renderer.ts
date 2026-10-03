@@ -17,7 +17,7 @@
  * This is a deterministic, no-AI renderer for journalism-grade trust.
  */
 
-import { formatCalendarDate } from "@/lib/format";
+import { formatCalendarDate, isLevelChange } from "@/lib/format";
 import type { FactKey, NarrativeContext } from "@/types/narrative";
 import { formatChange, formatNumber, formatPercent } from "./formatters";
 
@@ -58,12 +58,28 @@ const BASELINE_YEAR = "2001";
 /** Above this change, population or jobs read as declining. */
 const DECLINE_THRESHOLD = -0.05;
 
-/** Changes the renderer reads a direction from; a change that rounds to 0% is level. */
-type Direction = "up" | "down" | "level";
+/** Changes the renderer reads a direction from. */
+export type Direction = "up" | "down" | "level";
 
+/** The long-run direction: a change that rounds to a whole 0% is level ("has held near"). */
 function direction(change: number | null): Direction | null {
   if (change === null) return null;
   if (Math.round(Math.abs(change * 100)) === 0) return "level";
+  return change > 0 ? "up" : "down";
+}
+
+/**
+ * The recent direction a story tells, and the narrative job selects its archetype by: the
+ * year-over-year change, else the change since 2019, both in percent (4 is +4%). Level when the
+ * change prints as 0% (`isLevelChange`, the score card's band), so a story never says "losing
+ * riders" beside a card that says "Unchanged". The small-station badge keeps its strict sign, so
+ * a change under 0.05 points can badge a station "small but growing" beside a story holding steady.
+ */
+export function recentDirection(yoyChangePct: number | null, vs2019Pct: number | null): Direction | null {
+  const recent = yoyChangePct ?? vs2019Pct;
+  if (recent === null) return null;
+  const change = recent / 100;
+  if (isLevelChange(change)) return "level";
   return change > 0 ? "up" : "down";
 }
 
@@ -124,9 +140,7 @@ function computeVariables(ctx: NarrativeContext): Record<string, Variable> {
   const yoy = ctx.yoyChangePct === null ? null : ctx.yoyChangePct / 100;
   const vs2019 = ctx.vs2019Pct === null ? null : ctx.vs2019Pct / 100;
   const vs2019Direction = direction(vs2019);
-  // Recent direction: the year-over-year change, else the change since 2019. A strict sign, the
-  // same rule as the small-station badge, so the story and the badge always agree.
-  const recent = yoy ?? vs2019;
+  const recent = recentDirection(ctx.yoyChangePct, ctx.vs2019Pct);
   const closure = ctx.closure === null ? null : closureWording(ctx.closure.reason);
 
   return {
@@ -140,8 +154,8 @@ function computeVariables(ctx: NarrativeContext): Record<string, Variable> {
     vs2019_change: v(vs2019),
     has_vs2019: v(vs2019 === null ? null : true),
     vs2019_clause: v(vs2019Direction === null ? null : VS_2019_CLAUSES[vs2019Direction]),
-    recent_up: when(recent !== null, () => recent! > 0),
-    recent_down: when(recent !== null, () => recent! < 0),
+    recent_up: when(recent !== null, () => recent === "up"),
+    recent_down: when(recent !== null, () => recent === "down"),
     small_station: v(ctx.badge === null ? null : true),
     unhealthy: v(ctx.tier !== null && ctx.tier !== "HEALTHY" ? true : null),
     tier_word: v(ctx.tier === null ? null : ctx.tier.toLowerCase()),

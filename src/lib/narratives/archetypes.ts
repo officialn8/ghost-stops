@@ -294,7 +294,7 @@ const resilientAnomaly: NarrativeArchetype = {
 /**
  * Growth, stable, and recent decline tell one story from the score card's numbers: the 12-month
  * average, the year-over-year change, the change since 2019, and the 2001 comparison when the
- * station has one. The opening follows the same recent sign the job selects by, so the title
+ * station has one. The opening follows the same recent direction the job selects by, so the title
  * and the text always agree, and healthy stations are never framed as ghosts.
  */
 const METRICS_STORY = paragraphs(

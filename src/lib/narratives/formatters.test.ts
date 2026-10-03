@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { isLevelChange } from "@/lib/format";
 import { formatChange, formatPercent, formatPercentChange, getFactLabel } from "./formatters";
 
 describe("formatChange", () => {
@@ -9,6 +10,19 @@ describe("formatChange", () => {
     expect(formatChange(-0.0012)).toBe("-0.1%");
     expect(formatChange(0.0004)).toBe("0%");
     expect(formatChange(0)).toBe("0%");
+  });
+});
+
+describe("isLevelChange", () => {
+  it("is true exactly when formatChange prints 0%: under 0.05 percentage points either way", () => {
+    for (const value of [0, 0.0004, -0.0004, 0.00049, -0.00049]) {
+      expect(isLevelChange(value), String(value)).toBe(true);
+      expect(formatChange(value)).toBe("0%");
+    }
+    for (const value of [0.0005, -0.0005, 0.003, -0.384]) {
+      expect(isLevelChange(value), String(value)).toBe(false);
+      expect(formatChange(value)).not.toBe("0%");
+    }
   });
 });
 

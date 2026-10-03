@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import type { DayType } from "@/lib/sync/socrata";
 import {
     erraticness,
     median,
@@ -11,7 +12,7 @@ import {
     type WindowSummary,
 } from "./components";
 
-const day = (serviceDate: string, entries: number, dayType: string): DayRow => ({ serviceDate, entries, dayType });
+const day = (serviceDate: string, entries: number, dayType: DayType): DayRow => ({ serviceDate, entries, dayType });
 
 const summary = (overrides: Partial<WindowSummary> = {}): WindowSummary => ({
     weekdayDays: 63,
