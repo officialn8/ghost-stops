@@ -702,6 +702,20 @@ Verification query results:
 The live UI on the branch rendered July 2026 data with State/Lake last and no console errors;
 Harlem kept Oak Park (Blue) and Forest Park as neighbors.
 
+### 6.6b Final rehearsal at commit 8fa71b1 (2026-10-03)
+
+After the review fixes, the whole of section 6.4 ran again on a fresh copy of production,
+`rehearsal-phase-2-final` (`br-little-tooth-ae0eapnk`, copied at 10:24 UTC), as the runtime role over
+the pooled host, at commit `8fa71b1`:
+
+| Step | Result |
+|---|---|
+| 0. Baseline | 1,242,528 rows, 2001-01-02 to 2025-11-30, 141 stations, sum 3,550,614,440; 143 metrics rows; 0 runs; upstream max 2026-07-31; health 503 `stale` |
+| 2. Backfill | 283 s; fetched 1,333,391, inserted 74,446, revised 65,115; unmatched 40200, 40500, 40640, 41580; health 503 `reconcile-stale` |
+| 3. Reconcile | 8 s; zero drift months; health 200 with both dates |
+| 4. Queries (6.5) | every result identical to section 6.6 |
+| v1 scores | identical to production's for all 143 stations; State/Lake gains one row with -1 |
+
 ### 6.7 Rollback
 
 - **Stop the cron:** remove the two `crons` entries from `vercel.json` and deploy, or replace
