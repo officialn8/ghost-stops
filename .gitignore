@@ -57,3 +57,6 @@ go-etl/go-etl
 
 # history export and backup CSVs (docs/runbooks/history-load.md)
 /exports/
+
+# per-checkout Compound Engineering settings (cross-model reviewer choice)
+/.compound-engineering/config.local.yaml
