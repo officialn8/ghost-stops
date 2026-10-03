@@ -1,7 +1,7 @@
-# Gitleaks baseline: historical findings for two credentials that were rotated on 2026-10-03
-# and no longer authenticate (the Neon neondb_owner password and the Socrata app token).
-# Git history is intentionally not rewritten (see docs/plans/2026-10-02-2208-feat-ghost-stops-revival-plan.md, U1).
-# Format: commit:file:rule-id:line. Any new finding fails CI; never add a live secret here.
+# Gitleaks baseline: historical findings for credentials that have been rotated and no longer
+# authenticate (a Neon neondb_owner password and a Socrata app token). Git history is
+# intentionally not rewritten, so these commits stay scannable.
+# Format: commit:file:rule-id:line. Any new finding fails CI; never baseline a live secret.
 5ea7be9a3cac88b0df34551457b2dab7224d463a:scripts/fetch-all-2001.ts:neon-postgres-uri:6
 5ea7be9a3cac88b0df34551457b2dab7224d463a:scripts/fetch-missing-2001.ts:neon-postgres-uri:6
 b8067acdd4c7dbda9e0b0dd17b90321bf0f00d3e:docs/debugging-summary.md:generic-api-key:28

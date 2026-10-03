@@ -1,4 +1,4 @@
-const LOCAL_HOSTS = new Set(["localhost", "127.0.0.1", "::1", "[::1]"]);
+const LOCAL_HOSTS = new Set(["localhost", "127.0.0.1", "[::1]"]);
 
 /**
  * Database tests write to the database they run against, so they may only target a

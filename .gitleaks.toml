@@ -2,8 +2,8 @@
 # Extends the default ruleset with rules for the two credential shapes this repo
 # has leaked before: Neon connection strings and Socrata (Chicago Data Portal) app tokens.
 # The default generic rule does not match a bare postgresql:// literal, which is why
-# the Neon rule exists. Historical findings for the two rotated values are baselined
-# in .gitleaksignore (rotated 2026-10-03; git history is intentionally not rewritten).
+# the Neon rule exists. Historical findings for rotated credentials are baselined in
+# .gitleaksignore; git history is intentionally not rewritten.
 
 title = "ghost-stops"
 

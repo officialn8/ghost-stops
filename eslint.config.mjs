@@ -9,10 +9,11 @@ const compat = new FlatCompat({
   baseDirectory: __dirname,
 });
 
-// Server-only modules that UI components must never import. Each `**/` pattern
-// matches the `@/` alias and relative `../` imports, plus subpaths and extensions.
+// Server-only modules that UI components must never import. Patterns use gitignore
+// semantics: `**/` matches the `@/` alias and relative `../` imports, a match on a path
+// also covers everything beneath it, and `.*` catches explicit extensions.
 const serverOnly = (modulePath, role) => ({
-  group: [`**/${modulePath}`, `**/${modulePath}.*`, `**/${modulePath}/**`],
+  group: [`**/${modulePath}`, `**/${modulePath}.*`],
   message: `src/${modulePath} is server-only (${role}). Components must get this data from an API route instead.`,
 });
 

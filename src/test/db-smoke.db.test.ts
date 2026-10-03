@@ -1,11 +1,9 @@
-import { PrismaClient } from "@prisma/client";
 import { afterAll, describe, expect, it } from "vitest";
+import { prisma } from "@/lib/prisma";
 
 // Runs in the `db` Vitest project against the Postgres at DATABASE_URL,
 // after `prisma migrate deploy` has applied every migration.
 const INIT_MIGRATION = "20260202155550_init_production";
-
-const prisma = new PrismaClient();
 
 afterAll(async () => {
     await prisma.$disconnect();

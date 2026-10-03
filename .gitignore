@@ -51,6 +51,6 @@ prisma/dev.db
 prisma/prisma/dev.db
 .env*.local
 
-# go build output (go-etl is retired in Phase 2)
+# go-etl build output
 go-etl/etl
 go-etl/go-etl
