@@ -34,6 +34,16 @@ export const WESTERN_STATIONS = [
     { id: "35de68ed0714222a92455c3a04a8e0c1", name: "Western (Orange)", ctaStationId: "40310" },
 ] as const;
 
+/**
+ * Stations whose snapshot history before a date mixes in another CTA id's rows. Washington (Blue)
+ * 40370 shared its matcher name with Washington/State 40500 (closed 2006), so through 2009 its days
+ * hold whichever of the two the Go ETL wrote last; from 2010 on it equals upstream exactly. Rows
+ * before `before` are left out and re-fetched from Socrata in Phase 2.
+ */
+export const MISATTRIBUTED_BEFORE = [
+    { id: "5ff3a5463d2a2c0f594a157ace4849e7", name: "Washington (Blue)", ctaStationId: "40370", before: "2010-01-01" },
+] as const;
+
 const EXAMPLE_LIMIT = 5;
 const FLUSH_AT_CHARS = 1 << 20;
 
@@ -90,6 +100,8 @@ export interface ExportSummary {
     orphanRowsDropped: number;
     orphanStationIds: string[];
     excludedRowsDropped: Record<string, number>;
+    /** Rows dropped by MISATTRIBUTED_BEFORE, per station. */
+    misattributedRowsDropped: Record<string, number>;
     rfc3339RowsKept: number;
     /** Non-RFC3339 rows dropped because an RFC3339 row exists for the same station and date. */
     nonRfc3339RowsDropped: number;
@@ -307,6 +319,7 @@ function emptySummary(sqlitePath: string, through: string, options: ExportOption
         orphanRowsDropped: 0,
         orphanStationIds: [],
         excludedRowsDropped: {},
+        misattributedRowsDropped: {},
         rfc3339RowsKept: 0,
         nonRfc3339RowsDropped: 0,
         nonRfc3339RowsWithoutTwin: 0,
@@ -443,13 +456,17 @@ export function exportHistory(options: ExportOptions): ExportSummary {
             const isExcluded = excluded.has(stationId);
             if (isExcluded) summary.excludedRowsDropped[stationId] = rawRows.length;
 
+            const cutoff = isExcluded ? undefined : MISATTRIBUTED_BEFORE.find((s) => s.id === stationId)?.before;
+            const inRange = cutoff ? parsed.filter((row) => row.date >= cutoff) : parsed;
+            if (cutoff) summary.misattributedRowsDropped[stationId] = parsed.length - inRange.length;
+
             const rfc3339ByDate = new Map<string, SQLOutputValue>();
-            for (const row of parsed) {
+            for (const row of inRange) {
                 if (row.format === "rfc3339" && !rfc3339ByDate.has(row.date)) rfc3339ByDate.set(row.date, row.entries);
             }
 
             const kept: ParsedRow[] = [];
-            for (const row of parsed) {
+            for (const row of inRange) {
                 if (row.format === "rfc3339") {
                     kept.push(row);
                     continue;

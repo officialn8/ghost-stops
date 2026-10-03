@@ -150,7 +150,7 @@ WHERE q.line = 'Blue' AND q.seq BETWEEN 30 AND 32 ORDER BY q.seq;
 ### 3.3 Load history
 
 **Export** (local, read-only on the snapshot; about 8 seconds). `--station-ids` is the production
-`Station` backup from section 4.6, so every exported id is proven to exist in production.
+`Station` backup from section 4.7, so every exported id is proven to exist in production.
 
 ```bash
 npx tsx scripts/export-history.ts --sqlite prisma/dev.db \
@@ -160,13 +160,14 @@ npx tsx scripts/export-history.ts --sqlite prisma/dev.db \
 ```
 
 The script keeps RFC3339-dated rows, drops each manual-format row that has an RFC3339 twin, drops
-the 90 orphan rows and both Western stations, derives the day type from the calendar, and refuses
-to write a file if any check fails. `--keep-untwinned-station` names Jefferson Park: the Go ETL never
+the 90 orphan rows, both Western stations, and Washington (Blue) before 2010 (section 4.4), derives
+the day type from the calendar, and refuses to write a file if any check fails. `--keep-untwinned-station` names Jefferson Park: the Go ETL never
 matched it, so its only rows are 366 manual-format rows (2024-11-30 to 2025-11-30) with no twin.
 They equal production's rows for those days exactly, so keeping them changes nothing on the live site.
 
-Expected summary: `ok: true`, `rowsWritten` 1,245,814, `distinctStations` 141, dates 2001-01-02 to
-2025-11-30, `twinDisagreements.exported` 0, `stationIdsMissingFromProduction` empty.
+Expected summary: `ok: true`, `rowsWritten` 1,242,528, `misattributedRowsDropped` 3,286 (Washington),
+`distinctStations` 141, dates 2001-01-02 to 2025-11-30, `twinDisagreements.exported` 0,
+`stationIdsMissingFromProduction` empty.
 
 **Upstream sample** (the plan's stop gate; any mismatch stops here):
 
@@ -195,7 +196,7 @@ Verify:
 SELECT count(*), min("serviceDate"), max("serviceDate"), count(DISTINCT "stationId"),
        pg_size_pretty(pg_total_relation_size('"RidershipDaily"')), pg_size_pretty(pg_database_size('neondb'))
 FROM "RidershipDaily";
--- 1245814, 2001-01-02, 2025-11-30, 141, about 173 MB, about 183 MB
+-- 1242528, 2001-01-02, 2025-11-30, 141, about 173 MB, about 183 MB
 
 SELECT to_char("serviceDate", 'YYYY-MM') AS month, count(*) FROM "RidershipDaily" GROUP BY 1 ORDER BY 1;
 -- equals the per-month counts of the CSV (299 months)
@@ -241,7 +242,9 @@ Cumberland and Jefferson Park.
 | Projection from 2019 | 1,245,814 | 181 MB | about 192 MB | |
 | Full history, measured | 1,245,814 | 173 MB | 183 MB | 28 s |
 
-Well under the 800 MB stop condition. The Neon project is on the Launch plan, not Free, so the
+These rows are from the first export, before Washington's pre-2010 rows were removed (section 4.6
+has the final numbers; the difference is 3,286 rows). Well under the 800 MB stop condition, which
+Nate has since lifted. The Neon project is on the Launch plan, not Free, so the
 1 GB cap the plan sized against does not apply; the 800 MB gate is kept anyway.
 
 After the full load every verification query in section 3.3 matched, and the Phase 1 detail route
@@ -265,14 +268,32 @@ a holiday). A further check compared every station-year in the export with Socra
 Washington (Blue) from 2001 to 2009 is a day-by-day mix of its own id (40370) and the retired
 Washington/State (40500), the same fault as the Western stations: 2007 holds 1,086,484 riders
 against 2,117,873 upstream, because the closed station's near-zero days overwrote about half the
-year. From 2010 it matches exactly. **Open decision for Nate before U8:** leave Washington's rows
-before 2010 out of the load and re-fetch them in Phase 2 (recommended), or load them and let
-Phase 2 overwrite them.
+year. From 2010 it matches exactly. Nate decided on 2026-10-03 to leave those rows out of the load
+(`MISATTRIBUTED_BEFORE` in `scripts/export-history.ts`, 3,286 rows) and re-fetch them in Phase 2.
 
-Snapshot history that Phase 2 must re-fetch from Socrata, beyond the two Western stations the
-plan already lists: Jefferson Park 2001 to 2024-11-29, State/Lake 2001 onward (never ingested),
-Washington (Blue) 2001 to 2009, and 2001-01-01 for every station. Retired ids 40200, 40500, 40640,
+A station-by-month comparison of the final export with Socrata (42,642 upstream station-months
+through 2025-11) confirmed the picture: every month from 2001 to 2024 is identical in days and
+riders except the gaps listed below, and 2025 differs in riders only (CTA's restatement).
+
+**Phase 2 re-fetch list** (approved by Nate on 2026-10-03; the plan's U10 lists only the two Western stations):
+
+| Station or range | Missing from the load | Why |
+|---|---|---|
+| Western (Blue, O'Hare) 40670, Western (Orange) 40310 | 2001 onward | ids swapped in the snapshot (plan, KTD3) |
+| State/Lake 40260 | 2001 onward | never ingested |
+| Jefferson Park 41280 | 2001-01-01 to 2024-11-29 | the Go ETL never matched it |
+| Washington (Blue) 40370 | 2001 to 2009 | mixed with retired 40500 |
+| every station | 2001-01-01 | the snapshot starts 2001-01-02 |
+| every station | 2025-01 onward | CTA restated 2025, and data after 2025-11-30 (plan, U10 backfill) |
+
+Socrata itself holds two rows with different rider counts for 618 station-days in July and August
+2011. The load keeps the snapshot's one value per day. The Phase 2 sync must collapse duplicates
+before an upsert (an `ON CONFLICT DO UPDATE` cannot touch one row twice in a statement); the
+approved rule is to keep the row Socrata updated most recently. Retired ids 40200, 40500, 40640,
 and 41580 are not in the roster and are not loaded.
+
+Other tables: every existing station has facts, metrics, and a narrative. State/Lake has none,
+because it is new; Phase 2 and Phase 3 compute metrics and narratives for every station.
 
 ### 4.5 Restore rehearsal
 
@@ -291,12 +312,24 @@ rollback after six hours would be.
 Within six hours of the migration, Neon's point-in-time branch restore to a moment before
 `migrate deploy` is the faster rollback and needs no snapshot.
 
-### 4.6 Backups and artifacts (all under the gitignored `exports/`)
+### 4.6 Final rehearsal
+
+With the final CSV (Washington before 2010 removed), on the restored branch, sections 3.1 to 3.3
+ran in order in 42 seconds end to end: migration applied with no drift; the seed reported 345
+changes and then 0; the load wrote 1,242,528 rows (173 MB table, 183 MB database); per-month
+counts matched the CSV for all 299 months; facts, narratives, and orphan checks matched section 3.3;
+the Phase 1 routes served 144 stations and Harlem's chart. The 60-sample gate on this CSV: 60 of 60
+equal across 49 stations.
+
+The dry-run branches and the stale Phase 0 preview branch were deleted afterwards with Nate's
+approval. The production snapshot `pre-revival-v2-rehearsal-2026-10-03` remains.
+
+### 4.7 Backups and artifacts (all under the gitignored `exports/`)
 
 | File | Contents |
 |---|---|
 | `exports/backups/2026-10-03-production/*.csv` | every production table as of 06:59 UTC, before any change: City, Station, StationAlias, StationMetrics, StationFact, StationNarrative, DataSource, RidershipDaily (39,142 rows), `_prisma_migrations` |
-| `exports/ridership-history.csv` | the load file, 1,245,814 rows, 63,194,706 bytes, SHA-256 `f9717202e03a29ce269ac20c50ed2166c930d4538894cc97751733f3d0fce5a7` |
+| `exports/ridership-history.csv` | the load file, 1,242,528 rows, 63,028,242 bytes, SHA-256 `89d48ba4429a14b0015df6081f7d4bcc8e39a5174fc7403b2d680f283d311d79` |
 | `exports/ridership-history.summary.json` | the export summary |
 | `exports/upstream-sample.json` | the 60-sample comparison |
 

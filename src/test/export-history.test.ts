@@ -3,6 +3,7 @@ import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
     ExportHistoryError,
+    MISATTRIBUTED_BEFORE,
     WESTERN_STATIONS,
     deriveDayType,
     exportHistory,
@@ -16,12 +17,14 @@ const STATION_A = "a".repeat(32);
 const STATION_B = "b".repeat(32);
 const ORPHAN = "c".repeat(32);
 const [WESTERN_BLUE, WESTERN_ORANGE] = WESTERN_STATIONS.map((station) => station.id);
+const [WASHINGTON] = MISATTRIBUTED_BEFORE;
 
 const BASE_STATIONS: FixtureSnapshot["stations"] = [
     { id: STATION_A, externalId: "40010" },
     { id: STATION_B, externalId: "40020" },
     { id: WESTERN_BLUE, externalId: "40670" },
     { id: WESTERN_ORANGE, externalId: "40310" },
+    { id: WASHINGTON.id, externalId: "40370" },
 ];
 const PRODUCTION_IDS = new Set(BASE_STATIONS.map((station) => station.id));
 
@@ -157,6 +160,26 @@ describe("exportHistory", () => {
         // The disagreeing pair belongs to an excluded station, so it is reported but does not fail the export.
         expect(summary.twinDisagreements).toMatchObject({ exported: 0, excluded: 1 });
         expect(summary.ok).toBe(true);
+    });
+
+    it("drops Washington (Blue) rows dated before 2010, where its history is mixed with the retired 40500", () => {
+        expect(WASHINGTON).toMatchObject({ ctaStationId: "40370", before: "2010-01-01" });
+        const { summary, outPath } = run({
+            rows: [
+                [WASHINGTON.id, "2001-01-02T00:00:00Z", 6000],
+                [WASHINGTON.id, "2009-12-31T00:00:00Z", 3000],
+                [WASHINGTON.id, "2010-01-01T00:00:00Z", 4000],
+                [WASHINGTON.id, "2025-11-30T00:00:00Z", 5000],
+            ],
+        });
+
+        expect(csvLines(outPath).slice(1)).toEqual([
+            `${WASHINGTON.id},2010-01-01,4000,W`,
+            `${WASHINGTON.id},2025-11-30,5000,U`,
+        ]);
+        expect(summary.misattributedRowsDropped).toEqual({ [WASHINGTON.id]: 2 });
+        expect(summary.rowsWritten).toBe(2);
+        expect(summary.distinctStations).toBe(1);
     });
 
     it("writes the load-ready CSV sorted by station then date with a summary of what it wrote", () => {
