@@ -18,7 +18,7 @@ import { CTA_ROSTER } from "../src/lib/cta/roster";
 import { linesForStation, sequenceRows } from "../src/lib/cta/sequences";
 import { displayNameFor, generateSlugs } from "../src/lib/cta/slug";
 import { isCliEntry } from "./cli";
-import { isCalendarDate } from "./export-history";
+import { isCalendarDate } from "./dates";
 
 const STATE_LAKE = "40260";
 // From CTA's stop list (8pix-ypme); State/Lake was never ingested, so it has no row yet.

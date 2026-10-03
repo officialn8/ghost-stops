@@ -131,6 +131,49 @@ describe("seedReferenceData", () => {
         expect(report.stationCount).toBe(144);
     });
 
+    it("repairs drifted rows on a re-run and then reports zero changes", async () => {
+        const [ohare, forestPark] = [await station("40670"), await station("40220")];
+        await prisma.station.update({ where: { id: ohare.id }, data: { slug: "swap-in-progress" } });
+        await prisma.station.update({ where: { id: forestPark.id }, data: { slug: "western-blue-ohare" } });
+        await prisma.station.update({ where: { id: ohare.id }, data: { slug: "western-blue-forest-park" } });
+        await prisma.stationLineSequence.create({
+            data: { stationId: ohare.id, line: "Test", branch: "stray", seq: 0 },
+        });
+        const lawrence = await prisma.stationClosure.findFirstOrThrow({ where: { stationId: "seed-40770" } });
+        await prisma.stationClosure.update({ where: { id: lawrence.id }, data: { reason: "edited by hand" } });
+        await prisma.stationClosure.create({
+            data: { stationId: "seed-41200", startDate: new Date("2022-01-01"), reason: "not a real closure" },
+        });
+        await prisma.stationAlias.create({
+            data: { stationId: "seed-40780", aliasName: "Central-Lake", normalized: "central lake" },
+        });
+
+        const report = await seedReferenceData(prisma, { cityCode: CITY, asOf: AS_OF });
+        expect(report.stationUpdates).toEqual([
+            { ctaStationId: expect.any(String), fields: ["slug"] },
+            { ctaStationId: expect.any(String), fields: ["slug"] },
+        ]);
+        expect(report.closures).toEqual({ created: 0, updated: 1, deleted: 1 });
+        expect(report.sequenceRows).toEqual({ inserted: 0, deleted: 1 });
+        expect(report.aliases).toEqual({ added: 0, removed: 1 });
+        expect((await station("40670")).slug).toBe("western-blue-ohare");
+        expect((await station("40220")).slug).toBe("western-blue-forest-park");
+
+        expect((await seedReferenceData(prisma, { cityCode: CITY, asOf: AS_OF })).changes).toBe(0);
+    });
+
+    it("derives TEMP_CLOSED for a bounded closure in progress, and reverts when it ends", async () => {
+        const during = await seedReferenceData(prisma, { cityCode: CITY, asOf: "2023-01-01" });
+        expect(during.stationUpdates.map((u) => u.ctaStationId).sort()).toEqual(["40260", "40340", "40770"]);
+        expect(await station("40770")).toMatchObject({ status: "TEMP_CLOSED" });
+        expect((await station("40770")).closedAt?.toISOString().slice(0, 10)).toBe("2021-05-16");
+        expect(await station("40260")).toMatchObject({ status: "ACTIVE", closedAt: null });
+
+        const after = await seedReferenceData(prisma, { cityCode: CITY, asOf: AS_OF });
+        expect(after.stationUpdates).toHaveLength(3);
+        expect(await station("40770")).toMatchObject({ status: "ACTIVE", closedAt: null });
+    });
+
     it("refuses to seed a database that still carries the pre-migration Washington id", async () => {
         const bad = await prisma.city.create({ data: { code: BAD_CITY, name: "Unmigrated" } });
         await prisma.station.create({
@@ -147,6 +190,15 @@ describe("seedReferenceData", () => {
 
         await expect(seedReferenceData(prisma, { cityCode: BAD_CITY, asOf: AS_OF })).rejects.toThrow(
             /Washington \(40500\).*revival_v2 migration/,
+        );
+    });
+
+    it("refuses to seed when roster stations other than State/Lake are missing", async () => {
+        const bad = await prisma.city.findUniqueOrThrow({ where: { code: BAD_CITY } });
+        await prisma.station.updateMany({ where: { cityId: bad.id }, data: { ctaStationId: "40370" } });
+
+        await expect(seedReferenceData(prisma, { cityCode: BAD_CITY, asOf: AS_OF })).rejects.toThrow(
+            /Roster stations missing from the database: .*Howard/,
         );
     });
 });

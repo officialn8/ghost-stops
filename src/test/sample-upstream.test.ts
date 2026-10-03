@@ -150,7 +150,7 @@ describe("sampleUpstream", () => {
 
     it("sends the app token only in the X-App-Token header", async () => {
         const calls: FakeCall[] = [];
-        await sample(fakeSocrata(MATCHING_UPSTREAM, calls), "test-app-token");
+        const report = await sample(fakeSocrata(MATCHING_UPSTREAM, calls), "test-app-token");
 
         expect(calls.length).toBeGreaterThan(0);
         for (const call of calls) {
@@ -158,14 +158,15 @@ describe("sampleUpstream", () => {
             expect(call.url.href).not.toContain("test-app-token");
             expect(call.headers["X-App-Token"]).toBe("test-app-token");
         }
+        // The CLI prints this report, so the token must not appear in it.
+        expect(JSON.stringify(report)).not.toContain("test-app-token");
     });
 
     it("sends no token header when no token is configured", async () => {
         const calls: FakeCall[] = [];
-        const report = await sample(fakeSocrata(MATCHING_UPSTREAM, calls));
+        await sample(fakeSocrata(MATCHING_UPSTREAM, calls));
 
         expect(calls.every((call) => !("X-App-Token" in call.headers))).toBe(true);
-        expect(JSON.stringify(report)).not.toMatch(/token/i);
     });
 
     it("throws on an HTTP error without echoing the request URL", async () => {

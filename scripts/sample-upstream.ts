@@ -18,7 +18,8 @@ import readline from "node:readline";
 import { DatabaseSync } from "node:sqlite";
 import { parseArgs } from "node:util";
 import { isCliEntry } from "./cli";
-import { CSV_HEADER, isCalendarDate } from "./export-history";
+import { isCalendarDate } from "./dates";
+import { CSV_HEADER } from "./export-history";
 
 export const DATASET_ID = "5neh-572f";
 export const SOCRATA_ENDPOINT = `https://data.cityofchicago.org/resource/${DATASET_ID}.json`;

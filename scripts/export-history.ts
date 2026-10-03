@@ -18,6 +18,7 @@ import path from "node:path";
 import { DatabaseSync, type SQLOutputValue } from "node:sqlite";
 import { parseArgs } from "node:util";
 import { isCliEntry } from "./cli";
+import { isCalendarDate } from "./dates";
 
 /** The snapshot's last service date; the plan exports history through this day. */
 export const HISTORY_THROUGH = "2025-11-30";
@@ -51,8 +52,6 @@ const FLUSH_AT_CHARS = 1 << 20;
 const RFC3339_MIDNIGHT = /^(\d{4}-\d{2}-\d{2})T00:00:00Z$/;
 /** The manual backfill script wrote this shape; each such row is expected to duplicate an ETL row. */
 const MANUAL_MIDNIGHT = /^(\d{4}-\d{2}-\d{2}) 00:00:00$/;
-const ISO_DATE = /^(\d{4})-(\d{2})-(\d{2})$/;
-
 export type DayType = "W" | "A" | "U";
 export type ServiceDateFormat = "rfc3339" | "manual";
 
@@ -136,14 +135,6 @@ export class ExportHistoryError extends Error {
         this.name = "ExportHistoryError";
         this.summary = summary;
     }
-}
-
-export function isCalendarDate(value: string): boolean {
-    const match = ISO_DATE.exec(value);
-    if (!match) return false;
-    const [year, month, day] = [Number(match[1]), Number(match[2]), Number(match[3])];
-    const parsed = new Date(Date.UTC(year, month - 1, day));
-    return parsed.getUTCFullYear() === year && parsed.getUTCMonth() === month - 1 && parsed.getUTCDate() === day;
 }
 
 /**
