@@ -729,7 +729,7 @@ the merged `main` (`9dbca56`).
 | 3. Reconcile | 16:06:39 to 16:06:48 | zero drift months; health 200 with both dates |
 | 4. Queries (6.5) | 16:06:50 | every result identical to section 6.6b, including the fact and narrative checksums; v1 scores unchanged for all 143 stations, State/Lake gains one row with -1 |
 | 5. Live site | 16:07 | `/api/health` 200, `dataThrough` 2026-07-31; the list has 144 stations with data as of 2026-07-31 and State/Lake last in both score sorts; Harlem names Oak Park (Blue) and Forest Park with its chart ending 2026-07-31; State/Lake's detail is `ranked: false`; 30 of 30 concurrent detail requests 200; no runtime errors since the deploy |
-| 6. Health workflow | 16:07:16 to 16:09 | run 37135678647 passed (HTTP 200); forced failure run 37135712388 failed with HTTP 404 twice, which should email Nate |
+| 6. Health workflow | 16:07:16 to 16:09 | run 37135678647 passed (HTTP 200); forced failure run 37135712388 failed with HTTP 404 twice, and Nate confirmed GitHub emailed him |
 | 7. First scheduled runs | pending | daily `cron-daily` on 2026-10-04 between 10:00 and 10:59 UTC; weekly `cron-weekly` the same day between 14:00 and 14:59 UTC |
 
 ### 6.7 Rollback
