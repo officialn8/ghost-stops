@@ -108,7 +108,43 @@ SELECT (SELECT count(*) FROM "StationFact") AS facts,
 
 ### 3.2 Seed reference data
 
-Section added with the roster seed (U6).
+`scripts/seed-reference-data.ts` writes the roster from `src/lib/cta/` onto the existing stations
+in one transaction. It updates stations by id and never deletes or recreates one. It refuses to
+run if any station holds a CTA id outside the roster, which is what an unmigrated database looks
+like (Washington still on 40500).
+
+```bash
+npx tsx scripts/seed-reference-data.ts --dry-run   # computes the report, then rolls back
+npx tsx scripts/seed-reference-data.ts
+npx tsx scripts/seed-reference-data.ts             # second run must report "changes": 0
+```
+
+Expected first run on production:
+
+| Report field | Value | Why |
+|---|---|---|
+| `stationsInserted` | `["40260"]` | State/Lake, CLOSED since 2026-01-05 |
+| `stationUpdates` | 144 entries | every station gets a slug and display name; five get corrected lines (Green off Quincy, LaSalle/Van Buren, Washington/Wells, Library; Purple on Wilson); multi-line lists are rewritten in canonical CTA order |
+| `closures` | `created: 3` | Lawrence and Berwyn 2021-05-16 to 2025-07-20, State/Lake from 2026-01-05 |
+| `sequenceRows` | `inserted: 191` | every branch of every line, the Loop ring once per line that circles it |
+| `aliases` | `removed: 6, added: 1` | `State/Lake` off Lake (Red) and onto State/Lake; `Central-Lake`, `Kedzie-Lake`, `Oak Park-Lake` off the Pink and Blue stations; `Washington/State` (retired 40500) off both stations |
+| `stationCount` | 144 | |
+
+Argyle and Bryn Mawr get no closure row. The plan listed them with Lawrence and Berwyn, but the
+snapshot shows both stayed open through the rebuild (no day under 100 riders between 2021-05 and
+2025-07), while Lawrence and Berwyn read zero from 2021-05-17 until 2025-07-20.
+
+Verify:
+
+```sql
+SELECT count(*) AS stations, count(slug) AS slugged, count(*) FILTER (WHERE status = 'CLOSED') AS closed
+FROM "Station";
+-- 144, 144, 1
+
+SELECT s.name, s.slug FROM "StationLineSequence" q JOIN "Station" s ON s.id = q."stationId"
+WHERE q.line = 'Blue' AND q.seq BETWEEN 30 AND 32 ORDER BY q.seq;
+-- Oak Park (Blue), Harlem, Forest Park
+```
 
 ### 3.3 Load history
 

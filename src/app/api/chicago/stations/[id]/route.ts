@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-import { findNeighbors, getPrimaryLine } from "@/lib/cta/stationSequences";
+import { getPrimaryLine, primaryLineNeighbors } from "@/lib/cta/sequences";
 import { formatValue, ARCHETYPE_TITLES, ARCHETYPE_EMOJIS } from "@/lib/narratives";
 import type { FactKey, ArchetypeKey } from "@/types/narrative";
 
@@ -128,53 +128,27 @@ export async function GET(
       lineMedian = calculateMedian(lineValues);
     }
 
-    // Find neighbor stations
-    const neighborInfo = findNeighbors(station.name, stationLines);
-    const primaryLineNeighbors = neighborInfo.find(n => n.line === primaryLine) || neighborInfo[0];
-
-    // Fetch neighbor station data
-    let prevNeighbor: { id: string; name: string; rolling30dAvg: number; ghostScore: number } | null = null;
-    let nextNeighbor: { id: string; name: string; rolling30dAvg: number; ghostScore: number } | null = null;
-
-    if (primaryLineNeighbors) {
-      // Find prev station
-      if (primaryLineNeighbors.prev) {
-        const prevStation = await prisma.station.findFirst({
-          where: {
-            cityId: station.cityId,
-            name: { contains: primaryLineNeighbors.prev }
-          },
-          include: { metrics: true }
-        });
-        if (prevStation && prevStation.metrics) {
-          prevNeighbor = {
-            id: prevStation.id,
-            name: prevStation.name,
-            rolling30dAvg: prevStation.metrics.rolling30dAvg ?? 0,
-            ghostScore: prevStation.metrics.ghostScore
-          };
-        }
-      }
-
-      // Find next station
-      if (primaryLineNeighbors.next) {
-        const nextStation = await prisma.station.findFirst({
-          where: {
-            cityId: station.cityId,
-            name: { contains: primaryLineNeighbors.next }
-          },
-          include: { metrics: true }
-        });
-        if (nextStation && nextStation.metrics) {
-          nextNeighbor = {
-            id: nextStation.id,
-            name: nextStation.name,
-            rolling30dAvg: nextStation.metrics.rolling30dAvg ?? 0,
-            ghostScore: nextStation.metrics.ghostScore
-          };
-        }
-      }
-    }
+    // Neighbor stations on the primary line, looked up by CTA station id
+    type NeighborSummary = { id: string; name: string; rolling30dAvg: number; ghostScore: number };
+    const neighborIds = station.ctaStationId ? primaryLineNeighbors(station.ctaStationId, stationLines) : null;
+    const neighborSummary = async (ctaStationId: string | null | undefined): Promise<NeighborSummary | null> => {
+      if (!ctaStationId) return null;
+      const neighbor = await prisma.station.findUnique({
+        where: { cityId_ctaStationId: { cityId: station.cityId, ctaStationId } },
+        include: { metrics: true }
+      });
+      if (!neighbor?.metrics) return null;
+      return {
+        id: neighbor.id,
+        name: neighbor.name,
+        rolling30dAvg: neighbor.metrics.rolling30dAvg ?? 0,
+        ghostScore: neighbor.metrics.ghostScore
+      };
+    };
+    const [prevNeighbor, nextNeighbor] = await Promise.all([
+      neighborSummary(neighborIds?.prev),
+      neighborSummary(neighborIds?.next)
+    ]);
 
     // Calculate neighbor average
     const neighborValues = [prevNeighbor?.rolling30dAvg, nextNeighbor?.rolling30dAvg]
