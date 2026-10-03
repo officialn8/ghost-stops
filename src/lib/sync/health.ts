@@ -9,9 +9,9 @@
  * The report carries statuses and dates only, never a run's stored error text.
  */
 import type { PrismaClient } from "@prisma/client";
+import { freshnessOf, lastSuccessfulRun, type LastSuccessfulRun } from "./freshness";
 import { latestCompletedRun, STALE_RUN_MS } from "./lease";
 import { parseDriftMonths } from "./reconcile";
-import { toDay } from "./window";
 
 const STALE_AFTER_DAYS = 10;
 const RECONCILE_STALE_AFTER_DAYS = 15;
@@ -27,7 +27,7 @@ const RECONCILE_RUNS = [{ trigger: "cron-weekly" }, { trigger: { contains: "--re
 const DAY_MS = 24 * 60 * 60 * 1000;
 
 export interface HealthInputs {
-    lastSuccess: { finishedAt: Date | null; windowEnd: Date | null } | null;
+    lastSuccess: LastSuccessfulRun | null;
     lastReconcile: { finishedAt: Date | null } | null;
     stuckSince: Date | null;
     latest: { unmatchedStationIds: unknown; driftMonths: unknown } | null;
@@ -45,11 +45,7 @@ export interface HealthReport {
 
 export async function readHealthInputs(db: Pick<PrismaClient, "syncRun">, now: Date): Promise<HealthInputs> {
     const [lastSuccess, lastReconcile, stuck, latest] = await Promise.all([
-        db.syncRun.findFirst({
-            where: { status: "OK" },
-            orderBy: { finishedAt: "desc" },
-            select: { finishedAt: true, windowEnd: true },
-        }),
+        lastSuccessfulRun(db),
         db.syncRun.findFirst({
             where: { status: "OK", OR: RECONCILE_RUNS },
             orderBy: { finishedAt: "desc" },
@@ -78,6 +74,8 @@ export function assessHealth(inputs: HealthInputs, now: Date): { httpStatus: 200
         ? inputs.latest.unmatchedStationIds.filter((id): id is string => typeof id === "string")
         : [];
     const backlog = inputs.latest ? parseDriftMonths(inputs.latest.driftMonths).length : 0;
+    // The same formatting the station routes use, so the three report one data-through date.
+    const freshness = freshnessOf(inputs.lastSuccess);
     const warnings: string[] = [];
     if (unmatched.length > 0) warnings.push(`Upstream station ids with no station: ${unmatched.join(", ")}`);
     if (backlog > DRIFT_BACKLOG_WARNING_MONTHS) warnings.push(`Drift backlog of ${backlog} months`);
@@ -86,9 +84,9 @@ export function assessHealth(inputs: HealthInputs, now: Date): { httpStatus: 200
         httpStatus: status === "ok" ? 200 : 503,
         report: {
             status,
-            lastSuccessfulRunAt: finishedAt?.toISOString() ?? null,
+            lastSuccessfulRunAt: freshness.lastSuccessfulFetch,
             lastReconciliationAt: reconciledAt?.toISOString() ?? null,
-            dataThrough: inputs.lastSuccess?.windowEnd ? toDay(inputs.lastSuccess.windowEnd) : null,
+            dataThrough: freshness.dataThrough,
             unmatchedStationIds: unmatched,
             driftBacklogMonths: backlog,
             warnings,

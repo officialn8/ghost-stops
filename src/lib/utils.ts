@@ -49,7 +49,25 @@ export function getTier(score: number): TierStyle {
   return { tier: "healthy", ink: 1, mark: "solid" }
 }
 
+const TIER_NAMES: readonly ScoreTierName[] = ["ghost", "fading", "quiet", "healthy"]
+
+/** A stored tier (StationMetrics.tier, "GHOST") as the UI names it ("ghost"); null for anything else. */
+export function tierName(tier?: string | null): ScoreTierName | null {
+  const name = tier?.toLowerCase()
+  return TIER_NAMES.find((t) => t === name) ?? null
+}
+
 export type DataStatus = "available" | "missing" | "zero"
+
+/**
+ * A stored StationMetrics.dataStatus ("normal", "zero", "missing") in the UI's vocabulary; a
+ * station with no metrics row is missing.
+ */
+export function toUiDataStatus(stored?: string | null): DataStatus {
+  if (stored === "normal") return "available"
+  if (stored === "zero") return "zero"
+  return "missing"
+}
 
 export function normalizeDataStatus(status?: string | null): DataStatus {
   if (status === "available" || status === "missing" || status === "zero") {

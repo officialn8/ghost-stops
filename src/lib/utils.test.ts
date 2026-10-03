@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 // Imported through the `@/` alias on purpose: this test also proves the alias resolves under Vitest.
-import { getGhostScoreColor, getTier } from "@/lib/utils";
+import { getGhostScoreColor, getTier, tierName, toUiDataStatus } from "@/lib/utils";
 
 describe("getGhostScoreColor", () => {
     describe("at each threshold", () => {
@@ -57,5 +57,23 @@ describe("getTier", () => {
         [0, "healthy"],
     ])("puts %i in %s at the tier edges", (score, tier) => {
         expect(getTier(score).tier).toBe(tier);
+    });
+});
+
+describe("tierName", () => {
+    it("lowercases a stored tier and refuses anything else", () => {
+        expect(tierName("GHOST")).toBe("ghost");
+        expect(tierName("HEALTHY")).toBe("healthy");
+        expect(tierName(null)).toBeNull();
+        expect(tierName("SPOOKY")).toBeNull();
+    });
+});
+
+describe("toUiDataStatus", () => {
+    it("maps the stored status to the UI's words, missing when there is none", () => {
+        expect(toUiDataStatus("normal")).toBe("available");
+        expect(toUiDataStatus("zero")).toBe("zero");
+        expect(toUiDataStatus("missing")).toBe("missing");
+        expect(toUiDataStatus(undefined)).toBe("missing");
     });
 });
