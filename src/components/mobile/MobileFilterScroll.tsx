@@ -1,4 +1,5 @@
-import { CTA_LINE_ORDER, CTA_LINE_COLORS } from "@/lib/cta/explodeAndStitchSegments";
+import { ctaLineColors as CTA_LINE_COLORS } from "@/lib/utils";
+import { CTA_LINE_ORDER } from "@/lib/cta/explodeAndStitchSegments";
 import { useHapticFeedback } from "@/hooks/useHapticFeedback";
 import { useRef, useState, useEffect } from "react";
 

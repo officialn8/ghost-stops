@@ -1,9 +1,10 @@
 "use client";
+import { ctaLineColors as CTA_LINE_COLORS } from "@/lib/utils";
 
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import { motion } from "motion/react";
 import { cn, getGhostScoreColor } from "@/lib/utils";
-import { CTA_LINE_COLORS, type CTALine } from "@/lib/cta/explodeAndStitchSegments";
+import { type CTALine } from "@/lib/cta/explodeAndStitchSegments";
 
 interface NeighborStation {
   id: string;

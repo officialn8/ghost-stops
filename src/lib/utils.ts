@@ -9,19 +9,9 @@ export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs))
 }
 
-// Glass effect utilities
-export function glass(opacity: number = 0.72, blur: number = 16) {
-  return {
-    backgroundColor: `rgba(255, 255, 255, ${opacity})`,
-    backdropFilter: `blur(${blur}px)`,
-    WebkitBackdropFilter: `blur(${blur}px)`,
-    border: '1px solid rgba(15, 23, 42, 0.08)',
-  }
-}
-
 // Ghost score color mapping on the v1 scale (cutoffs 65/50/35/20, set for the v1 composite's
-// ceiling of about 75). Knowingly miscalibrated for score v2's 0-100 percentile until U18
-// replaces it with `getTier`.
+// ceiling of about 75). Knowingly miscalibrated for score v2's 0-100 percentile; only the v1
+// components still read it, and they go when the Phase 5 redesign replaces them.
 export function getGhostScoreColor(score: number): string {
   if (score >= 65) return "#DC2626" // red-600 (top tier ghost)
   if (score >= 50) return "#EA580C" // orange-600
@@ -51,6 +41,14 @@ export function getTier(score: number): TierStyle {
   if (score >= 50) return { tier: "quiet", ink: 1, mark: "hollow" }
   return { tier: "healthy", ink: 1, mark: "solid" }
 }
+
+/** A tier's ink and mark by name, for the list payload, which carries the tier but not the score. */
+export function tierStyle(tier: ScoreTierName): TierStyle {
+  return getTier(TIER_FLOOR[tier])
+}
+
+/** The lowest score in each tier: getTier's cutoffs, read back. */
+const TIER_FLOOR: Readonly<Record<ScoreTierName, number>> = { ghost: 90, fading: 75, quiet: 50, healthy: 0 }
 
 const TIER_NAMES: readonly ScoreTierName[] = ["ghost", "fading", "quiet", "healthy"]
 
@@ -93,19 +91,75 @@ export function safeJsonParse<T>(value: string | null | undefined, fallback: T):
   }
 }
 
-// CTA line color mapping
-export const ctaLineColors = {
-  "Red": "#C60C30",
-  "Blue": "#00A1DE",
-  "Brown": "#62361B",
-  "Green": "#009B3A",
-  "Orange": "#F9461C",
-  "Purple": "#522398",
-  "Purple Express": "#522398",
-  "Pink": "#E27EA6",
-  "Yellow": "#F9E300"
-} as const
+// ═══════════════════════════════════════════════════════════════
+// CTA LINES: the only hues on screen (R23)
+// ═══════════════════════════════════════════════════════════════
 
+/** The eight "L" lines in CTA's canonical order, which every line list is sorted by. */
+export const CTA_LINE_ORDER = ["Red", "Blue", "Brown", "Green", "Orange", "Purple", "Pink", "Yellow"] as const
+
+export type CTALine = (typeof CTA_LINE_ORDER)[number]
+
+/**
+ * The CTA's official line colors, the one table in the app (KTD10). They draw tracks, the line
+ * bars under station names, and the line filter, and nothing else: UI chrome is ink on a surface.
+ */
+export const ctaLineColors: Readonly<Record<CTALine, string>> = {
+  Red: "#C60C30",
+  Blue: "#00A1DE",
+  Brown: "#62361B",
+  Green: "#009B3A",
+  Orange: "#F9461C",
+  Purple: "#522398",
+  Pink: "#E27EA6",
+  Yellow: "#F9E300",
+}
+
+/** A line's color; the Purple Express runs as Purple, and an unknown name gets neutral gray. */
 export function getLineColor(line: string): string {
-  return ctaLineColors[line as keyof typeof ctaLineColors] || "#666666"
+  if (line === "Purple Express") return ctaLineColors.Purple
+  return ctaLineColors[line as CTALine] ?? "#6B6B6B"
+}
+
+/** The dark and light inks of the two themes, for text set on a line color. */
+const LABEL_INKS = ["#141518", "#F2F1EC"] as const
+
+/**
+ * The ink for text set on a line color: whichever of the two theme inks contrasts more. Yellow,
+ * Pink, Blue, Green, and Orange all take the dark one; white on them fails WCAG AA.
+ */
+export function lineLabelInk(line: string): string {
+  const color = getLineColor(line)
+  return contrastRatio(LABEL_INKS[0], color) >= contrastRatio(LABEL_INKS[1], color) ? LABEL_INKS[0] : LABEL_INKS[1]
+}
+
+// ═══════════════════════════════════════════════════════════════
+// CONTRAST (WCAG 2.x)
+// ═══════════════════════════════════════════════════════════════
+
+export type Rgb = readonly [number, number, number]
+
+/** "#RRGGBB" to its three 0-255 channels. */
+export function hexToRgb(hex: string): Rgb {
+  const value = Number.parseInt(hex.replace("#", ""), 16)
+  return [(value >> 16) & 255, (value >> 8) & 255, value & 255]
+}
+
+/** A color drawn at `alpha` over an opaque background, as the eye receives it. */
+export function blend(color: Rgb, background: Rgb, alpha: number): Rgb {
+  return [0, 1, 2].map((i) => color[i] * alpha + background[i] * (1 - alpha)) as unknown as Rgb
+}
+
+function relativeLuminance([r, g, b]: Rgb): number {
+  const linear = (channel: number) => {
+    const c = channel / 255
+    return c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4
+  }
+  return 0.2126 * linear(r) + 0.7152 * linear(g) + 0.0722 * linear(b)
+}
+
+/** The WCAG contrast ratio of two opaque colors, from 1 to 21. */
+export function contrastRatio(a: string | Rgb, b: string | Rgb): number {
+  const [la, lb] = [a, b].map((c) => relativeLuminance(typeof c === "string" ? hexToRgb(c) : c))
+  return (Math.max(la, lb) + 0.05) / (Math.min(la, lb) + 0.05)
 }

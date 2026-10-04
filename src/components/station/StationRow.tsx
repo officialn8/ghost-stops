@@ -7,7 +7,7 @@ import CTALineBadge from "./CTALineBadge";
 import Sparkline from "@/components/charts/Sparkline";
 import { clampGhostScore, cn, normalizeDataStatus } from "@/lib/utils";
 import { normalizeStationLines } from "@/lib/cta/normalizeStationLines";
-import { CTA_LINE_COLORS } from "@/lib/cta/explodeAndStitchSegments";
+import { ctaLineColors as CTA_LINE_COLORS } from "@/lib/utils";
 
 interface StationRowProps {
   rank: number;

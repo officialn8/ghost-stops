@@ -1,24 +1,9 @@
 import type { FeatureCollection, Feature, LineString } from 'geojson';
 
-// Stable line ordering for consistent offset calculation
-export const CTA_LINE_ORDER = [
-  "Red", "Blue", "Brown", "Green", "Orange",
-  "Purple", "Pink", "Yellow"
-] as const;
+import { CTA_LINE_ORDER, type CTALine } from "../utils";
 
-export type CTALine = typeof CTA_LINE_ORDER[number];
-
-// CTA brand colors (NOT official CTA colors)
-export const CTA_LINE_COLORS: Record<CTALine, string> = {
-  "Red": "#F25757",     // Vibrant Coral
-  "Blue": "#0090C1",    // Ocean Blue
-  "Brown": "#513B3C",   // Chocolate Plum
-  "Green": "#06D6A0",   // Emerald
-  "Orange": "#F58549",  // Atomic Tangerine
-  "Purple": "#4F1271",  // Indigo
-  "Pink": "#FF6B6B",    // Grapefruit Pink
-  "Yellow": "#F7E733"   // Bright Lemon
-};
+// Line order (for consistent offsets) and colors come from the one line table in src/lib/utils.ts.
+export { CTA_LINE_ORDER, type CTALine };
 
 interface SegmentProperties {
   segment_id: string;

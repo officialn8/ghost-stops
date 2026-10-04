@@ -1,7 +1,6 @@
 import type { FeatureCollection, Feature, LineString } from 'geojson';
 import {
   CTA_LINE_ORDER,
-  CTA_LINE_COLORS,
   type CTALine,
   isStationActiveByLineFilter
 } from './explodeSegments';
@@ -28,7 +27,7 @@ interface StitchedProperties extends ExplodedProperties {
 }
 
 // Re-export for convenience
-export { CTA_LINE_ORDER, CTA_LINE_COLORS, type CTALine, isStationActiveByLineFilter };
+export { CTA_LINE_ORDER, type CTALine, isStationActiveByLineFilter };
 
 /**
  * Corridor configurations define the full set of lines that share each corridor

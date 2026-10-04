@@ -1,9 +1,10 @@
 "use client";
+import { ctaLineColors as CTA_LINE_COLORS } from "@/lib/utils";
 
 import { Marker } from "react-map-gl/mapbox";
 import { motion } from "motion/react";
 import { normalizeStationLines } from "@/lib/cta/normalizeStationLines";
-import { CTALine, CTA_LINE_COLORS } from "@/lib/cta/explodeAndStitchSegments";
+import { CTALine } from "@/lib/cta/explodeAndStitchSegments";
 
 interface Station {
   id: string;

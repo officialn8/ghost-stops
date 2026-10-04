@@ -19,11 +19,6 @@
       "count": 1
     }
   },
-  "src/components/theme/ThemeProvider.tsx": {
-    "react-hooks/set-state-in-effect": {
-      "count": 1
-    }
-  },
   "src/components/ui/SmartTooltip.tsx": {
     "react-hooks/set-state-in-effect": {
       "count": 1

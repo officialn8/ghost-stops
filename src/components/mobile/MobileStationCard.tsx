@@ -1,5 +1,6 @@
+import { ctaLineColors as CTA_LINE_COLORS } from "@/lib/utils";
 import { normalizeStationLines } from "@/lib/cta/normalizeStationLines";
-import { CTALine, CTA_LINE_COLORS } from "@/lib/cta/explodeAndStitchSegments";
+import { CTALine } from "@/lib/cta/explodeAndStitchSegments";
 import Sparkline from "@/components/charts/Sparkline";
 
 interface Station {

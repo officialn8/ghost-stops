@@ -1,3 +1,4 @@
+import { ctaLineColors as CTA_LINE_COLORS } from "@/lib/utils";
 import { useState, useRef } from 'react';
 import Map from 'react-map-gl/mapbox';
 import type { MapRef } from 'react-map-gl/mapbox';
@@ -6,7 +7,7 @@ import MobileSearchBar from './MobileSearchBar';
 import MobileFilterScroll from './MobileFilterScroll';
 import MobileBottomSheet from './MobileBottomSheet';
 import MobileStationDetail from './MobileStationDetail';
-import { CTA_LINE_ORDER, CTA_LINE_COLORS, isStationActiveByLineFilter } from '@/lib/cta/explodeAndStitchSegments';
+import { CTA_LINE_ORDER, isStationActiveByLineFilter } from '@/lib/cta/explodeAndStitchSegments';
 import { useHapticFeedback } from '@/hooks/useHapticFeedback';
 import { ThemeToggle, useTheme } from '@/components/theme';
 import type { FactMap, StationNarrativeData, DataSourceInfo } from "@/types/narrative";

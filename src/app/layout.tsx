@@ -1,52 +1,51 @@
-import type { Metadata } from "next";
-import { Inter, Fraunces, Space_Grotesk, JetBrains_Mono } from "next/font/google";
+import type { Metadata, Viewport } from "next";
+import { Archivo, JetBrains_Mono } from "next/font/google";
 import { Analytics } from "@vercel/analytics/react";
-import { ThemeProvider } from "@/components/theme";
-import { ResponsiveProvider } from "@/components/layout/ResponsiveProvider";
+import { ThemeProvider, THEME_SCRIPT } from "@/components/theme";
+import { SITE_NAME, SITE_URL } from "@/lib/site";
 import "./globals.css";
 
-// UI Font - Inter for body text and interface elements
-const inter = Inter({
-  variable: "--font-inter",
+// Words: Archivo, a variable font whose width axis gives station names their condensed signage cut.
+const archivo = Archivo({
+  variable: "--font-archivo",
   subsets: ["latin"],
+  axes: ["wdth"],
   display: "swap",
-  weight: ["400", "500", "600", "700"],
 });
 
-// Display Font - Fraunces for headings and hero text (legacy)
-const fraunces = Fraunces({
-  variable: "--font-fraunces",
-  subsets: ["latin"],
-  display: "swap",
-  weight: ["600", "700"],
-});
-
-// Display Font - Space Grotesk for Ghost Score, Station Names, Logo
-const spaceGrotesk = Space_Grotesk({
-  variable: "--font-space-grotesk",
-  subsets: ["latin"],
-  display: "swap",
-  weight: ["400", "500", "600", "700"],
-});
-
-// Mono Font - JetBrains Mono for stats, numbers, data
+// Numbers: every figure on the page is set in JetBrains Mono.
 const jetbrainsMono = JetBrains_Mono({
   variable: "--font-jetbrains-mono",
   subsets: ["latin"],
-  display: "swap",
   weight: ["400", "500"],
+  display: "swap",
 });
 
+const DESCRIPTION =
+  "Which Chicago L stations are emptier than they should be, and why. Daily CTA ridership, ranked against each station's own line and neighbors.";
+
 export const metadata: Metadata = {
-  title: "Ghost Stops | Chicago CTA Rail Analytics",
-  description: "Explore Chicago's emptiest CTA rail stations. Premium transit analytics with ghost scores and ridership trends.",
-  keywords: ["Chicago", "CTA", "transit", "ghost stations", "ridership", "analytics"],
-  authors: [{ name: "Ghost Stops" }],
+  metadataBase: SITE_URL,
+  title: {
+    default: `${SITE_NAME} · Chicago L ridership`,
+    template: `%s · ${SITE_NAME}`,
+  },
+  description: DESCRIPTION,
   openGraph: {
-    title: "Ghost Stops | Chicago CTA Rail Analytics",
-    description: "Discover Chicago's ghost stations - the emptiest stops on the CTA rail system.",
+    siteName: SITE_NAME,
+    title: `${SITE_NAME} · Chicago L ridership`,
+    description: DESCRIPTION,
     type: "website",
   },
+};
+
+export const viewport: Viewport = {
+  // The phone layout pads for the notch and home indicator itself.
+  viewportFit: "cover",
+  themeColor: [
+    { media: "(prefers-color-scheme: light)", color: "#F4F3EE" },
+    { media: "(prefers-color-scheme: dark)", color: "#141518" },
+  ],
 };
 
 export default function RootLayout({
@@ -55,19 +54,13 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" className="antialiased">
-      <body
-        className={`${inter.variable} ${fraunces.variable} ${spaceGrotesk.variable} ${jetbrainsMono.variable} font-sans`}
-        style={{
-          fontFamily: "var(--font-inter), system-ui, sans-serif",
-        }}
-        suppressHydrationWarning
-      >
-        <ThemeProvider>
-          <ResponsiveProvider>
-            {children}
-          </ResponsiveProvider>
-        </ThemeProvider>
+    // The inline script sets data-theme before React hydrates, so the attribute differs by design.
+    <html lang="en" data-theme="dark" className={`${archivo.variable} ${jetbrainsMono.variable}`} suppressHydrationWarning>
+      <head>
+        <script dangerouslySetInnerHTML={{ __html: THEME_SCRIPT }} />
+      </head>
+      <body>
+        <ThemeProvider>{children}</ThemeProvider>
         <Analytics />
       </body>
     </html>

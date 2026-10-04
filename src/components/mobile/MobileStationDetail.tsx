@@ -1,10 +1,11 @@
+import { ctaLineColors as CTA_LINE_COLORS } from "@/lib/utils";
 import { animated, useSpring } from '@react-spring/web';
 import { useDrag } from '@use-gesture/react';
 import { useState, useEffect, useRef } from 'react';
 import Map from 'react-map-gl/mapbox';
 import { ChevronDown, Share, Navigation, BarChart3, Ghost, TrendingDown, TrendingUp, Users, MapPin } from 'lucide-react';
 import { normalizeStationLines } from "@/lib/cta/normalizeStationLines";
-import { CTALine, CTA_LINE_COLORS } from "@/lib/cta/explodeAndStitchSegments";
+import { CTALine } from "@/lib/cta/explodeAndStitchSegments";
 import RidershipChart from "@/components/station/RidershipChart";
 import { StationComparison } from "@/components/comparison/ComparisonBars";
 import GhostScoreGauge from "@/components/ghost/GhostScoreGauge";

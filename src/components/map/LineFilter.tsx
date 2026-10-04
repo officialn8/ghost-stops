@@ -1,6 +1,7 @@
 "use client";
+import { ctaLineColors as CTA_LINE_COLORS } from "@/lib/utils";
 
-import { CTA_LINE_ORDER, CTA_LINE_COLORS } from "@/lib/cta/explodeSegments";
+import { CTA_LINE_ORDER } from "@/lib/cta/explodeSegments";
 import { cn } from "@/lib/utils";
 
 interface LineFilterProps {

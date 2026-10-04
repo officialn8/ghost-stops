@@ -1,571 +1,124 @@
-@import "../styles/typography.css";
-@import "../styles/mobile.css";
-@import "../styles/glassmorphism.css";
-@import "../styles/animations.css";
 @import "mapbox-gl/dist/mapbox-gl.css";
 
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
+/*
+ * Wayfinding tokens (docs/audit-2026-10-02/design.md, Direction A).
+ *
+ * The UI is ink on a surface, nothing else: hue belongs to the eight CTA lines (the one table in
+ * src/lib/utils.ts), and ghostliness is ink presence (src/lib/utils.ts getTier), never a color.
+ * Channels are space-separated RGB so Tailwind's opacity modifiers work on them.
+ *
+ * Dark is the default (R30): :root carries the dark values, so a page without the theme script
+ * still renders dark. ink-2 and ink-3 are ink at a theme-specific opacity; ink-3 sits at the
+ * lowest opacity that still meets WCAG AA (4.5:1) at 13px on both surfaces, which
+ * src/test/contrast.test.ts checks for every text token in both themes. ink-3 is never used
+ * below 13px; 11px labels use ink-2.
+ */
 @layer base {
-  :root {
-    /* ═══════════════════════════════════════════════════════════════
-       LIGHT MODE (Default) - Glass UI Design System v2
-       ═══════════════════════════════════════════════════════════════ */
-    --background: 228 38.5% 97.5%; /* #F6F7FB */
-    --foreground: 220 48.8% 8.4%; /* Text primary #0B1220 */
-
-    /* Surfaces */
-    --card: 0 0% 100%;
-    --card-foreground: 220 48.8% 8.4%;
-
-    --popover: 0 0% 100%;
-    --popover-foreground: 220 48.8% 8.4%;
-
-    /* Brand Colors - Indigo primary, Emerald secondary */
-    --primary: 280 76% 27%; /* Indigo #4F1271 */
-    --primary-foreground: 0 0% 100%;
-
-    --secondary: 164 95% 43%; /* Emerald #06D6A0 */
-    --secondary-foreground: 0 0% 100%;
-
-    /* Neutral Tints */
-    --muted: 0 0% 96%; /* Neutral Gray #F5F5F5 */
-    --muted-foreground: 220 48.8% 8.4% / 0.72;
-
-    --accent: 197 100% 38%; /* Ocean Blue #0090C1 */
-    --accent-foreground: 0 0% 100%;
-
-    --destructive: 0 84.2% 60.2%;
-    --destructive-foreground: 0 0% 100%;
-
-    /* Borders - neutral by default, NOT purple-tinted */
-    --border: 220 48.8% 8.4% / 0.08;
-    --input: 220 48.8% 8.4% / 0.08;
-    --ring: 197 100% 38%; /* Ocean Blue for focus */
-
-    --radius: 16px;
-
-    /* ─────────────────────────────────────────────────────────────
-       DARK MODE TOKENS (Light mode values)
-       ───────────────────────────────────────────────────────────── */
-    --bg-primary: #FFFFFF;
-    --bg-secondary: #F8FAFC;
-    --bg-tertiary: #F1F5F9;
-    --dm-text-primary: #0F172A;
-    --dm-text-secondary: #475569;
-    --dm-text-tertiary: #94A3B8;
-    --border-color: rgba(0, 0, 0, 0.08);
-    --shadow-color: rgba(0, 0, 0, 0.1);
-
-    /* Glass tokens */
-    --glass-bg: rgba(255, 255, 255, 0.8);
-    --glass-bg-solid: rgba(255, 255, 255, 1);
-    --glass-border: rgba(0, 0, 0, 0.08);
-
-    /* Skeleton */
-    --skeleton-base: rgba(0, 0, 0, 0.06);
-    --skeleton-shine: rgba(0, 0, 0, 0.1);
-
-    /* Scrollbar */
-    --scrollbar-thumb: rgba(0, 0, 0, 0.15);
-    --scrollbar-thumb-hover: rgba(0, 0, 0, 0.3);
-  }
-
-  /* ═══════════════════════════════════════════════════════════════
-     DARK MODE
-     ═══════════════════════════════════════════════════════════════ */
+  :root,
   [data-theme="dark"] {
-    --background: 222.2 47.4% 11.2%; /* #0F172A */
-    --foreground: 210 40% 98%; /* #F8FAFC */
-
-    /* Surfaces */
-    --card: 222 47% 11%;
-    --card-foreground: 210 40% 98%;
-
-    --popover: 222 47% 11%;
-    --popover-foreground: 210 40% 98%;
-
-    /* Neutral Tints - inverted */
-    --muted: 217 33% 17%; /* Dark slate */
-    --muted-foreground: 210 40% 98% / 0.72;
-
-    /* Borders */
-    --border: 210 40% 98% / 0.1;
-    --input: 210 40% 98% / 0.1;
-
-    /* Dark mode tokens */
-    --bg-primary: #0F172A;
-    --bg-secondary: #1E293B;
-    --bg-tertiary: #334155;
-    --dm-text-primary: #F8FAFC;
-    --dm-text-secondary: #CBD5E1;
-    --dm-text-tertiary: #64748B;
-    --border-color: rgba(255, 255, 255, 0.1);
-    --shadow-color: rgba(0, 0, 0, 0.4);
-
-    /* Glass tokens - dark variant */
-    --glass-bg: rgba(15, 23, 42, 0.85);
-    --glass-bg-solid: rgba(30, 41, 59, 0.95);
-    --glass-border: rgba(255, 255, 255, 0.08);
-
-    /* Skeleton - dark */
-    --skeleton-base: rgba(255, 255, 255, 0.06);
-    --skeleton-shine: rgba(255, 255, 255, 0.1);
-
-    /* Scrollbar - dark */
-    --scrollbar-thumb: rgba(255, 255, 255, 0.2);
-    --scrollbar-thumb-hover: rgba(255, 255, 255, 0.4);
+    --surface: 20 21 24; /* #141518 */
+    --surface-2: 28 29 33; /* #1C1D21 */
+    --ink: 242 241 236; /* #F2F1EC */
+    --ink-2-alpha: 0.68;
+    --ink-3-alpha: 0.52;
+    --rule-alpha: 0.12;
+    --shadow: 0 0 0;
+    color-scheme: dark;
   }
-}
 
-@layer base {
-  * {
-    @apply border-border;
+  [data-theme="light"] {
+    --surface: 244 243 238; /* #F4F3EE */
+    --surface-2: 251 251 248; /* #FBFBF8 */
+    --ink: 20 21 24; /* #141518 */
+    --ink-2-alpha: 0.72;
+    --ink-3-alpha: 0.62;
+    --rule-alpha: 0.12;
+    --shadow: 20 21 24;
+    color-scheme: light;
+  }
+
+  html {
+    background-color: rgb(var(--surface));
+    color: rgb(var(--ink));
+    -webkit-text-size-adjust: 100%;
   }
 
   body {
-    @apply text-text-primary;
-    background-color: var(--bg-primary);
-    font-feature-settings: "rlig" 1, "calt" 1;
+    font-family: var(--font-archivo), system-ui, sans-serif;
+    font-size: 15px;
+    line-height: 24px;
+    background-color: rgb(var(--surface));
+    color: rgb(var(--ink));
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
-    transition: background-color 0.3s ease, color 0.3s ease;
   }
 
-  /* Dark mode body background */
-  [data-theme="dark"] body {
-    @apply text-slate-100;
-    background-color: var(--bg-primary);
+  /* One focus treatment everywhere: a 2px ink ring, visible on both surfaces. */
+  :focus-visible {
+    outline: 2px solid rgb(var(--ink));
+    outline-offset: 2px;
+  }
+
+  ::selection {
+    background-color: rgb(var(--ink));
+    color: rgb(var(--surface));
+  }
+
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: rgb(var(--ink) / 0.24) transparent;
   }
 }
 
 @layer utilities {
-  /* ═══════════════════════════════════════════════════════════════
-     GLASS EFFECTS - Light & Dark Mode
-     ═══════════════════════════════════════════════════════════════ */
-  .glass {
-    background: var(--glass-bg);
-    backdrop-filter: blur(16px);
-    border: 1px solid var(--glass-border);
-    box-shadow: 0 8px 24px var(--shadow-color);
+  /* Archivo's width axis at its condensed cut: station names, the signage voice. */
+  .font-narrow {
+    font-variation-settings: "wdth" 75;
   }
 
-  .glass-solid {
-    background: var(--glass-bg-solid);
-    backdrop-filter: blur(16px);
-    border: 1px solid var(--glass-border);
-    box-shadow: 0 8px 24px var(--shadow-color);
-  }
-
-  .glass-hover {
-    @apply hover:shadow-lg hover:translate-y-[-2px] transition-all duration-200;
-  }
-
-  /* Ghost Theme Effects - Indigo/Emerald palette */
-  .ghost-glow {
-    box-shadow: 0 0 24px rgba(79, 18, 113, 0.15),
-                0 0 48px rgba(6, 214, 160, 0.12);
-  }
-
-  .ghost-mist {
-    background: radial-gradient(
-      ellipse at center,
-      rgba(79, 18, 113, 0.04) 0%,
-      rgba(6, 214, 160, 0.03) 50%,
-      transparent 100%
-    );
-  }
-
-  .ghost-shimmer {
-    background: linear-gradient(
-      105deg,
-      transparent 40%,
-      rgba(255, 255, 255, 0.9) 50%,
-      transparent 60%
-    );
-    background-size: 200% 100%;
-    animation: ghost-shimmer 3s linear infinite;
-  }
-
-  /* Text Gradients - New Palette */
-  .text-gradient-emerald {
-    @apply bg-gradient-to-r from-emerald-600 to-emerald-500 bg-clip-text text-transparent;
-  }
-
-  .text-gradient-indigo {
-    @apply bg-gradient-to-r from-brandIndigo to-brandWisteria bg-clip-text text-transparent;
-  }
-
-  .text-gradient-ghost {
-    @apply bg-gradient-to-r from-brandIndigo via-brandWisteria to-emerald bg-clip-text text-transparent;
-  }
-
-  /* Focus States - Ocean Blue for accessibility */
-  .focus-ocean {
-    @apply focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-palette-ocean/50 focus-visible:ring-offset-2;
-  }
-
-  /* Smooth Transitions */
-  .transition-smooth {
-    @apply transition-all duration-300 ease-out;
-  }
-
-  /* ═══════════════════════════════════════════════════════════════
-     NOISE TEXTURE OVERLAY - Premium Depth Effect
-     ═══════════════════════════════════════════════════════════════ */
-  .noise-texture {
-    position: relative;
-  }
-
-  .noise-texture::after {
-    content: '';
-    position: absolute;
-    inset: 0;
-    pointer-events: none;
-    opacity: 0.02;
-    background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)'/%3E%3C/svg%3E");
-    background-repeat: repeat;
-    background-size: 200px 200px;
-    mix-blend-mode: overlay;
-  }
-
-  /* Stronger noise variant */
-  .noise-texture-strong::after {
-    opacity: 0.04;
-  }
-
-  /* Subtle gradient overlays for depth */
-  .gradient-overlay-top {
-    position: relative;
-  }
-
-  .gradient-overlay-top::before {
-    content: '';
-    position: absolute;
-    inset: 0;
-    pointer-events: none;
-    background: linear-gradient(180deg, rgba(255,255,255,0.05) 0%, transparent 30%);
-    border-radius: inherit;
-  }
-
-  .gradient-overlay-edge {
-    position: relative;
-  }
-
-  .gradient-overlay-edge::before {
-    content: '';
-    position: absolute;
-    inset: 0;
-    pointer-events: none;
-    background: linear-gradient(135deg, rgba(255,255,255,0.08) 0%, transparent 50%, rgba(0,0,0,0.02) 100%);
-    border-radius: inherit;
-  }
-
-  /* Hide scrollbar */
-  .no-scrollbar::-webkit-scrollbar {
-    display: none;
-  }
-
-  .no-scrollbar {
-    -ms-overflow-style: none;
-    scrollbar-width: none;
+  /* Every number lines up in columns. */
+  .tabular {
+    font-variant-numeric: tabular-nums;
   }
 }
 
-@layer components {
-  /* NOTE: .glass-panel is defined in glassmorphism.css with enhanced depth effects */
-
-  /* CTA Line Badge - Small Rounded Pills */
-  .cta-line-badge {
-    @apply inline-flex items-center justify-center px-2.5 py-0.5 text-[11px] font-medium text-white rounded-full;
-    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
-  }
-
-  /* Interactive List Item */
-  .interactive-list-item {
-    @apply relative px-5 py-4 cursor-pointer transition-all duration-200 rounded-ui;
-  }
-
-  .interactive-list-item:hover {
-    background: var(--glass-bg-solid);
-  }
-
-  /* Selected State */
-  .selected-item {
-    background: var(--glass-bg-solid);
-    box-shadow: 0 2px 8px var(--shadow-color);
-  }
-
-  /* ═══════════════════════════════════════════════════════════════
-     FILTER PILLS - Elevated Design
-     ═══════════════════════════════════════════════════════════════ */
-  .filter-pill {
-    backdrop-filter: blur(8px);
-    border: 1px solid var(--border-color);
-    box-shadow:
-      0 1px 2px rgba(0, 0, 0, 0.04),
-      inset 0 1px 0 rgba(255, 255, 255, 0.5);
-    transition: all 0.2s cubic-bezier(0.34, 1.56, 0.64, 1);
-  }
-
-  .filter-pill:not([style*="background"]) {
-    background: var(--glass-bg);
-  }
-
-  .filter-pill.active {
-    color: white;
-    border-color: transparent;
-    transform: scale(1.02);
-  }
-
-  .filter-pill:hover:not(.active) {
-    transform: translateY(-1px);
-    box-shadow:
-      0 4px 8px rgba(0, 0, 0, 0.08),
-      inset 0 1px 0 rgba(255, 255, 255, 0.5);
-  }
-
-  .filter-pill:active {
-    transform: scale(0.97);
-    transition-duration: 0.1s;
-  }
-
-  /* Dark mode filter pills */
-  [data-theme="dark"] .filter-pill {
-    border-color: rgba(255, 255, 255, 0.1);
-    box-shadow:
-      0 1px 2px rgba(0, 0, 0, 0.2),
-      inset 0 1px 0 rgba(255, 255, 255, 0.05);
-  }
-
-  [data-theme="dark"] .filter-pill:not([style*="background"]) {
-    background: rgba(30, 41, 59, 0.6);
-  }
-
-  [data-theme="dark"] .filter-pill:hover:not(.active):not([style*="background"]) {
-    background: rgba(51, 65, 85, 0.8);
-  }
-
-  /* ═══════════════════════════════════════════════════════════════
-     SKELETON LOADING
-     ═══════════════════════════════════════════════════════════════ */
-  .skeleton-shimmer {
-    background: linear-gradient(
-      90deg,
-      var(--skeleton-base) 0%,
-      var(--skeleton-shine) 50%,
-      var(--skeleton-base) 100%
-    );
-    background-size: 200% 100%;
-    animation: shimmer 1.5s infinite;
-    border-radius: 4px;
-  }
-
-  .skeleton-shimmer-slow {
-    animation: shimmer 2s infinite;
+/*
+ * Motion is a preference (R29): components gate theirs through MotionConfig, and this collapses
+ * any CSS transition to an instant change for readers who asked for less motion.
+ */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
   }
 }
 
-/* ═══════════════════════════════════════════════════════════════
-   ANIMATIONS
-   ═══════════════════════════════════════════════════════════════ */
-@keyframes ghost-shimmer {
-  0% {
-    background-position: -200%;
-  }
-  100% {
-    background-position: 200%;
-  }
+/* Mapbox's own controls, in the token palette. The attribution stays visible, as Mapbox requires. */
+.mapboxgl-ctrl-attrib.mapboxgl-compact,
+.mapboxgl-ctrl-attrib {
+  background-color: rgb(var(--surface) / 0.8) !important;
+  color: rgb(var(--ink) / var(--ink-2-alpha));
+  font-size: 11px;
 }
 
-@keyframes ghost-pulse {
-  0%, 100% {
-    opacity: 0.8;
-    transform: scale(1);
-  }
-  50% {
-    opacity: 0.5;
-    transform: scale(1.05);
-  }
+.mapboxgl-ctrl-attrib a {
+  color: inherit !important;
 }
 
-@keyframes ghost-float {
-  0%, 100% {
-    transform: translateY(0px) rotate(0deg);
-  }
-  25% {
-    transform: translateY(-6px) rotate(-0.5deg);
-  }
-  75% {
-    transform: translateY(-3px) rotate(0.5deg);
-  }
+.mapboxgl-ctrl-group {
+  background-color: rgb(var(--surface-2)) !important;
+  border-radius: 4px !important;
+  box-shadow: 0 0 0 1px rgb(var(--ink) / var(--rule-alpha)) !important;
 }
 
-/* Skeleton shimmer animation */
-@keyframes shimmer {
-  0% {
-    background-position: 200% 0;
-  }
-  100% {
-    background-position: -200% 0;
-  }
-}
-
-/* Pulse animation for map markers */
-@keyframes marker-pulse {
-  0%, 100% {
-    opacity: 0.6;
-    transform: scale(1);
-  }
-  50% {
-    opacity: 0.3;
-    transform: scale(1.15);
-  }
-}
-
-/* ═══════════════════════════════════════════════════════════════
-   CUSTOM SCROLLBAR - Station List
-   ═══════════════════════════════════════════════════════════════ */
-.station-list-scroll {
-  scrollbar-width: thin;
-  scrollbar-color: transparent transparent;
-  overflow-y: auto;
-}
-
-.station-list-scroll::-webkit-scrollbar {
-  width: 6px;
-}
-
-.station-list-scroll::-webkit-scrollbar-track {
-  background: transparent;
-}
-
-.station-list-scroll::-webkit-scrollbar-thumb {
-  background: transparent;
-  border-radius: 3px;
-  transition: background 0.2s;
-}
-
-/* Show scrollbar on hover */
-.station-list-scroll:hover {
-  scrollbar-color: var(--scrollbar-thumb) transparent;
-}
-
-.station-list-scroll:hover::-webkit-scrollbar-thumb {
-  background: var(--scrollbar-thumb);
-}
-
-.station-list-scroll:hover::-webkit-scrollbar-thumb:hover {
-  background: var(--scrollbar-thumb-hover);
-}
-
-/* Global scrollbar (keep existing for other elements) */
-::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
-}
-
-::-webkit-scrollbar-track {
-  background: transparent;
-  border-radius: 4px;
-}
-
-::-webkit-scrollbar-thumb {
-  background: var(--scrollbar-thumb);
-  border-radius: 4px;
-}
-
-::-webkit-scrollbar-thumb:hover {
-  background: var(--scrollbar-thumb-hover);
-}
-
-/* ═══════════════════════════════════════════════════════════════
-   SELECTION COLORS
-   ═══════════════════════════════════════════════════════════════ */
-::selection {
-  @apply bg-emerald-200 text-emerald-900;
-}
-
-::-moz-selection {
-  @apply bg-emerald-200 text-emerald-900;
-}
-
-[data-theme="dark"] ::selection {
-  @apply bg-emerald-800 text-emerald-100;
-}
-
-[data-theme="dark"] ::-moz-selection {
-  @apply bg-emerald-800 text-emerald-100;
-}
-
-/* Prevent autofill yellow background */
-input:-webkit-autofill,
-input:-webkit-autofill:hover,
-input:-webkit-autofill:focus,
-input:-webkit-autofill:active {
-  -webkit-box-shadow: 0 0 0 30px var(--bg-primary) inset !important;
-  -webkit-text-fill-color: var(--dm-text-primary) !important;
-  transition: background-color 5000s ease-in-out 0s;
-}
-
-/* Disable iOS/Safari default styling */
-input[type="text"],
-input[type="search"],
-button {
-  -webkit-appearance: none;
-  appearance: none;
-}
-
-/* Mobile-specific: Prevent any yellow/highlight backgrounds */
-@media (max-width: 768px) {
-  /* Remove all tap highlights */
-  *, *::before, *::after {
-    -webkit-tap-highlight-color: transparent !important;
-  }
-
-  /* Prevent any background color on active states */
-  button:active,
-  a:active,
-  div[role="button"]:active {
-    background-color: inherit !important;
-  }
-
-  /* Force muted colors to be neutral */
-  .bg-muted,
-  [class*="bg-muted"] {
-    background-color: rgb(245 245 245) !important;
-  }
-
-  [data-theme="dark"] .bg-muted,
-  [data-theme="dark"] [class*="bg-muted"] {
-    background-color: rgb(30 41 59) !important;
-  }
-
-  /* Disable all text selection on interactive elements */
-  button, a, [role="button"], .cursor-pointer {
-    -webkit-user-select: none !important;
-    user-select: none !important;
-  }
-}
-
-/* ═══════════════════════════════════════════════════════════════
-   DARK MODE - MAPBOX ADJUSTMENTS
-   ═══════════════════════════════════════════════════════════════ */
-[data-theme="dark"] .mapboxgl-map {
-  /* Subtle darkening - prefer using dark Mapbox style instead */
-}
-
-/* Dark mode text colors override */
-[data-theme="dark"] .text-text-primary {
-  color: var(--dm-text-primary);
-}
-
-[data-theme="dark"] .text-text-secondary {
-  color: var(--dm-text-secondary);
-}
-
-[data-theme="dark"] .text-text-tertiary {
-  color: var(--dm-text-tertiary);
+[data-theme="dark"] .mapboxgl-ctrl-group button .mapboxgl-ctrl-icon,
+:root:not([data-theme="light"]) .mapboxgl-ctrl-group button .mapboxgl-ctrl-icon {
+  filter: invert(1);
 }

@@ -1,4 +1,5 @@
 "use client";
+import { ctaLineColors as CTA_LINE_COLORS } from "@/lib/utils";
 
 import { useState, useEffect, useMemo, useRef } from "react";
 import { AnimatePresence } from "motion/react";
@@ -16,8 +17,7 @@ import MobileLayout from "@/components/mobile/MobileLayout";
 import {
   explodeAndStitchSegments,
   isStationActiveByLineFilter,
-  CTA_LINE_ORDER,
-  CTA_LINE_COLORS
+  CTA_LINE_ORDER
 } from "@/lib/cta/explodeAndStitchSegments";
 import { safeJsonParse } from "@/lib/utils";
 

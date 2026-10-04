@@ -10,19 +10,10 @@
  * - Line info embedded in station name like "Sedgwick (Brown/Purple)"
  */
 
-import { CTALine } from "../ctaLineColors";
+import { CTA_LINE_ORDER, type CTALine } from "../utils";
 
-// Canonical CTA line order for consistent output
-export const CTA_LINE_ORDER: CTALine[] = [
-    "Red",
-    "Blue",
-    "Brown",
-    "Green",
-    "Orange",
-    "Purple",
-    "Pink",
-    "Yellow",
-];
+// Canonical CTA line order for consistent output, from the one line table.
+export { CTA_LINE_ORDER };
 
 // Valid line names for validation
 const VALID_LINES = new Set(CTA_LINE_ORDER);

@@ -1,5 +1,5 @@
 import { cn } from "@/lib/utils";
-import { ctaLineColors } from "@/lib/ctaLineColors";
+import { ctaLineColors } from "@/lib/utils";
 
 interface CTALineBadgeProps {
   line: string;
