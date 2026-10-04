@@ -17,8 +17,18 @@ export default defineConfig({
         test: {
           name: "unit",
           environment: "node",
-          include: ["src/**/*.test.{ts,tsx}"],
-          exclude: [...configDefaults.exclude, "src/**/*.db.test.{ts,tsx}"],
+          include: ["src/**/*.test.ts"],
+          exclude: [...configDefaults.exclude, "src/**/*.db.test.ts"],
+        },
+      },
+      {
+        extends: true,
+        test: {
+          // React components, rendered into jsdom with Testing Library.
+          name: "components",
+          environment: "jsdom",
+          include: ["src/**/*.test.tsx"],
+          setupFiles: ["./src/test/dom-setup.ts"],
         },
       },
       {

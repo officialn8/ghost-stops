@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import stopList from "@/test/fixtures/cta-stop-list.json";
-import { CTA_LINE_ORDER } from "./normalizeStationLines";
+import { CTA_LINE_ORDER } from "../utils";
 import { CTA_ROSTER } from "./roster";
 import {
     LINE_BRANCHES,

@@ -12,8 +12,8 @@ import type { PrismaClient } from "@/generated/prisma/client";
 import { freshnessOf, lastSuccessfulRun, type LastSuccessfulRun } from "./freshness";
 import { latestCompletedRun, STALE_RUN_MS } from "./lease";
 import { parseDriftMonths } from "./reconcile";
+import { olderThanDays, STALE_AFTER_DAYS } from "../staleness";
 
-const STALE_AFTER_DAYS = 10;
 const RECONCILE_STALE_AFTER_DAYS = 15;
 const DRIFT_BACKLOG_WARNING_MONTHS = 12;
 
@@ -23,8 +23,6 @@ const DRIFT_BACKLOG_WARNING_MONTHS = 12;
  * column, so the trigger is the discriminator; both strings are pinned by their callers' tests.
  */
 const RECONCILE_RUNS = [{ trigger: "cron-weekly" }, { trigger: { contains: "--reconcile" } }];
-
-const DAY_MS = 24 * 60 * 60 * 1000;
 
 export interface HealthInputs {
     lastSuccess: LastSuccessfulRun | null;
@@ -62,7 +60,7 @@ export async function readHealthInputs(db: Pick<PrismaClient, "syncRun">, now: D
 }
 
 export function assessHealth(inputs: HealthInputs, now: Date): { httpStatus: 200 | 503; report: HealthReport } {
-    const olderThan = (date: Date | null, days: number) => date === null || now.getTime() - date.getTime() > days * DAY_MS;
+    const olderThan = (date: Date | null, days: number) => olderThanDays(date?.getTime() ?? null, days, now.getTime());
     const finishedAt = inputs.lastSuccess?.finishedAt ?? null;
     const reconciledAt = inputs.lastReconcile?.finishedAt ?? null;
     let status: HealthReport["status"] = "ok";

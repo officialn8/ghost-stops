@@ -12,8 +12,7 @@
  * Station.lines is derived from these branches, and scripts/seed-reference-data.ts writes them
  * to StationLineSequence, so the roster, the line lists, and the sequence table cannot disagree.
  */
-import type { CTALine } from "../ctaLineColors";
-import { CTA_LINE_ORDER } from "./normalizeStationLines";
+import { CTA_LINE_ORDER, type CTALine } from "../utils";
 
 export interface LineBranch {
     line: CTALine;

@@ -6,7 +6,7 @@
  * the station's primary line; when two stations on the same line still collide (the two Blue Line
  * Westerns and Harlems), append the branch end as well.
  */
-import type { CTALine } from "../ctaLineColors";
+import type { CTALine } from "../utils";
 import { normalizeStationLines } from "./normalizeStationLines";
 import { getPrimaryLine } from "./sequences";
 import { SLUG_ALIASES } from "./slugAliases";

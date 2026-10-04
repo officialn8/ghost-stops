@@ -1,6 +1,6 @@
 "use client";
 
-import { Sun, Moon } from "lucide-react";
+import { Moon, Sun } from "lucide-react";
 import { useTheme } from "./ThemeProvider";
 import { cn } from "@/lib/utils";
 
@@ -8,41 +8,25 @@ interface ThemeToggleProps {
   className?: string;
 }
 
+/** Switches between the dark and light themes; the icon shows the theme a press switches to. */
 export function ThemeToggle({ className }: ThemeToggleProps) {
   const { theme, toggleTheme } = useTheme();
+  const next = theme === "light" ? "dark" : "light";
+  const Icon = next === "dark" ? Moon : Sun;
 
   return (
     <button
+      type="button"
       onClick={toggleTheme}
       className={cn(
-        "relative p-2 rounded-ui transition-all duration-200",
-        "hover:bg-white/20 active:scale-95",
-        "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-palette-ocean/50",
-        className
+        "inline-flex h-10 w-10 items-center justify-center rounded text-ink-2 transition-colors duration-150",
+        "hover:bg-ink/[.06] hover:text-ink active:translate-y-px",
+        className,
       )}
-      aria-label={`Switch to ${theme === "light" ? "dark" : "light"} mode`}
-      title={`Switch to ${theme === "light" ? "dark" : "light"} mode`}
+      aria-label={`Switch to ${next} theme`}
+      title={`Switch to ${next} theme`}
     >
-      <div className="relative w-5 h-5">
-        {/* Sun icon - visible in light mode */}
-        <Sun
-          className={cn(
-            "absolute inset-0 w-5 h-5 transition-all duration-300",
-            theme === "light"
-              ? "opacity-100 rotate-0 scale-100"
-              : "opacity-0 rotate-90 scale-0"
-          )}
-        />
-        {/* Moon icon - visible in dark mode */}
-        <Moon
-          className={cn(
-            "absolute inset-0 w-5 h-5 transition-all duration-300",
-            theme === "dark"
-              ? "opacity-100 rotate-0 scale-100"
-              : "opacity-0 -rotate-90 scale-0"
-          )}
-        />
-      </div>
+      <Icon className="h-[18px] w-[18px]" strokeWidth={1.75} aria-hidden />
     </button>
   );
 }

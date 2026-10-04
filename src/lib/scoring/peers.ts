@@ -17,7 +17,7 @@
  * the junctions that table does not hold.
  */
 import { branchOf, getPrimaryLine, LINE_BRANCHES, linesForStation, neighborsOnLine } from "@/lib/cta/sequences";
-import type { CTALine } from "@/lib/ctaLineColors";
+import type { CTALine } from "@/lib/utils";
 import type { PeerBasis } from "@/types/station";
 import { median } from "./components";
 
