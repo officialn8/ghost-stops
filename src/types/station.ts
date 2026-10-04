@@ -1,6 +1,6 @@
 /**
  * The station API's shapes (KTD14): the list route `GET /api/chicago/stations` and the
- * slug-addressed detail route `GET /api/chicago/stations/{slug or uuid}`. The routes type their
+ * slug-addressed detail route `GET /api/chicago/stations/{slug}`. The routes type their
  * responses with these, and the Phase 5 components (U17 to U21) read them.
  *
  * Dates are YYYY-MM-DD calendar strings (KTD17); only `lastSuccessfulFetch` is an instant, an ISO
@@ -168,9 +168,8 @@ export interface WhyCard {
 // ═══════════════════════════════════════════════════════════════
 
 /**
- * An adjacent station on the primary line. A closed or unranked neighbor has a null score and
- * tier; it never enters the neighbor average. `id`, `name`, `rolling30dAvg`, and `ghostScore` are
- * the fields the v1 pills read.
+ * An adjacent station on the primary line. A closed or unranked neighbor has a null tier; it never
+ * enters the neighbor average.
  */
 export interface NeighborEntry {
   id: string;
@@ -181,12 +180,8 @@ export interface NeighborEntry {
   /** The day a closed neighbor closed (YYYY-MM-DD), so its row can say "closed Jan 2026" (AE2). */
   closedAt: string | null;
   rolling30dAvg: number;
-  ghostScore: number | null;
   tier: ScoreTierName | null;
 }
-
-/** A ranked neighbor, the only kind `comparisons.neighbors` carries: it always has a score. */
-export type RankedNeighborEntry = NeighborEntry & { ghostScore: number };
 
 export interface StationSeriesDay {
   date: string;
@@ -196,7 +191,7 @@ export interface StationSeriesDay {
   dayType: string | null;
 }
 
-/** Every calendar day of the range `ridershipSeries` covers: the station's last 91 days of data. */
+/** Every calendar day of the station's last 91 days of data, gaps included. */
 export interface StationSeries {
   start: string;
   end: string;
@@ -209,11 +204,7 @@ export interface StationDetailStation {
   latitude: number;
   longitude: number;
   lines: string[];
-  /** v1: the stored score, -1 for a station outside the ranking. */
-  ghostScore: number;
   rolling30dAvg: number | null;
-  /** v1: the 30-day average against the 90-day one, in percent. */
-  trend: number | null;
   slug: string | null;
   displayName: string;
   status: StationStatus;
@@ -223,11 +214,6 @@ export interface StationDetailStation {
 }
 
 export interface StationDetailMetrics {
-  ghostScore: number;
-  percentile: number;
-  systemAverage: number;
-  systemMedian: number;
-  explanation: string;
   /** False for closed and no-data stations, which are not compared with others. */
   ranked: boolean;
   tier: ScoreTierName | null;
@@ -245,17 +231,17 @@ export interface StationDetailComparisons {
   primaryLine: string | null;
   lineMedian: number;
   /**
-   * v1: the ranked neighbors either side on the primary line. A closed or unranked neighbor is
-   * null here, as in v1, so the v1 pills never show a badge without a score.
+   * The ranked neighbors either side on the primary line, behind the neighbor average. A closed or
+   * unranked neighbor is null here; `lineNeighbors` names it.
    */
   neighbors: {
-    prev: RankedNeighborEntry | null;
-    next: RankedNeighborEntry | null;
+    prev: NeighborEntry | null;
+    next: NeighborEntry | null;
     neighborAvg: number;
   };
   /**
    * Every adjacent station on the primary line, closed and unranked ones included (State/Lake on
-   * the Brown Line Loop), with a null score and tier for those. Null when there is no station on
+   * the Brown Line Loop), with a null tier for those. Null when there is no station on
    * that side: past a terminal, or for a station with no CTA id.
    */
   lineNeighbors: {
@@ -267,7 +253,7 @@ export interface StationDetailComparisons {
   vsNeighbors: number;
 }
 
-/** A cited fact as the detail route sends it: the v1 fact with its display label. */
+/** A cited fact as the detail route sends it: the stored fact with its display label. */
 export interface StationDetailFact extends FactValue {
   label: string;
 }
@@ -279,16 +265,10 @@ export interface StationDetailNarrative extends StationNarrativeData {
   dataThrough: string;
 }
 
-/**
- * `GET /api/chicago/stations/{slug or uuid}`. A strict superset of the v1 response until U21:
- * `station`, `ridershipSeries`, `metrics`, `comparisons`, `facts`, `narrative`, and `sources` keep
- * their v1 fields and meanings; everything else is additive.
- */
+/** `GET /api/chicago/stations/{slug}`, and what the station page renders. */
 export interface StationDetailResponse extends Freshness {
   station: StationDetailStation;
-  /** v1: the station's last 91 days of data, days with rows only. */
-  ridershipSeries: { date: string; entries: number }[];
-  /** The same range with every day present; null when the station has no data. */
+  /** The station's last 91 days of data with every day present; null when it has no data. */
   series: StationSeries | null;
   metrics: StationDetailMetrics;
   comparisons: StationDetailComparisons;

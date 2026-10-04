@@ -45,21 +45,18 @@ next-env.d.ts
 # Prisma client, written by `prisma generate` (postinstall, CI, and the Vercel build command)
 /src/generated/
 
-# database
+# local SQLite snapshots of the pre-revival database (prisma/dev.db)
 *.db
 *.db-journal
 *.sqlite
 *.sqlite3
-prisma/dev.db
-prisma/prisma/dev.db
-.env*.local
-
-# go-etl build output
-go-etl/etl
-go-etl/go-etl
 
 # history export and backup CSVs (docs/runbooks/history-load.md)
 /exports/
 
 # per-checkout Compound Engineering settings (cross-model reviewer choice)
 /.compound-engineering/config.local.yaml
+
+# Claude Code agent worktrees and local settings
+/.claude/worktrees/
+/.claude/settings.local.json

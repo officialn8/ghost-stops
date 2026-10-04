@@ -31,7 +31,5 @@ export default async function StationPage({ params }: { params: Params }) {
   const result = await getStationDetail(slug);
   if (result.kind === "redirect") permanentRedirect(`/station/${result.slug}`);
   if (result.kind === "not-found") notFound();
-  // The dossier reads `series`; the v1 `ridershipSeries` (kept in the API until U23) would only
-  // add a quarter to the payload the page sends to the browser.
-  return <StationDossier key={slug} detail={{ ...result.detail, ridershipSeries: [] }} />;
+  return <StationDossier key={slug} detail={result.detail} />;
 }

@@ -36,22 +36,14 @@ function detail(): StationDetailResponse {
             lines: ["Green"],
             latitude: 41.78,
             longitude: -87.64,
-            ghostScore: 100,
             rolling30dAvg: 240,
-            trend: null,
             status: "ACTIVE",
             closedAt: null,
             openedAt: null,
             dataStatus: "available",
         },
-        ridershipSeries: [{ date: "2026-07-31", entries: 250 }],
         series: null,
         metrics: {
-            ghostScore: 100,
-            percentile: 3,
-            systemAverage: 2000,
-            systemMedian: 1500,
-            explanation: "",
             ranked: true,
             tier: "ghost",
             rank: 1,
@@ -102,7 +94,7 @@ describe("StationPage", () => {
         expect(permanentRedirect).not.toHaveBeenCalled();
     });
 
-    it("renders the dossier keyed by the slug, without the v1 series", async () => {
+    it("renders the dossier keyed by the slug", async () => {
         const found = detail();
         getStationDetail.mockResolvedValue({ kind: "found", detail: found });
 
@@ -113,9 +105,7 @@ describe("StationPage", () => {
         expect(dossier.type).toBe(StationDossier);
         // The key remounts the dossier when the drawer moves to another station.
         expect(dossier.key).toBe("halsted-green");
-        expect(dossier.props.detail).toEqual({ ...found, ridershipSeries: [] });
-        expect(dossier.props.detail.station).toBe(found.station);
-        expect(dossier.props.detail.metrics).toBe(found.metrics);
+        expect(dossier.props.detail).toBe(found);
         expect(permanentRedirect).not.toHaveBeenCalled();
         expect(notFound).not.toHaveBeenCalled();
     });

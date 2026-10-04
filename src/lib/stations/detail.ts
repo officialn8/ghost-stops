@@ -1,6 +1,6 @@
 /**
- * A station's detail payload (KTD14): what `GET /api/chicago/stations/{slug or uuid}` returns and
- * what the station page renders. Server-only: it reads the database.
+ * A station's detail payload (KTD14): what `GET /api/chicago/stations/{slug}` returns and what the
+ * station page renders. Server-only: it reads the database.
  */
 import type { Prisma } from "@/generated/prisma/client";
 import { prisma } from "@/lib/prisma";
@@ -19,7 +19,6 @@ import { safeJsonParse, tierName, toUiDataStatus } from "@/lib/utils";
 import type { FactKey, ArchetypeKey, DataSourceInfo } from "@/types/narrative";
 import type {
   NeighborEntry,
-  RankedNeighborEntry,
   StationDetailFacts,
   StationDetailNarrative,
   StationDetailResponse,
@@ -33,21 +32,17 @@ const STATION_INCLUDE = {
 } satisfies Prisma.StationInclude;
 
 /**
- * The station a path segment names, in KTD7's order: its slug, a retired slug (answered with a
- * redirect to the current one), its id (until the uuid fallback goes in U23), else nothing. One
- * query finds both the slug match and the id match; the order is applied here.
+ * The station a path segment names, in KTD7's order: its slug, then a retired slug (answered with a
+ * redirect to the current one), else nothing. A station id is not a name for it.
  */
 async function resolveStation(key: string) {
-  const matches = await prisma.station.findMany({
-    where: { OR: [{ slug: key }, { id: key }], city: { code: CITY_CODE } },
+  const station = await prisma.station.findFirst({
+    where: { slug: key, city: { code: CITY_CODE } },
     include: STATION_INCLUDE,
   });
-  const bySlug = matches.find((s) => s.slug === key);
-  if (bySlug) return { station: bySlug };
+  if (station) return { station };
   const canonical = resolveSlugAlias(key);
-  if (canonical !== undefined) return { redirectTo: canonical };
-  const byId = matches.find((s) => s.id === key);
-  return byId ? { station: byId } : null;
+  return canonical === undefined ? null : { redirectTo: canonical };
 }
 
 export type StationDetailResult =
@@ -56,7 +51,7 @@ export type StationDetailResult =
   | { kind: "redirect"; slug: string }
   | { kind: "not-found" };
 
-/** The detail for the station a path segment names (slug, retired slug, or id), or why there is none. */
+/** The detail for the station a path segment names (slug or retired slug), or why there is none. */
 export async function readStationDetail(key: string): Promise<StationDetailResult> {
   const resolved = await resolveStation(key);
   if (resolved?.redirectTo !== undefined) {
@@ -79,23 +74,18 @@ export async function readStationDetail(key: string): Promise<StationDetailResul
   const peerRecord = parsePeerRecord(station.metrics?.peerStationIds);
 
   // Neighbor stations on the primary line, looked up by CTA station id in one query. Closed and
-  // no-data neighbors are named in the line walk (State/Lake on the Brown Line Loop) but carry
-  // no score; the v1 neighbors keep them null.
-  type Neighbor = { ranked: true; entry: RankedNeighborEntry } | { ranked: false; entry: NeighborEntry };
+  // no-data neighbors are named in the line walk (State/Lake on the Brown Line Loop) but carry no
+  // tier, and they stay out of the ranked pair behind the neighbor average.
+  type Neighbor = { ranked: boolean; entry: NeighborEntry };
   const neighborIds = station.ctaStationId ? primaryLineNeighbors(station.ctaStationId, stationLines) : null;
   const neighborCtaIds = [neighborIds?.prev, neighborIds?.next].filter((id): id is string => !!id);
   // Every station next door on any line: a closure at one sets the why card's year-over-year aside.
   const adjacentCtaIds = station.ctaStationId ? adjacentStations(station.ctaStationId) : [];
 
-  // Peer comparisons (average, percentile, medians) use ranked stations only, the isRanked rule:
-  // closed State/Lake's metrics row reports 0 riders and would drag every comparison down.
-  // A station with no 30-day average (no metrics row) has no percentile: it reports 0.
-  const ownRolling30dAvg = station.metrics?.rolling30dAvg ?? null;
+  // The medians use ranked stations only, the isRanked rule: closed State/Lake's metrics row
+  // reports 0 riders and would drag every comparison down.
   const [
     days,
-    systemStats,
-    totalStations,
-    stationsWithLowerRidership,
     allMetrics,
     neighborStations,
     facts,
@@ -106,28 +96,6 @@ export async function readStationDetail(key: string): Promise<StationDetailResul
   ] = await Promise.all([
     // The last 91 days of the station's data, reaching back to the score's 90 days if they start earlier
     readStationDays(prisma, stationId, trailingStart),
-    prisma.stationMetrics.aggregate({
-      where: {
-        station: { cityId: station.cityId, status: "ACTIVE" },
-        dataStatus: "normal"
-      },
-      _avg: {
-        rolling30dAvg: true
-      }
-    }),
-    prisma.station.count({
-      where: { cityId: station.cityId, status: "ACTIVE", metrics: { dataStatus: "normal" } }
-    }),
-    // Without the station's own average Prisma would drop the filter and count every ranked station.
-    ownRolling30dAvg === null
-      ? Promise.resolve(0)
-      : prisma.station.count({
-          where: {
-            cityId: station.cityId,
-            status: "ACTIVE",
-            metrics: { dataStatus: "normal", rolling30dAvg: { lt: ownRolling30dAvg } }
-          }
-        }),
     // Ranked station metrics for median calculations
     prisma.stationMetrics.findMany({
       where: {
@@ -149,7 +117,7 @@ export async function readStationDetail(key: string): Promise<StationDetailResul
             displayName: true,
             status: true,
             closedAt: true,
-            metrics: { select: { rolling30dAvg: true, ghostScore: true, dataStatus: true, tier: true } }
+            metrics: { select: { rolling30dAvg: true, dataStatus: true, tier: true } }
           }
         })
       : Promise.resolve([]),
@@ -191,21 +159,15 @@ export async function readStationDetail(key: string): Promise<StationDetailResul
     };
     const m = found.metrics;
     return m !== null && isRanked(found.status, m.dataStatus)
-      ? { ranked: true, entry: { ...named, ghostScore: m.ghostScore, tier: tierName(m.tier) } }
-      : { ranked: false, entry: { ...named, ghostScore: null, tier: null } };
+      ? { ranked: true, entry: { ...named, tier: tierName(m.tier) } }
+      : { ranked: false, entry: { ...named, tier: null } };
   };
   const prevNeighbor = neighbor(neighborIds?.prev);
   const nextNeighbor = neighbor(neighborIds?.next);
-  // v1: an unranked neighbor is null, so the v1 pills show no badge for a station with no score.
-  const rankedOnly = (n: Neighbor | null): RankedNeighborEntry | null => (n?.ranked ? n.entry : null);
+  // The ranked pair behind the neighbor average: an unranked neighbor is null here.
+  const rankedOnly = (n: Neighbor | null): NeighborEntry | null => (n?.ranked ? n.entry : null);
   const prevRanked = rankedOnly(prevNeighbor);
   const nextRanked = rankedOnly(nextNeighbor);
-
-  const systemAverage = systemStats._avg.rolling30dAvg ?? 0;
-
-  const percentile = ownRolling30dAvg !== null && totalStations > 0
-    ? Math.round((stationsWithLowerRidership / totalStations) * 100)
-    : 0;
 
   const rankedMetrics = allMetrics.filter(m => isRanked(m.station.status, m.dataStatus));
 
@@ -230,7 +192,7 @@ export async function readStationDetail(key: string): Promise<StationDetailResul
   // Calculate neighbor average over ranked neighbors only
   const neighborAvg = mean(
     [prevRanked, nextRanked]
-      .filter((n): n is RankedNeighborEntry => n !== null)
+      .filter((n): n is NeighborEntry => n !== null)
       .map(n => n.rolling30dAvg)
   ) ?? 0;
 
@@ -246,8 +208,8 @@ export async function readStationDetail(key: string): Promise<StationDetailResul
     ? Math.round(((stationAvg - neighborAvg) / neighborAvg) * 100)
     : 0;
 
-  // The v1 chart's range is the station's last date and the 90 days before it; the series adds
-  // the missing days back as gaps.
+  // The chart's range is the station's last date and the 90 days before it; the series adds the
+  // missing days back as gaps.
   const seriesEnd = days.length > 0 ? days[days.length - 1].serviceDate : null;
   const seriesStart = seriesEnd ? addDays(seriesEnd, -SERIES_DAYS_BEFORE_END) : null;
   const seriesDays = seriesStart ? days.filter(d => d.serviceDate >= seriesStart) : [];
@@ -332,59 +294,6 @@ export async function readStationDetail(key: string): Promise<StationDetailResul
   // Closed and no-data stations are left out of every comparison (R5, KTD9); the panels hide their bars.
   const ranked = station.metrics !== null && isRanked(station.status, station.metrics.dataStatus);
 
-  // Generate contextual explanation
-  const generateExplanation = (): string => {
-    if (!station.metrics || !ranked || station.metrics.rolling30dAvg == null) {
-      return station.status === "CLOSED" || station.status === "TEMP_CLOSED"
-        ? "This station is closed, so it is not compared with other stations."
-        : "No ridership data available for this station.";
-    }
-
-    const insights: string[] = [];
-
-    // Use median for comparison (more robust than mean)
-    const diffFromMedian = stationAvg - systemMedian;
-    const percentDiffFromMedian = systemMedian > 0
-      ? Math.round((Math.abs(diffFromMedian) / systemMedian) * 100)
-      : 0;
-
-    // Primary ridership comparison
-    if (diffFromMedian < 0) {
-      insights.push(`This station has ${percentDiffFromMedian}% less ridership than the system median`);
-    } else if (diffFromMedian > 0) {
-      insights.push(`This station has ${percentDiffFromMedian}% more ridership than the system median`);
-    } else {
-      insights.push("This station matches the system median ridership");
-    }
-
-    // Line comparison context
-    if (primaryLine && lineMedian > 0) {
-      const lineDiff = stationAvg - lineMedian;
-      const linePercentDiff = Math.round((Math.abs(lineDiff) / lineMedian) * 100);
-      if (lineDiff < -20 && linePercentDiff > 30) {
-        insights.push(`${linePercentDiff}% below the ${primaryLine} Line median`);
-      }
-    }
-
-    // Neighbor comparison
-    if (neighborAvg > 0 && stationAvg < neighborAvg * 0.6) {
-      const neighborPercentDiff = Math.round(((neighborAvg - stationAvg) / neighborAvg) * 100);
-      insights.push(`${neighborPercentDiff}% less than neighboring stations`);
-    }
-
-    return insights.join(". ") + ".";
-  };
-
-  // Calculate trend
-  const rolling30d = station.metrics?.rolling30dAvg ?? 0;
-  const rolling90d = station.metrics?.rolling90dAvg ?? 0;
-  let trend: number | null = null;
-
-  if (rolling90d > 0 && rolling30d !== null) {
-    // Calculate percentage change from 90-day to 30-day average
-    trend = ((rolling30d - rolling90d) / rolling90d) * 100;
-  }
-
   // The closures next door, one entry per station, for the why card's year-over-year row.
   const neighborClosures = stationsNextDoor.flatMap((s) =>
     s.ctaStationId === null
@@ -397,7 +306,7 @@ export async function readStationDetail(key: string): Promise<StationDetailResul
   );
 
   // The why card needs score v2 metrics, which carry the date they were computed for. A v1 row
-  // that a Phase 2 sync stamped with dataThrough still holds the v1 score and no v2 columns.
+  // that a Phase 2 sync stamped with dataThrough holds no v2 columns.
   const m = station.metrics;
   const whyCard = m && metricsDataThrough && m.scoreVersion >= SCORE_VERSION
     ? buildWhyCard({
@@ -430,7 +339,6 @@ export async function readStationDetail(key: string): Promise<StationDetailResul
       })
     : null;
 
-  // The v1 fields keep their meaning for API callers until U23; the rest is additive.
   const response: StationDetailResponse = {
     station: {
       id: station.id,
@@ -438,9 +346,7 @@ export async function readStationDetail(key: string): Promise<StationDetailResul
       latitude: station.latitude,
       longitude: station.longitude,
       lines: stationLines,
-      ghostScore: station.metrics?.ghostScore ?? 0,
       rolling30dAvg: station.metrics?.rolling30dAvg ?? null,
-      trend: trend,
       slug: station.slug,
       displayName: station.displayName ?? station.name,
       status: station.status,
@@ -448,14 +354,8 @@ export async function readStationDetail(key: string): Promise<StationDetailResul
       openedAt: optionalDay(station.openedAt),
       dataStatus: toUiDataStatus(station.metrics?.dataStatus)
     },
-    ridershipSeries: seriesDays.map(d => ({ date: d.serviceDate, entries: d.entries })),
     series: seriesStart && seriesEnd ? seriesFor(seriesStart, seriesEnd, seriesDays) : null,
     metrics: {
-      ghostScore: station.metrics?.ghostScore ?? 0,
-      percentile: percentile,
-      systemAverage: Math.round(systemAverage),
-      systemMedian: Math.round(systemMedian),
-      explanation: generateExplanation(),
       ranked,
       tier: tierName(station.metrics?.tier),
       rank: station.metrics?.rank ?? null,

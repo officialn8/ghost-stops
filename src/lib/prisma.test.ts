@@ -61,8 +61,9 @@ const clientModule = fileURLToPath(new URL("./prisma.ts", import.meta.url));
 
 const liveRouteHandlers = [
     "app/api/chicago/stations/route.ts",
-    "app/api/chicago/stations-raw/route.ts",
     "app/api/chicago/stations/[slug]/route.ts",
+    "app/api/cron/sync-ridership/route.ts",
+    "app/api/health/route.ts",
 ].map((path) => join(srcDir, path));
 
 const parse = (file: string, source: string) => ts.createSourceFile(file, source, ts.ScriptTarget.Latest);

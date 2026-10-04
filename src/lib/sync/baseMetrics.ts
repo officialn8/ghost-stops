@@ -27,7 +27,10 @@ export interface BaseMetrics {
     lastDayEntries: number;
     avg12m: number | null;
     avg30d: number | null;
-    /** The v1 columns the current UI reads, 0 when there is no data, as the Go ETL wrote them. */
+    /**
+     * The 30- and 90-day averages, 0 when there is no data. The dossier's baselines compare
+     * rolling30dAvg; nothing reads rolling90dAvg since the v1 trend field went (U23).
+     */
     rolling30dAvg: number;
     rolling90dAvg: number;
     dataStatus: MetricsDataStatus;

@@ -18,11 +18,8 @@ describe("cacheable", () => {
         expect(cacheable("old-slug")).toBe(true);
     });
 
-    it("reads a station id uncached, so random ids cannot fill the cache", () => {
-        expect(cacheable("0b7a6f3e-5d0c-4c43-9a55-1f3d2a9c8e01")).toBe(false);
-    });
-
-    it("reads an address that names no station uncached", () => {
+    it("reads an address that names no station uncached, a station id included", () => {
         expect(cacheable("nowhere")).toBe(false);
+        expect(cacheable("0b7a6f3e-5d0c-4c43-9a55-1f3d2a9c8e01")).toBe(false);
     });
 });
