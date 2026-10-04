@@ -1,6 +1,9 @@
 import { useId } from "react";
 import { cn } from "@/lib/utils";
 
+/** An inline text link: ink, with an underline that darkens on hover. */
+export const linkClass = "rounded text-ink underline decoration-ink/40 underline-offset-2 hover:decoration-ink";
+
 /**
  * One dossier section: a hairline, a type-only heading in sentence case, then the content. No
  * boxes; sections are grouped by rules and spacing.

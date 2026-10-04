@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { notFound, permanentRedirect } from "next/navigation";
 import { StationDossier } from "@/components/dossier/StationDossier";
+import { SITE_NAME } from "@/lib/site";
 import { stationDescription, stationTitle } from "@/lib/stations/metadata";
 import { getStationDetail } from "./data";
 
@@ -17,7 +18,7 @@ export async function generateMetadata({ params }: { params: Params }): Promise<
     title,
     description,
     alternates: { canonical: `/station/${result.detail.station.slug ?? slug}` },
-    openGraph: { title: `${title} · Ghost Stops`, description, type: "article" },
+    openGraph: { title: `${title} · ${SITE_NAME}`, description, type: "article" },
   };
 }
 
@@ -30,5 +31,7 @@ export default async function StationPage({ params }: { params: Params }) {
   const result = await getStationDetail(slug);
   if (result.kind === "redirect") permanentRedirect(`/station/${result.slug}`);
   if (result.kind === "not-found") notFound();
-  return <StationDossier key={slug} detail={result.detail} />;
+  // The dossier reads `series`; the v1 `ridershipSeries` (kept in the API until U23) would only
+  // add a quarter to the payload the page sends to the browser.
+  return <StationDossier key={slug} detail={{ ...result.detail, ridershipSeries: [] }} />;
 }

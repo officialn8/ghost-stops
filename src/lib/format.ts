@@ -65,6 +65,19 @@ export function formatChange(value: number): string {
   return formatPercentChange(value, Math.round(Math.abs(value * 100)) >= 1 ? 0 : 1);
 }
 
+/** One formatter per option set: building an Intl.DateTimeFormat costs far more than using one. */
+const dateFormats = new Map<string, Intl.DateTimeFormat>();
+
+function dateFormat(options: Intl.DateTimeFormatOptions): Intl.DateTimeFormat {
+  const key = JSON.stringify(options);
+  let format = dateFormats.get(key);
+  if (!format) {
+    format = new Intl.DateTimeFormat("en-US", options);
+    dateFormats.set(key, format);
+  }
+  return format;
+}
+
 /**
  * A YYYY-MM-DD calendar date in US English, read and printed in UTC so it never shifts a day
  * (KTD17): `{ month: "short", year: "numeric" }` gives "Jul 2025".
@@ -73,5 +86,35 @@ export function formatCalendarDate(
   date: string,
   options: Omit<Intl.DateTimeFormatOptions, "timeZone">,
 ): string {
-  return new Date(`${date}T00:00:00Z`).toLocaleDateString("en-US", { ...options, timeZone: "UTC" });
+  return dateFormat({ ...options, timeZone: "UTC" }).format(new Date(`${date}T00:00:00Z`));
+}
+
+/** "Jan 2026", for a calendar date. */
+export function formatMonthYear(date: string): string {
+  return formatCalendarDate(date, { month: "short", year: "numeric" });
+}
+
+/** "May 2 to Jul 31, 2026", or "Nov 2, 2025 to Jan 31, 2026" across a new year. */
+export function formatDateRange(start: string, end: string): string {
+  const sameYear = start.slice(0, 4) === end.slice(0, 4);
+  const from = formatCalendarDate(start, sameYear ? { month: "short", day: "numeric" } : { month: "short", day: "numeric", year: "numeric" });
+  return `${from} to ${formatCalendarDate(end, { month: "short", day: "numeric", year: "numeric" })}`;
+}
+
+/**
+ * "Sep 20, 2026": the day an instant (an ISO timestamp, such as a sync run's finish) fell on in
+ * Chicago, where the data and its readers are.
+ */
+export function formatChicagoDay(iso: string): string {
+  return dateFormat({ month: "short", day: "numeric", year: "numeric", timeZone: "America/Chicago" }).format(new Date(iso));
+}
+
+/** Riders as a whole number with thousands separators: 1,782. */
+export function formatRiders(value: number): string {
+  return Math.round(value).toLocaleString("en-US");
+}
+
+/** "Green Line", or "Brown, Green, Orange, Purple, Pink Lines". */
+export function linesLabel(lines: readonly string[]): string {
+  return `${lines.join(", ")} ${lines.length === 1 ? "Line" : "Lines"}`;
 }

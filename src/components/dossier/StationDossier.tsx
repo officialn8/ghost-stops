@@ -5,7 +5,7 @@ import { StationStory } from "@/components/narrative";
 import type { StationDetailResponse } from "@/types/station";
 import { AlongTheLine } from "./AlongTheLine";
 import { Baselines } from "./Baselines";
-import { BackToMap, CloseDrawer } from "./CloseControls";
+import { DossierBar } from "./CloseControls";
 import { Section } from "./parts";
 import { RidershipChart } from "./RidershipChart";
 import { SignHeader } from "./SignHeader";
@@ -14,7 +14,7 @@ import { standingOf, whyHeading } from "./standing";
 import { WhyCard } from "./WhyCard";
 
 /**
- * A station's dossier (U21), the drawer's content from 768px and the page below the 28vh map on a
+ * A station's dossier, the drawer's content from 768px and the page below the 28vh map on a
  * phone. One order everywhere (docs/audit-2026-10-02/design.md, Direction A): the sign header with
  * the number, the baselines, why it ranks where it does (the card, then the story), the last 90
  * days, the stations either side, and the sources. Closed and no-data stations keep the order,
@@ -33,12 +33,7 @@ export function StationDossier({ detail }: { detail: StationDetailResponse }) {
 
   return (
     <article className="px-5 pb-16">
-      <div className="sticky top-0 z-chrome -mx-5 flex h-14 items-center justify-between bg-surface px-5">
-        <BackToMap />
-        <span className="ml-auto">
-          <CloseDrawer />
-        </span>
-      </div>
+      <DossierBar className="sticky top-0 z-chrome -mx-5 bg-surface px-5" />
       <SignHeader detail={detail} standing={standing} headingRef={headingRef} />
       <Baselines detail={detail} />
       <Section title={whyHeading(standing)}>

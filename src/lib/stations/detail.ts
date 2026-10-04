@@ -34,7 +34,7 @@ const STATION_INCLUDE = {
 
 /**
  * The station a path segment names, in KTD7's order: its slug, a retired slug (answered with a
- * redirect to the current one), its id (the v1 panels fetch by id until U21), else nothing. One
+ * redirect to the current one), its id (until the uuid fallback goes in U23), else nothing. One
  * query finds both the slug match and the id match; the order is applied here.
  */
 async function resolveStation(key: string) {
@@ -430,7 +430,7 @@ export async function readStationDetail(key: string): Promise<StationDetailResul
       })
     : null;
 
-  // Format response: the v1 fields keep their meaning until U21; the rest is additive.
+  // The v1 fields keep their meaning for API callers until U23; the rest is additive.
   const response: StationDetailResponse = {
     station: {
       id: station.id,

@@ -2,7 +2,7 @@
 
 import { useEffect } from "react";
 import { animate, motion, useMotionValue, useTransform } from "motion/react";
-import { riders } from "./standing";
+import { formatRiders } from "@/lib/format";
 import { useMountMotion } from "./useMountMotion";
 
 /**
@@ -13,7 +13,7 @@ import { useMountMotion } from "./useMountMotion";
 export function CountOnce({ value, className }: { value: number; className?: string }) {
   const play = useMountMotion();
   const count = useMotionValue(play ? 0 : value);
-  const text = useTransform(count, riders);
+  const text = useTransform(count, formatRiders);
 
   useEffect(() => {
     if (!play) {
@@ -29,7 +29,7 @@ export function CountOnce({ value, className }: { value: number; className?: str
       <motion.span aria-hidden className={className} data-count-once>
         {text}
       </motion.span>
-      <span className="sr-only">{riders(value)}</span>
+      <span className="sr-only">{formatRiders(value)}</span>
     </>
   );
 }

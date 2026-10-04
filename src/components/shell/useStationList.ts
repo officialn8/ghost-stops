@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import { olderThanDays, STALE_AFTER_DAYS } from "@/lib/staleness";
 import type { StationListResponse } from "@/types/station";
 import type { ListState } from "./ShellContext";
 
@@ -9,15 +10,9 @@ export const STATION_LIST_URL = "/api/chicago/stations";
 /** After this long without an answer, the skeleton gives way to the error row and its retry. */
 export const SLOW_LIST_MS = 8_000;
 
-/** R13: the banner and the health check both key on a last successful refresh older than this. */
-export const STALE_AFTER_DAYS = 10;
-
-const DAY_MS = 24 * 60 * 60 * 1000;
-
-/** Whether a last successful refresh is old enough to warn about; no refresh at all is stale. */
+/** Whether a last successful refresh is old enough to warn about (R13); no refresh at all is stale. */
 export function isStale(lastSuccessfulFetch: string | null, now: number): boolean {
-  if (lastSuccessfulFetch === null) return true;
-  return now - Date.parse(lastSuccessfulFetch) > STALE_AFTER_DAYS * DAY_MS;
+  return olderThanDays(lastSuccessfulFetch === null ? null : Date.parse(lastSuccessfulFetch), STALE_AFTER_DAYS, now);
 }
 
 /**

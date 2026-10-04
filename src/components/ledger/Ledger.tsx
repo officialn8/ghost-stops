@@ -9,7 +9,7 @@ import { LedgerHeader } from "./LedgerHeader";
 import { LedgerRow } from "./LedgerRow";
 import { useLedgerModel, type LedgerModel, type LedgerRowModel } from "./useLedgerModel";
 
-/** Rows fade in over 120ms, 15ms apart, on a sort or filter change (Direction A motion). */
+/** Rows fade in over 120ms, 15ms apart, on a sort or filter change (R29). */
 const ROW_FADE = 0.12;
 const ROW_STAGGER = 0.015;
 /** Only the rows on screen stagger, and at most this many, so a re-sort settles in about 400ms. */
@@ -67,7 +67,7 @@ function useScrollToSelected(scrollRef: RefObject<HTMLElement | null>, ready: bo
 }
 
 /**
- * The station ledger (U20): every station as a keyboard-reachable row, with search, the line
+ * The station ledger: every station as a keyboard-reachable row, with search, the line
  * filter, and sort in a fixed head. Search, filter, and sort live in the shell, so they survive
  * moving between stations; the selection is the URL. `column` fills the desktop's 360px aside;
  * `sheet` is the same ledger in the phone's bottom sheet.

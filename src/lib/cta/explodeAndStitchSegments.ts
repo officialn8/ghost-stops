@@ -1,9 +1,5 @@
 import type { FeatureCollection, Feature, LineString } from 'geojson';
-import {
-  CTA_LINE_ORDER,
-  type CTALine,
-  isStationActiveByLineFilter
-} from './explodeSegments';
+import { CTA_LINE_ORDER, type CTALine } from '../utils';
 
 interface SegmentProperties {
   segment_id: string;
@@ -25,9 +21,6 @@ interface ExplodedProperties {
 interface StitchedProperties extends ExplodedProperties {
   segment_count?: number; // Number of segments stitched together
 }
-
-// Re-export for convenience
-export { CTA_LINE_ORDER, type CTALine, isStationActiveByLineFilter };
 
 /**
  * Corridor configurations define the full set of lines that share each corridor
@@ -748,19 +741,4 @@ function stitchSegments(
   }
 
   return stitchedFeatures;
-}
-
-// Re-export for backwards compatibility and as a fallback
-export { explodeSegments } from './explodeSegments';
-
-// Debug helper to check segment counts
-export function debugSegmentCounts(features: FeatureCollection<LineString, { line?: string; lines?: string[] }>): void {
-  if (process.env.NODE_ENV !== 'production') {
-    const counts: Record<string, number> = {};
-    for (const feature of features.features) {
-      const line = feature.properties.line || feature.properties.lines?.join(',') || 'unknown';
-      counts[line] = (counts[line] || 0) + 1;
-    }
-    console.log('Segment counts by line:', counts);
-  }
 }

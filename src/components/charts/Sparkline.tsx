@@ -1,4 +1,4 @@
-import { formatCalendarDate } from "@/lib/format";
+import { formatCalendarDate, formatDateRange } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import type { StationSparkline } from "@/types/station";
 
@@ -51,11 +51,8 @@ export function sparklinePath(
  * Jul 25 to Jul 31, 2026". Calendar dates, read in UTC so they never shift a day (KTD17).
  */
 export function sparklineLabel({ start, end }: Pick<StationSparkline, "start" | "end">): string {
-  const sameYear = start.slice(0, 4) === end.slice(0, 4);
-  const to = formatCalendarDate(end, { month: "short", day: "numeric", year: "numeric" });
-  if (start === end) return `Riders per day, ${to}`;
-  const from = formatCalendarDate(start, sameYear ? { month: "short", day: "numeric" } : { month: "short", day: "numeric", year: "numeric" });
-  return `Riders per day, ${from} to ${to}`;
+  if (start === end) return `Riders per day, ${formatCalendarDate(end, { month: "short", day: "numeric", year: "numeric" })}`;
+  return `Riders per day, ${formatDateRange(start, end)}`;
 }
 
 export interface SparklineProps {
@@ -102,4 +99,3 @@ export function Sparkline({ sparkline, width = 56, height = 24, className }: Spa
   );
 }
 
-export default Sparkline;

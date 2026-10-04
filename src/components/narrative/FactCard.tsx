@@ -1,5 +1,7 @@
 import { ChevronRight, ExternalLink } from "lucide-react";
-import { getFactLabel } from "@/lib/narratives";
+import { linkClass } from "@/components/dossier/parts";
+// The formatters module, not the narratives index, so the archetype tables stay off the client.
+import { formatTimeframe, getFactLabel } from "@/lib/narratives/formatters";
 import type { FactKey, FactValue, Geography } from "@/types/narrative";
 
 const WHERE: Readonly<Record<Geography, string>> = {
@@ -8,11 +10,9 @@ const WHERE: Readonly<Record<Geography, string>> = {
   region_il: "across Illinois",
 };
 
-/** "2001", "2010 to 2024", "since 2001": never a dash between years. */
+/** "2001", "2010 to 2024", "since 2001", or nothing when the fact has no timeframe. */
 function timeframe(start?: number | null, end?: number | null): string | null {
-  if (start == null) return end == null ? null : `as of ${end}`;
-  if (end == null) return `since ${start}`;
-  return start === end ? `${start}` : `${start} to ${end}`;
+  return start == null && end == null ? null : formatTimeframe(start, end);
 }
 
 /**
@@ -46,7 +46,7 @@ export function FactCard({ factKey, fact }: { factKey: FactKey; fact: FactValue 
                 href={fact.source.url}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="inline-flex items-center gap-1 rounded text-ink underline decoration-ink/40 underline-offset-2 hover:decoration-ink"
+                className={`${linkClass} inline-flex items-center gap-1`}
               >
                 {fact.source.name}
                 <ExternalLink className="h-3 w-3 shrink-0" strokeWidth={1.75} aria-hidden />

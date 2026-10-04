@@ -4,7 +4,7 @@ import { memo } from "react";
 import { Sparkline } from "@/components/charts/Sparkline";
 import { LineBars } from "@/components/marks/LineBars";
 import { PresenceMark, TIER_LABEL, type Exclusion } from "@/components/marks/PresenceMark";
-import { formatCalendarDate } from "@/lib/format";
+import { formatMonthYear, formatRiders, linesLabel } from "@/lib/format";
 import { cn } from "@/lib/utils";
 import type { LedgerStation } from "./useLedgerModel";
 
@@ -15,12 +15,10 @@ import type { LedgerStation } from "./useLedgerModel";
  */
 const NAME_INK = { ghost: "text-ink-3", fading: "text-ink-2", quiet: "text-ink", healthy: "text-ink" } as const;
 
-const formatRiders = (riders: number) => Math.round(riders).toLocaleString("en-US");
-
 /** What an excluded row shows in place of riders: "closed Jan 2026", or "no recent data". */
 export function exclusionText(station: Pick<LedgerStation, "closedAt">, exclusion: Exclusion): string {
   if (exclusion === "no-data") return "no recent data";
-  return station.closedAt ? `closed ${formatCalendarDate(station.closedAt, { month: "short", year: "numeric" })}` : "closed";
+  return station.closedAt ? `closed ${formatMonthYear(station.closedAt)}` : "closed";
 }
 
 /**
@@ -30,7 +28,7 @@ export function exclusionText(station: Pick<LedgerStation, "closedAt">, exclusio
 export function rowLabel(station: LedgerStation, exclusion: Exclusion | null, outsideFilter: boolean): string {
   const parts = [station.displayName];
   if (station.lines.length > 0) {
-    parts.push(`${station.lines.join(", ")} ${station.lines.length === 1 ? "Line" : "Lines"}`);
+    parts.push(linesLabel(station.lines));
   }
   if (exclusion) {
     parts.push(exclusionText(station, exclusion));
@@ -54,7 +52,7 @@ export interface LedgerRowProps {
 }
 
 /**
- * One station in the ledger (Direction A): a 56px button with the rank and presence mark, the
+ * One station in the ledger: a 56px button with the rank and presence mark, the
  * name over its line bars, the week's sparkline, and the 12-month riders per day (KTD18), the
  * row's most prominent number. Presence is the name's own ink level and the mark's shape (R23);
  * numbers stay at full ink. A station outside the ranking shows why in place of the numbers, and

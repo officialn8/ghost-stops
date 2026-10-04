@@ -2,8 +2,9 @@
 
 import Link from "next/link";
 import { LineBars } from "@/components/marks/LineBars";
+import { matchesQuery, normalizeSearch } from "@/components/ledger/useLedgerModel";
 import { useShell } from "@/components/shell/ShellContext";
-import { BackToMap, CloseDrawer } from "./CloseControls";
+import { DossierBar } from "./CloseControls";
 
 const MAX_MATCHES = 6;
 
@@ -13,19 +14,14 @@ const MAX_MATCHES = 6;
  */
 export function StationNotFound() {
   const { stations, query, setQuery } = useShell();
-  const needle = query.trim().toLowerCase();
+  const needle = normalizeSearch(query);
   const matches = needle
-    ? stations.filter((s) => s.slug && s.displayName.toLowerCase().includes(needle)).slice(0, MAX_MATCHES)
+    ? stations.filter((s) => s.slug && matchesQuery(s.displayName, needle)).slice(0, MAX_MATCHES)
     : [];
 
   return (
     <div className="px-5 pb-16">
-      <div className="flex h-14 items-center justify-between">
-        <BackToMap />
-        <span className="ml-auto">
-          <CloseDrawer />
-        </span>
-      </div>
+      <DossierBar />
       <h1 className="mt-2 font-narrow text-24 font-semibold">This stop doesn’t exist. Not even as a ghost.</h1>
       <p className="mt-2 text-15 text-ink-2">The link may be old or mistyped. Search for the station instead.</p>
       <label className="mt-6 block text-13 text-ink-2" htmlFor="not-found-search">

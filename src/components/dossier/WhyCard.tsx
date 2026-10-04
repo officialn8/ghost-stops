@@ -1,9 +1,10 @@
 import { Fragment } from "react";
 import Link from "next/link";
 import { PresenceMark, TIER_LABEL } from "@/components/marks/PresenceMark";
+import { formatPercent, formatRiders } from "@/lib/format";
 import type { ScoreTierName, StationBadge, StationDetailResponse, WhyCard as WhyCardData, WhyPeers } from "@/types/station";
-import { Chip } from "./parts";
-import { closedPhrase, riders, type Standing } from "./standing";
+import { Chip, linkClass } from "./parts";
+import { closedPhrase, type Standing } from "./standing";
 
 const TIER_RANGE: Readonly<Record<ScoreTierName, string>> = {
   ghost: "scores 90 and above",
@@ -50,7 +51,7 @@ function Peers({ peers }: { peers: WhyPeers }) {
               <Link
                 key={p.id}
                 href={`/station/${p.slug}`}
-                className="rounded text-ink underline decoration-ink/40 underline-offset-2 hover:decoration-ink"
+                className={linkClass}
               >
                 {p.displayName}
               </Link>
@@ -81,7 +82,7 @@ function Peers({ peers }: { peers: WhyPeers }) {
       {peers.baseline !== null && (
         <>
           {" "}
-          Their median is <span className="font-mono tabular text-ink">{riders(peers.baseline)}</span> riders a day over the
+          Their median is <span className="font-mono tabular text-ink">{formatRiders(peers.baseline)}</span> riders a day over the
           last 12 months.
         </>
       )}
@@ -104,7 +105,7 @@ function ComponentRows({ card }: { card: WhyCardData }) {
               <span className="min-w-0 flex-1 text-15 font-medium">{c.label}</span>
               <span className="w-12 text-right font-mono text-13 tabular text-ink-2">
                 <span className="sr-only">weight </span>
-                {Math.round(c.weight * 100)}%
+                {formatPercent(c.weight)}
               </span>
               <span className="w-[4.5rem] text-right font-mono text-15 tabular">
                 <span className="sr-only">percentile </span>
@@ -193,7 +194,7 @@ export function WhyCard({
             <div>
               <dt className="text-13 text-ink-2">30-day average</dt>
               <dd>
-                <span className="font-mono text-18 tabular">{riders(avg30d)}</span>{" "}
+                <span className="font-mono text-18 tabular">{formatRiders(avg30d)}</span>{" "}
                 <span className="text-13 text-ink-2">riders a day</span>
               </dd>
             </div>

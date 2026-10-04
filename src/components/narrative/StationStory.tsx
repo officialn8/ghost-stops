@@ -34,7 +34,7 @@ function inline(text: string): ReactNode[] {
 /**
  * A station's story (R19): the archetype title as a run-in heading, the paragraphs at 15px/1.6,
  * a one-line quality note at most, and the evidence facts as a two-column definition list whose
- * methods open by tap or keyboard. The archetype's emoji and the quality pill are gone.
+ * methods open by tap or keyboard.
  */
 export function StationStory({
   narrative,

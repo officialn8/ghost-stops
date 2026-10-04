@@ -10,7 +10,7 @@ import { CTA_LINE_ORDER, cn, ctaLineColors, lineLabelInk, type CTALine } from "@
 const SPOKEN: Readonly<Record<SortKey, string>> = { rank: "ghost score", riders: "riders per day", name: "name" };
 const VISIBLE: Readonly<Record<SortKey, string>> = { rank: "Ghost score", riders: "Riders/day", name: "Name" };
 
-/** An off line's outline: its color at 30%, the "dimmed" bar (Direction A). */
+/** An off line's outline: its color at 30%, the "dimmed" bar. */
 const OFF_ALPHA = "4D";
 
 export interface LedgerHeaderProps {

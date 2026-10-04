@@ -3,7 +3,7 @@
 import { startTransition } from "react";
 import { useRouter } from "next/navigation";
 import { RotateCw } from "lucide-react";
-import { BackToMap, CloseDrawer } from "./CloseControls";
+import { DossierBar } from "./CloseControls";
 
 /**
  * A station page that failed to load (KTD12): an inline message and a retry, inside the drawer,
@@ -20,12 +20,7 @@ export function DossierError({ reset }: { reset: () => void }) {
 
   return (
     <div className="px-5 pb-16">
-      <div className="flex h-14 items-center justify-between">
-        <BackToMap />
-        <span className="ml-auto">
-          <CloseDrawer />
-        </span>
-      </div>
+      <DossierBar />
       <div role="alert" className="mt-2 border-t border-rule pt-5">
         <p className="text-15">This station could not be loaded.</p>
         <p className="mt-1 text-13 text-ink-2">The connection may have dropped. Try again in a moment.</p>

@@ -2,6 +2,7 @@
 
 import { ArrowLeft, X } from "lucide-react";
 import { useShell } from "@/components/shell/ShellContext";
+import { cn } from "@/lib/utils";
 
 /**
  * The way out of a station page, which always lands on the map (R22). A phone gets a labeled
@@ -34,5 +35,17 @@ export function CloseDrawer() {
     >
       <X className="h-[18px] w-[18px]" strokeWidth={1.75} aria-hidden />
     </button>
+  );
+}
+
+/** The dossier's control row: Back to map on a phone, the close button from 768px. */
+export function DossierBar({ className }: { className?: string }) {
+  return (
+    <div className={cn("flex h-14 items-center justify-between", className)}>
+      <BackToMap />
+      <span className="ml-auto">
+        <CloseDrawer />
+      </span>
+    </div>
   );
 }

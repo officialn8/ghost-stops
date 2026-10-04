@@ -1,6 +1,6 @@
 import { type ClassValue, clsx } from "clsx"
 import { twMerge } from "tailwind-merge"
-import type { DataStatus, ScoreTierName } from "@/types/station"
+import type { DataStatus, ScoreTierName, StationStatus } from "@/types/station"
 
 // Defined with the API shapes in src/types/station.ts; re-exported for existing importers.
 export type { DataStatus, ScoreTierName }
@@ -57,18 +57,9 @@ export function toUiDataStatus(stored?: string | null): DataStatus {
   return "missing"
 }
 
-export function normalizeDataStatus(status?: string | null): DataStatus {
-  if (status === "available" || status === "missing" || status === "zero") {
-    return status
-  }
-  return "missing"
-}
-
-export function clampGhostScore(score?: number | null): number {
-  if (score === null || score === undefined || !Number.isFinite(score)) {
-    return 0
-  }
-  return Math.max(0, Math.min(100, score))
+/** Whether a station is closed, for good or for now (Station.status, KTD9). */
+export function isClosedStatus(status: StationStatus): boolean {
+  return status === "CLOSED" || status === "TEMP_CLOSED"
 }
 
 export function safeJsonParse<T>(value: string | null | undefined, fallback: T): T {

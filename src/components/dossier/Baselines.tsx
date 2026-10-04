@@ -1,8 +1,8 @@
 import { ArrowDown, ArrowUp, Equal } from "lucide-react";
 import { LineBars } from "@/components/marks/LineBars";
+import { formatRiders } from "@/lib/format";
 import type { StationDetailResponse } from "@/types/station";
 import { Section } from "./parts";
-import { riders } from "./standing";
 
 /** Differences inside this band read "about the same": a rounding away from zero. */
 const SAME_BAND_PCT = 3;
@@ -59,7 +59,7 @@ export function Baselines({ detail }: { detail: StationDetailResponse }) {
         Riders per day over the last 30 days
         {own !== null && (
           <>
-            . This station: <span className="font-mono tabular text-ink">{riders(own)}</span>
+            . This station: <span className="font-mono tabular text-ink">{formatRiders(own)}</span>
           </>
         )}
         .
@@ -76,7 +76,7 @@ export function Baselines({ detail }: { detail: StationDetailResponse }) {
                 </span>
                 {row.detail && <span className="block text-13 text-ink-2">{row.detail}</span>}
               </dt>{" "}
-              <dd className="font-mono text-15 tabular">{riders(row.baseline)}</dd>{" "}
+              <dd className="font-mono text-15 tabular">{formatRiders(row.baseline)}</dd>{" "}
               <dd className="flex w-[7.5rem] shrink-0 items-center justify-end gap-1 text-13 text-ink-2">
                 <Icon className="h-3.5 w-3.5 shrink-0 self-center" strokeWidth={1.75} aria-hidden />
                 <span className="sr-only">This station is </span>

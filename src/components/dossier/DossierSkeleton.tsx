@@ -1,4 +1,4 @@
-import { BackToMap, CloseDrawer } from "./CloseControls";
+import { DossierBar } from "./CloseControls";
 
 const block = "bg-ink/[.08]";
 
@@ -19,12 +19,7 @@ function SectionShape({ heading, children }: { heading: string; children: React.
 export function DossierSkeleton() {
   return (
     <div className="px-5 pb-16" aria-busy="true" aria-label="Loading station">
-      <div className="flex h-14 items-center justify-between">
-        <BackToMap />
-        <span className="ml-auto">
-          <CloseDrawer />
-        </span>
-      </div>
+      <DossierBar />
       <div aria-hidden>
         <div className={`h-9 w-2/3 rounded ${block}`} />
         <div className="mt-3 flex items-center gap-[3px]">

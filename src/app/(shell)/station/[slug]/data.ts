@@ -1,6 +1,9 @@
 import { cache } from "react";
 import { unstable_cache } from "next/cache";
 import { STATIONS_CACHE_TAG } from "@/lib/cacheTags";
+import { CTA_ROSTER } from "@/lib/cta/roster";
+import { linesForStation } from "@/lib/cta/sequences";
+import { generateSlugs, resolveSlugAlias } from "@/lib/cta/slug";
 import { readStationDetail } from "@/lib/stations/detail";
 
 /**
@@ -13,4 +16,20 @@ const readCached = unstable_cache(readStationDetail, ["station-detail"], {
   revalidate: 3600,
 });
 
-export const getStationDetail = cache((slug: string) => readCached(slug));
+/** Every station's slug, from the roster through the function the seed stores them with. */
+const KNOWN_SLUGS = new Set(
+  generateSlugs(CTA_ROSTER.map((s) => ({ ...s, lines: linesForStation(s.ctaStationId) }))).values(),
+);
+
+/** A station id, which the detail lookup still accepts until the uuid fallback goes (KTD7, U23). */
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/**
+ * Only addresses that can name a station are cached; anything else is read uncached (and comes
+ * back not found), so arbitrary URLs cannot fill the data cache with entries.
+ */
+function cacheable(slug: string): boolean {
+  return KNOWN_SLUGS.has(slug) || resolveSlugAlias(slug) !== undefined || UUID.test(slug);
+}
+
+export const getStationDetail = cache((slug: string) => (cacheable(slug) ? readCached(slug) : readStationDetail(slug)));

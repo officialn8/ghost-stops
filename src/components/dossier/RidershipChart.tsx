@@ -2,22 +2,19 @@
 
 import { useEffect, useRef } from "react";
 import { animate } from "motion/react";
-import { formatCalendarDate } from "@/lib/format";
+import { formatCalendarDate, formatDateRange, formatRiders } from "@/lib/format";
 import { getLineColor } from "@/lib/utils";
 import type { StationSeries } from "@/types/station";
-import { riders } from "./standing";
 import { useMountMotion } from "./useMountMotion";
 
 /** The plot's height in viewBox units; the x unit is one day. */
 const PLOT_UNITS = 100;
 
 const shortDay = (date: string) => formatCalendarDate(date, { month: "short", day: "numeric" });
-const fullDay = (date: string) => formatCalendarDate(date, { month: "short", day: "numeric", year: "numeric" });
 
 /** "May 2 to Jul 31, 2026", or "Nov 2, 2025 to Jan 31, 2026" across a new year (UTC, KTD17). */
 export function seriesRange(series: Pick<StationSeries, "start" | "end">): string {
-  const sameYear = series.start.slice(0, 4) === series.end.slice(0, 4);
-  return `${sameYear ? shortDay(series.start) : fullDay(series.start)} to ${fullDay(series.end)}`;
+  return formatDateRange(series.start, series.end);
 }
 
 /** The smallest of 1, 2, 2.5, or 5 times a power of ten at or above `value`, for the axis top. */
@@ -67,8 +64,8 @@ export function chartGeometry(series: StationSeries): Geometry {
     const high = known.reduce((a, b) => (b.entries > a.entries ? b : a));
     const average = known.reduce((sum, d) => sum + d.entries, 0) / known.length;
     summary =
-      `Daily riders, ${range}. Average ${riders(average)}, lowest ${riders(low.entries)} on ${shortDay(low.date)}, ` +
-      `highest ${riders(high.entries)} on ${shortDay(high.date)}.` +
+      `Daily riders, ${range}. Average ${formatRiders(average)}, lowest ${formatRiders(low.entries)} on ${shortDay(low.date)}, ` +
+      `highest ${formatRiders(high.entries)} on ${shortDay(high.date)}.` +
       (gaps > 0 ? ` No data for ${gaps} ${gaps === 1 ? "day" : "days"}.` : "");
   }
   return { paths, yMax, gaps, summary, empty: max === 0 };
@@ -112,7 +109,7 @@ export function RidershipChart({ series, line }: { series: StationSeries; line: 
               className="absolute right-0 -translate-y-1/2"
               style={{ top: `${(1 - t / yMax) * 100}%` }}
             >
-              {riders(t)}
+              {formatRiders(t)}
             </span>
           ))}
         </div>

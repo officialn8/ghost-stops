@@ -24,9 +24,6 @@ const MapView = dynamic(() => import("@/components/map/MapView"), {
 
 const NO_STATIONS: readonly StationListItem[] = [];
 
-/** The first press of a sort key: emptiest first for ranks and riders, A to Z for names. */
-const FIRST_DIRECTION: Record<SortKey, SortState["direction"]> = { rank: "asc", riders: "asc", name: "asc" };
-
 function isShown(element: HTMLElement): boolean {
   return element.getClientRects().length > 0;
 }
@@ -87,7 +84,8 @@ export function Shell({ children }: { children: React.ReactNode }) {
       setSort((current) =>
         current.key === key
           ? { key, direction: current.direction === "asc" ? "desc" : "asc" }
-          : { key, direction: FIRST_DIRECTION[key] },
+          : // A new key starts ascending: the ghostliest or emptiest first, names A to Z.
+            { key, direction: "asc" },
       ),
     [],
   );
@@ -123,15 +121,18 @@ export function Shell({ children }: { children: React.ReactNode }) {
           <TopBar />
           {list.status === "ready" && list.stale && <HealthBanner lastSuccessfulFetch={list.data.lastSuccessfulFetch} />}
           <div className="relative flex min-h-0 flex-1">
-            <aside
-              aria-label="Stations"
-              className={cn(
-                "hidden min-h-0 w-[360px] shrink-0 flex-col border-r border-rule md:flex",
-                isOpen && "md:hidden lg:flex",
-              )}
-            >
-              <Ledger variant="column" />
-            </aside>
+            {/* A phone's ledger lives in the bottom sheet, so the column is not mounted there. */}
+            {!isPhone && (
+              <aside
+                aria-label="Stations"
+                className={cn(
+                  "hidden min-h-0 w-[360px] shrink-0 flex-col border-r border-rule md:flex",
+                  isOpen && "md:hidden lg:flex",
+                )}
+              >
+                <Ledger variant="column" />
+              </aside>
+            )}
             <main
               className={cn(
                 "relative flex min-h-0 min-w-0 flex-1 flex-col",

@@ -2,7 +2,8 @@
  * The words a station page puts in its <title> and link preview (R30), from the detail payload.
  * Pure, so the page and its tests share them.
  */
-import { formatCalendarDate } from "@/lib/format";
+import { formatMonthYear, formatRiders } from "@/lib/format";
+import { isClosedStatus } from "@/lib/utils";
 import type { StationDetailResponse } from "@/types/station";
 
 /** "1st", "2nd", "3rd", "11th", "22nd". */
@@ -19,12 +20,12 @@ export function stationLabel(detail: Pick<StationDetailResponse, "station">): st
 }
 
 function isClosed(detail: Pick<StationDetailResponse, "station">): boolean {
-  return detail.station.status === "CLOSED" || detail.station.status === "TEMP_CLOSED";
+  return isClosedStatus(detail.station.status);
 }
 
 function closedSince(detail: Pick<StationDetailResponse, "station">): string | null {
   const { closedAt } = detail.station;
-  return closedAt ? formatCalendarDate(closedAt, { month: "short", year: "numeric" }) : null;
+  return closedAt ? formatMonthYear(closedAt) : null;
 }
 
 /** "Halsted (Green) · 248 riders/day"; the layout's title template adds "· Ghost Stops". */
@@ -36,7 +37,7 @@ export function stationTitle(detail: Pick<StationDetailResponse, "station" | "me
   }
   const { avg12m } = detail.metrics;
   if (!detail.metrics.ranked || avg12m === null) return `${label} · no recent data`;
-  return `${label} · ${Math.round(avg12m).toLocaleString("en-US")} riders/day`;
+  return `${label} · ${formatRiders(avg12m)} riders/day`;
 }
 
 /** One plain sentence for link previews: rank, tier, riders, and the data-through date. */
@@ -51,7 +52,7 @@ export function stationDescription(detail: Pick<StationDetailResponse, "station"
   if (!detail.metrics.ranked || rank === null || rankedCount === null || avg12m === null) {
     return `${name} has no recent ridership data, so it is not ranked against other L stations.${through}`;
   }
-  const riders = Math.round(avg12m).toLocaleString("en-US");
+  const riders = formatRiders(avg12m);
   const tierNote = tier ? ` (tier: ${tier})` : "";
   return `${name} ranks ${ordinal(rank)} of ${rankedCount} L stations by ghost score${tierNote}, with ${riders} riders a day over the past 12 months.${through}`;
 }

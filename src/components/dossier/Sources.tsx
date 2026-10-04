@@ -2,9 +2,10 @@
 
 import { ChevronRight, ExternalLink, TriangleAlert } from "lucide-react";
 import { useShell } from "@/components/shell/ShellContext";
+import { formatChicagoDay } from "@/lib/format";
 import type { DataSourceInfo } from "@/types/narrative";
 import type { StationDetailResponse } from "@/types/station";
-import { Section } from "./parts";
+import { linkClass, Section } from "./parts";
 
 const CTA_RIDERSHIP_URL =
   "https://data.cityofchicago.org/Transportation/CTA-Ridership-L-Station-Entries-Daily-Totals/5neh-572f";
@@ -14,18 +15,6 @@ const CADENCE: Readonly<Record<NonNullable<DataSourceInfo["refreshCadence"]>, st
   annual: "updated yearly",
   static: "fixed",
 };
-
-/** "Sep 20, 2026": the day in Chicago, where the data and its readers are (as the health banner says it). */
-function refreshDay(iso: string): string {
-  return new Date(iso).toLocaleDateString("en-US", {
-    month: "short",
-    day: "numeric",
-    year: "numeric",
-    timeZone: "America/Chicago",
-  });
-}
-
-const linkClass = "rounded text-ink underline decoration-ink/40 underline-offset-2 hover:decoration-ink";
 
 /**
  * Where the numbers come from (R13). CTA's publishing lag is stated on its own, with the
@@ -62,7 +51,7 @@ export function Sources({ detail }: { detail: StationDetailResponse }) {
         <p className="mt-3 flex items-start gap-2 text-15">
           <TriangleAlert className="mt-1 h-4 w-4 shrink-0" strokeWidth={1.75} aria-hidden />
           {detail.lastSuccessfulFetch
-            ? `The last successful refresh was on ${refreshDay(detail.lastSuccessfulFetch)}.`
+            ? `The last successful refresh was on ${formatChicagoDay(detail.lastSuccessfulFetch)}.`
             : "No refresh has succeeded yet."}
         </p>
       )}

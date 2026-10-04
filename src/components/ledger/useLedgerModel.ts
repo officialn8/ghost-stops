@@ -4,7 +4,7 @@ import { useMemo } from "react";
 import type { Exclusion } from "@/components/marks/PresenceMark";
 import { isExcluded, noLineActive, passesLineFilter } from "@/components/shell/model";
 import type { ActiveLines, SortState } from "@/components/shell/ShellContext";
-import { CTA_LINE_ORDER } from "@/lib/utils";
+import { CTA_LINE_ORDER, isClosedStatus } from "@/lib/utils";
 import type { StationListItem } from "@/types/station";
 
 /** A station the ledger can open: it has a page, so it has a slug. */
@@ -58,7 +58,7 @@ const SECTION_TITLE: Readonly<Record<Exclusion, string>> = {
 /** Why a station sits outside the ranking: closed (for now or for good), or no recent riders. */
 export function exclusionOf(station: Pick<StationListItem, "rank" | "status">): Exclusion | null {
   if (!isExcluded(station)) return null;
-  return station.status === "CLOSED" || station.status === "TEMP_CLOSED" ? "closed" : "no-data";
+  return isClosedStatus(station.status) ? "closed" : "no-data";
 }
 
 /**

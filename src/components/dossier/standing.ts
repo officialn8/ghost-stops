@@ -1,4 +1,5 @@
-import { formatCalendarDate } from "@/lib/format";
+import { formatMonthYear } from "@/lib/format";
+import { isClosedStatus } from "@/lib/utils";
 import type { NeighborEntry, ScoreTierName, StationDetailResponse } from "@/types/station";
 
 /**
@@ -23,7 +24,7 @@ function lastDayWithRiders(detail: StationDetailResponse): string | null {
 
 export function standingOf(detail: StationDetailResponse): Standing {
   const { station, metrics } = detail;
-  if (station.status !== "ACTIVE") {
+  if (isClosedStatus(station.status)) {
     return { kind: "closed", since: station.closedAt, temporary: station.status === "TEMP_CLOSED" };
   }
   if (!metrics.ranked) return { kind: "no-data", lastDay: lastDayWithRiders(detail) };
@@ -49,15 +50,10 @@ export function whyHeading(standing: Standing): string {
   return "Why it ranks here";
 }
 
-/** "Jan 2026", read in UTC so a calendar date never shifts a month (KTD17). */
-export function monthYear(date: string): string {
-  return formatCalendarDate(date, { month: "short", year: "numeric" });
-}
-
 /** "closed since Jan 2026", "temporarily closed", or "closed", to run inside a sentence. */
 export function closedPhrase(since: string | null, temporary = false): string {
   const word = temporary ? "temporarily closed" : "closed";
-  return since ? `${word} since ${monthYear(since)}` : word;
+  return since ? `${word} since ${formatMonthYear(since)}` : word;
 }
 
 /** "Closed since Jan 2026", "Temporarily closed", or "Closed", to stand alone. */
@@ -80,29 +76,15 @@ export function stationTags(detail: StationDetailResponse): string[] {
   return tags;
 }
 
-/** "Green Line", or "Brown, Green, Orange, Purple, Pink Lines". */
-export function linesLabel(lines: readonly string[]): string {
-  return `${lines.join(", ")} ${lines.length === 1 ? "Line" : "Lines"}`;
-}
-
-/** A whole number with thousands separators: 1,782. */
-export function riders(value: number): string {
-  return Math.round(value).toLocaleString("en-US");
-}
-
 export type NeighborStanding =
   | { kind: "ranked"; tier: ScoreTierName }
   | { kind: "closed"; since: string | null; temporary: boolean }
   | { kind: "no-data" };
 
-/**
- * A neighbor's standing for its along-the-line row. A closed neighbor reads "Closed", with its
- * month once the payload carries `closedAt` (NeighborEntry has no such field yet).
- */
+/** A neighbor's standing for its along-the-line row: a closed one says since when (AE2). */
 export function neighborStanding(neighbor: NeighborEntry): NeighborStanding {
-  if (neighbor.status !== "ACTIVE") {
-    const since = "closedAt" in neighbor && typeof neighbor.closedAt === "string" ? neighbor.closedAt : null;
-    return { kind: "closed", since, temporary: neighbor.status === "TEMP_CLOSED" };
+  if (isClosedStatus(neighbor.status)) {
+    return { kind: "closed", since: neighbor.closedAt, temporary: neighbor.status === "TEMP_CLOSED" };
   }
   return neighbor.tier === null ? { kind: "no-data" } : { kind: "ranked", tier: neighbor.tier };
 }

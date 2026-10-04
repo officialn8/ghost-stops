@@ -1,16 +1,7 @@
 "use client";
 
 import { TriangleAlert } from "lucide-react";
-
-/** "Sep 20, 2026" in Chicago, where the data and its readers are. */
-function refreshDate(iso: string): string {
-  return new Date(iso).toLocaleDateString("en-US", {
-    month: "short",
-    day: "numeric",
-    year: "numeric",
-    timeZone: "America/Chicago",
-  });
-}
+import { formatChicagoDay } from "@/lib/format";
 
 /**
  * Shown when the last successful refresh is more than ten days old (R13), the same signal the
@@ -23,7 +14,7 @@ export function HealthBanner({ lastSuccessfulFetch }: { lastSuccessfulFetch: str
       <TriangleAlert className="mt-0.5 h-4 w-4 shrink-0" strokeWidth={1.75} aria-hidden />
       <p className="text-13">
         {lastSuccessfulFetch
-          ? `Ridership has not refreshed since ${refreshDate(lastSuccessfulFetch)}. Figures may be out of date until the daily update runs again.`
+          ? `Ridership has not refreshed since ${formatChicagoDay(lastSuccessfulFetch)}. Figures may be out of date until the daily update runs again.`
           : "Ridership has not refreshed yet. Figures may be out of date until the daily update runs."}
       </p>
     </div>

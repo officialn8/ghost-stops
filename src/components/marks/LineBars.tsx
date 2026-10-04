@@ -1,3 +1,4 @@
+import { linesLabel } from "@/lib/format";
 import { cn, getLineColor } from "@/lib/utils";
 
 /**
@@ -17,7 +18,7 @@ export function LineBars({
   decorative?: boolean;
 }) {
   if (lines.length === 0) return null;
-  const label = `${lines.join(", ")} ${lines.length === 1 ? "Line" : "Lines"}`;
+  const label = linesLabel(lines);
   return (
     <span
       className={cn("flex items-center gap-[3px]", className)}

@@ -3,10 +3,11 @@
 import type { Ref } from "react";
 import { LineBars } from "@/components/marks/LineBars";
 import { PresenceMark, TIER_LABEL } from "@/components/marks/PresenceMark";
+import { linesLabel } from "@/lib/format";
 import { ordinal } from "@/lib/stations/metadata";
 import type { StationDetailResponse } from "@/types/station";
 import { CountOnce } from "./CountOnce";
-import { closedLabel, linesLabel, stationTags, type Standing } from "./standing";
+import { closedLabel, stationTags, type Standing } from "./standing";
 
 /**
  * The top of the dossier, set like a platform sign: the station name in the condensed cut, its line

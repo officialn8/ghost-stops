@@ -1,4 +1,4 @@
-import { useSyncExternalStore } from "react";
+import { useCallback, useSyncExternalStore } from "react";
 
 /**
  * Whether a media query matches, for the few things CSS cannot decide: mounting the phone's
@@ -6,12 +6,17 @@ import { useSyncExternalStore } from "react";
  * The server and the first client render report false.
  */
 export function useMediaQuery(query: string): boolean {
-  return useSyncExternalStore(
-    (onChange) => {
+  // Stable per query, so React keeps one listener rather than resubscribing on every render.
+  const subscribe = useCallback(
+    (onChange: () => void) => {
       const media = window.matchMedia(query);
       media.addEventListener("change", onChange);
       return () => media.removeEventListener("change", onChange);
     },
+    [query],
+  );
+  return useSyncExternalStore(
+    subscribe,
     () => window.matchMedia(query).matches,
     () => false,
   );

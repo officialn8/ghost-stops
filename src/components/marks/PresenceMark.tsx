@@ -16,6 +16,9 @@ export const GHOST_SCALE = 1.5;
 /** The ghost glyph's ink: the theme's ink-3 token (0.52 dark, 0.62 light; src/app/globals.css). */
 export const GHOST_INK = "rgb(var(--ink) / var(--ink-3-alpha))";
 
+/** The ink of the marks for stations outside the ranking; the map draws them the same. */
+export const EXCLUDED_INK: Readonly<Record<"closed" | "no-data", number>> = { closed: 0.52, "no-data": 0.44 };
+
 /** Why a station sits outside the ranking (R24): closed, or no riders in recent data. */
 export type Exclusion = "closed" | "no-data";
 
@@ -61,10 +64,10 @@ export function PresenceMark({ tier, excluded = null, size = 10, className }: Pr
           stroke="currentColor"
           strokeWidth={stroke}
           strokeDasharray={closed ? undefined : "1 2"}
-          opacity={closed ? 0.52 : 0.44}
+          opacity={closed ? EXCLUDED_INK.closed : EXCLUDED_INK["no-data"]}
         />
         {closed && (
-          <line x1={c - r * 0.6} y1={c} x2={c + r * 0.6} y2={c} stroke="currentColor" strokeWidth={stroke} opacity={0.52} />
+          <line x1={c - r * 0.6} y1={c} x2={c + r * 0.6} y2={c} stroke="currentColor" strokeWidth={stroke} opacity={EXCLUDED_INK.closed} />
         )}
       </svg>
     );
