@@ -9,17 +9,6 @@ export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs))
 }
 
-// Ghost score color mapping on the v1 scale (cutoffs 65/50/35/20, set for the v1 composite's
-// ceiling of about 75). Knowingly miscalibrated for score v2's 0-100 percentile; only the v1
-// components still read it, and they go when the Phase 5 redesign replaces them.
-export function getGhostScoreColor(score: number): string {
-  if (score >= 65) return "#DC2626" // red-600 (top tier ghost)
-  if (score >= 50) return "#EA580C" // orange-600
-  if (score >= 35) return "#F59E0B" // amber-500
-  if (score >= 20) return "#84CC16" // lime-500
-  return "#22C55E" // green-500
-}
-
 /** How a tier is drawn: `ink` is the opacity of the station mark, `mark` its outline style. */
 export type TierMark = "hollow-dashed" | "hollow" | "solid"
 

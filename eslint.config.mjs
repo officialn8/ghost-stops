@@ -10,10 +10,8 @@ const serverOnly = (modulePath, role) => ({
   message: `src/${modulePath} is server-only (${role}). Components must get this data from an API route instead.`,
 });
 
-// eslint-plugin-react-hooks 7 (with eslint-config-next 16) adds React Compiler rules as errors.
-// The v1 UI breaks two of them in nine places; the Phase 5 redesign (plan U17 to U22) replaces
-// that UI, so those nine are recorded in eslint-suppressions.json rather than rewritten twice.
-// Any new violation fails lint. After removing one, run `npx eslint . --prune-suppressions`.
+// eslint-plugin-react-hooks 7 (with eslint-config-next 16) adds React Compiler rules as errors;
+// the code carries no suppressions for them.
 export default defineConfig([
   ...nextVitals,
   ...nextTs,
