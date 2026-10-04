@@ -236,7 +236,7 @@ describe("MapView layers", () => {
   it("draws State/Lake as the closed mark with no label", () => {
     const { map } = renderLoaded(model());
     expect(stationFeature(map, STATE_LAKE.id)).toMatchObject({ mark: "closed", labeled: false, slug: "state-lake" });
-    expect(stationFeature(map, HALSTED.id)).toMatchObject({ mark: "hollow-dashed", ink: 0.44, labeled: true });
+    expect(stationFeature(map, HALSTED.id)).toMatchObject({ mark: "ghost", labeled: true });
   });
 
   it("loads the tracks once and dims filtered-out lines and stations instead of removing them", async () => {

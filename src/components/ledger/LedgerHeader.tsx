@@ -7,8 +7,8 @@ import type { ActiveLines, SortKey, SortState } from "@/components/shell/ShellCo
 import { CTA_LINE_ORDER, cn, ctaLineColors, lineLabelInk, type CTALine } from "@/lib/utils";
 
 /** How each sort head reads aloud: "Sort by riders per day, ascending". */
-const SPOKEN: Readonly<Record<SortKey, string>> = { rank: "rank", riders: "riders per day", name: "name" };
-const VISIBLE: Readonly<Record<SortKey, string>> = { rank: "Rank", riders: "Riders/day", name: "Name" };
+const SPOKEN: Readonly<Record<SortKey, string>> = { rank: "ghost score", riders: "riders per day", name: "name" };
+const VISIBLE: Readonly<Record<SortKey, string>> = { rank: "Ghost score", riders: "Riders/day", name: "Name" };
 
 /** An off line's outline: its color at 30%, the "dimmed" bar (Direction A). */
 const OFF_ALPHA = "4D";
@@ -108,12 +108,10 @@ export function LedgerHeader({
         })}
       </div>
 
-      {/* Column heads, aligned with the rows: rank, name, then riders on the right. */}
-      <div className="mt-1 flex h-8 items-center">
-        <span className="w-12 shrink-0">
-          <SortHead sortKey="rank" sort={sort} onSort={onSort} />
-        </span>
-        <span className="ml-2 min-w-0 flex-1">
+      {/* Column heads: the ghost score (the rank column's order) and name on the left, riders on the right. */}
+      <div className="mt-1 flex h-8 items-center gap-4">
+        <SortHead sortKey="rank" sort={sort} onSort={onSort} />
+        <span className="min-w-0 flex-1">
           <SortHead sortKey="name" sort={sort} onSort={onSort} />
         </span>
         <SortHead sortKey="riders" sort={sort} onSort={onSort} />

@@ -22,7 +22,7 @@ const jetbrainsMono = JetBrains_Mono({
 });
 
 const DESCRIPTION =
-  "Which Chicago L stations are emptier than they should be, and why. Daily CTA ridership, ranked against each station's own line and neighbors.";
+  "Chicago's ghost stops: the L stations emptier than they should be, and why. Daily CTA ridership, ranked by ghost score against each station's own line and neighbors.";
 
 export const metadata: Metadata = {
   metadataBase: SITE_URL,

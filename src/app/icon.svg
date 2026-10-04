@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">
+  <!-- The Ghost Stops mark: Lucide's "ghost" glyph (ISC License, lucide.dev) on the dark surface. -->
+  <rect width="32" height="32" rx="6" fill="#141518"/>
+  <g transform="translate(4 4)" fill="#141518" stroke="#F2F1EC" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M12 2a8 8 0 0 0-8 8v12l3-3 2.5 2.5L12 19l2.5 2.5L17 19l3 3V10a8 8 0 0 0-8-8z"/>
+    <path d="M9 10h.01"/>
+    <path d="M15 10h.01"/>
+  </g>
+</svg>

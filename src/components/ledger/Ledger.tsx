@@ -174,7 +174,7 @@ function LedgerBody({
       {ledger.narrowed && ledger.matchCount === 0 && (
         <div className="flex min-h-14 items-center gap-3 border-b border-rule px-4 py-2">
           <p className="min-w-0 flex-1 break-words text-13 text-ink-2">
-            {searching ? <>No stations match &ldquo;{query.trim()}&rdquo;</> : "No stations on the selected lines"}
+            {searching ? <>No stations match &ldquo;{query.trim()}&rdquo;. Not even a ghost.</> : "No stations on the selected lines"}
           </p>
           {searching && (
             <button

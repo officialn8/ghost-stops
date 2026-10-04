@@ -184,7 +184,7 @@ describe("trailing sections (AE2)", () => {
     };
 
     check();
-    for (const name of [/^Sort by rank/, /^Sort by riders per day/, /^Sort by name/]) {
+    for (const name of [/^Sort by ghost score/, /^Sort by riders per day/, /^Sort by name/]) {
       await user.click(screen.getByRole("button", { name }));
       check();
       await user.click(screen.getByRole("button", { name }));
@@ -200,7 +200,7 @@ describe("sort", () => {
     render(<Harness list={ready()} openStation={openStation} />);
     const user = userEvent.setup();
 
-    expect(screen.getByRole("button", { name: "Sort by rank, ascending" })).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByRole("button", { name: "Sort by ghost score, ascending" })).toHaveAttribute("aria-pressed", "true");
     const riders = screen.getByRole("button", { name: "Sort by riders per day" });
     expect(riders).toHaveAttribute("aria-pressed", "false");
 
@@ -212,7 +212,7 @@ describe("sort", () => {
     await user.click(riders);
     expect(riders).toHaveAccessibleName("Sort by riders per day, descending");
     expect(rowSlugs()[0]).toBe("clark-lake");
-    expect(screen.getByRole("button", { name: "Sort by rank" })).toHaveAttribute("aria-pressed", "false");
+    expect(screen.getByRole("button", { name: "Sort by ghost score" })).toHaveAttribute("aria-pressed", "false");
   });
 });
 

@@ -120,7 +120,7 @@ describe("selection from the route", () => {
     );
 
     const drawer = screen.getByRole("region", { name: "Station" });
-    expect(within(drawer).getByRole("heading", { name: "No station at this address" })).toBeInTheDocument();
+    expect(within(drawer).getByRole("heading", { name: "This stop doesn\u2019t exist. Not even as a ghost." })).toBeInTheDocument();
     const search = within(drawer).getByRole("searchbox", { name: "Station name" });
 
     await waitFor(() => expect(screen.getAllByRole("button", { name: /King Drive/ }).length).toBeGreaterThan(0));

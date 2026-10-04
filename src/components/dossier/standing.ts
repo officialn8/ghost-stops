@@ -32,6 +32,23 @@ export function standingOf(detail: StationDetailResponse): Standing {
   return { kind: "ranked", tier, rank, rankedCount };
 }
 
+/**
+ * The why section's heading, in the station's own tier: only a ghost-tier station is called a
+ * ghost stop, and a healthy one is called healthy (R19, Reddit B4).
+ */
+const TIER_HEADING: Readonly<Record<ScoreTierName, string>> = {
+  ghost: "Why it\u2019s a ghost stop",
+  fading: "Why it\u2019s fading",
+  quiet: "Why it\u2019s quiet",
+  healthy: "Why it\u2019s healthy",
+};
+
+export function whyHeading(standing: Standing): string {
+  if (standing.kind === "ranked") return TIER_HEADING[standing.tier];
+  if (standing.kind === "closed" || standing.kind === "no-data") return "Why it is not ranked";
+  return "Why it ranks here";
+}
+
 /** "Jan 2026", read in UTC so a calendar date never shifts a month (KTD17). */
 export function monthYear(date: string): string {
   return formatCalendarDate(date, { month: "short", year: "numeric" });

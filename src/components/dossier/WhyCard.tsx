@@ -183,7 +183,7 @@ export function WhyCard({
       ) : (
         <dl className="flex flex-wrap items-end gap-x-8 gap-y-3">
           <div>
-            <dt className="text-13 text-ink-2">Score</dt>
+            <dt className="text-13 text-ink-2">Ghost score</dt>
             <dd>
               <span className="font-mono text-36 tabular">{card.score === null ? "n/a" : card.score}</span>{" "}
               <span className="text-13 text-ink-2">of 100</span>

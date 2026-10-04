@@ -4,6 +4,7 @@ import type { LayerSpecification } from "mapbox-gl";
 import { expression, featureFilter, latest, validate } from "mapbox-gl/dist/style-spec/index.es.js";
 import postcss from "postcss";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { GHOST_SCALE } from "@/components/marks/PresenceMark";
 import { ALL_LINES_ON } from "@/components/shell/model";
 import { explodeAndStitchSegments } from "@/lib/cta/explodeAndStitchSegments";
 import { CTA_LINE_ORDER, tierStyle, type CTALine } from "@/lib/utils";
@@ -25,7 +26,7 @@ import {
   type StationFeatureProperties,
 } from "./layers";
 import { BASE_STYLE_LAYERS } from "./fakeMap";
-import { MARK_IMAGE } from "./marks";
+import { GHOST_BOX, GHOST_REACH, MARK_IMAGE, STROKE_RATIO, ghostGeometry } from "./marks";
 
 type TrackProperties = { segment_id: string; corridor: string; is_loop: boolean; lines: string[] };
 
@@ -82,9 +83,14 @@ function featureOf(id: string, activeLines = ALL_LINES_ON): StationFeatureProper
   return found.properties;
 }
 
-const LAYERS = stationLayers(MAP_PALETTE.dark);
-const layerById = (id: string): LayerSpecification => {
-  const layer = LAYERS.find((l) => l.id === id);
+type ThemeName = keyof typeof MAP_PALETTE;
+
+const LAYERS: Record<ThemeName, LayerSpecification[]> = {
+  dark: stationLayers(MAP_PALETTE.dark),
+  light: stationLayers(MAP_PALETTE.light),
+};
+const layerById = (id: string, theme: ThemeName = "dark"): LayerSpecification => {
+  const layer = LAYERS[theme].find((l) => l.id === id);
   if (!layer) throw new Error(`no layer ${id}`);
   return layer;
 };
@@ -97,8 +103,9 @@ function evaluate(
   properties: StationFeatureProperties,
   state: Record<string, boolean> = {},
   zoom = 14,
+  theme: ThemeName = "dark",
 ): unknown {
-  const layer = layerById(layerId);
+  const layer = layerById(layerId, theme);
   const value = (layer[group as keyof LayerSpecification] as Record<string, unknown> | undefined)?.[name];
   if (!Array.isArray(value)) return value;
   const parsed = expression.createPropertyExpression(value, latest[`${group}_${layer.type}`][name]);
@@ -112,12 +119,21 @@ function passesFilter(layerId: string, properties: StationFeatureProperties, zoo
   return featureFilter(layer.filter).filter({ zoom }, { type: 1, properties });
 }
 
-/** The ink a reader sees for a mark: its fill for a solid dot, its ring for a hollow one. */
-function visibleInk(properties: StationFeatureProperties, state: Record<string, boolean> = {}) {
+/**
+ * The ink a reader sees for a mark: the circle's fill and ring, the dotted or barred image, and
+ * the ghost glyph's body, outline, and inverted (selected) image.
+ */
+function visibleInk(properties: StationFeatureProperties, state: Record<string, boolean> = {}, theme: ThemeName = "dark") {
+  const icon = (layerId: string) =>
+    passesFilter(layerId, properties) ? evaluate(layerId, "paint", "icon-opacity", properties, state, 14, theme) : null;
+  const isGhost = passesFilter(LAYER.ghostBody, properties);
   return {
-    fill: evaluate(LAYER.dots, "paint", "circle-opacity", properties, state),
-    ring: evaluate(LAYER.dots, "paint", "circle-stroke-opacity", properties, state),
-    icon: passesFilter(LAYER.marks, properties) ? evaluate(LAYER.marks, "paint", "icon-opacity", properties, state) : null,
+    fill: evaluate(LAYER.dots, "paint", "circle-opacity", properties, state, 14, theme),
+    ring: evaluate(LAYER.dots, "paint", "circle-stroke-opacity", properties, state, 14, theme),
+    icon: icon(LAYER.marks),
+    ghost: isGhost
+      ? { body: icon(LAYER.ghostBody), line: icon(LAYER.ghostLine), selected: icon(LAYER.ghostSelected) }
+      : null,
   };
 }
 
@@ -143,17 +159,20 @@ describe("the map palette", () => {
     return `${(n >> 16) & 255} ${(n >> 8) & 255} ${n & 255}`;
   };
 
-  it.each(["dark", "light"] as const)("matches the %s theme's ink and surface tokens", (theme) => {
+  it.each(["dark", "light"] as const)("matches the %s theme's ink, surface, and ink-3 tokens", (theme) => {
     expect(hexToChannels(MAP_PALETTE[theme].ink)).toBe(token(theme, "--ink"));
     expect(hexToChannels(MAP_PALETTE[theme].surface)).toBe(token(theme, "--surface"));
+    // The ghost glyph's outline, as PresenceMark's GHOST_INK draws it.
+    expect(MAP_PALETTE[theme].ghostInk).toBe(Number(token(theme, "--ink-3-alpha")));
   });
 });
 
 describe("station features", () => {
-  it("take each tier's mark and ink from tierStyle", () => {
+  it("take each tier's ink from tierStyle, and draw the ghost tier as a ghost", () => {
     for (const tier of TIERS) {
       const { mark, ink } = featureOf(tier);
-      expect({ mark, ink }).toEqual({ mark: tierStyle(tier).mark, ink: tierStyle(tier).ink });
+      expect(ink).toBe(tierStyle(tier).ink);
+      expect(mark).toBe(tier === "ghost" ? "ghost" : tierStyle(tier).mark);
     }
   });
 
@@ -184,30 +203,67 @@ describe("station features", () => {
 });
 
 describe("station layer paint", () => {
-  it("maps each tier to its ink: healthy and quiet 100%, fading 72%, ghost 44%", () => {
-    expect(visibleInk(featureOf("healthy"))).toEqual({ fill: 1, ring: 1, icon: null });
+  it("maps each ring tier to its ink: healthy and quiet 100%, fading 72%", () => {
+    expect(visibleInk(featureOf("healthy"))).toEqual({ fill: 1, ring: 1, icon: null, ghost: null });
     expect(evaluate(LAYER.dots, "paint", "circle-color", featureOf("healthy"))?.toString()).toBe(rgba(MAP_PALETTE.dark.ink));
 
     // Hollow: a surface hole inside a ring at the tier's ink.
-    expect(visibleInk(featureOf("quiet"))).toEqual({ fill: 1, ring: 1, icon: null });
+    expect(visibleInk(featureOf("quiet"))).toEqual({ fill: 1, ring: 1, icon: null, ghost: null });
     expect(evaluate(LAYER.dots, "paint", "circle-color", featureOf("quiet"))?.toString()).toBe(rgba(MAP_PALETTE.dark.surface));
-    expect(visibleInk(featureOf("fading"))).toEqual({ fill: 1, ring: 0.72, icon: null });
+    expect(visibleInk(featureOf("fading"))).toEqual({ fill: 1, ring: 0.72, icon: null, ghost: null });
 
-    // Dashed: the circle draws no ring; the dashed image does, at the tier's ink.
-    expect(visibleInk(featureOf("ghost"))).toEqual({ fill: 1, ring: 0, icon: 0.44 });
-    expect(evaluate(LAYER.marks, "layout", "icon-image", featureOf("ghost"))?.toString()).toBe(MARK_IMAGE.dashed);
-
-    for (const tier of TIERS) {
+    for (const tier of ["healthy", "quiet", "fading"] as const) {
       const ink = visibleInk(featureOf(tier));
-      const shown = tierStyle(tier).mark === "solid" ? ink.fill : tierStyle(tier).mark === "hollow" ? ink.ring : ink.icon;
-      expect(shown).toBe(tierStyle(tier).ink);
+      expect(tierStyle(tier).mark === "solid" ? ink.fill : ink.ring).toBe(tierStyle(tier).ink);
     }
   });
 
+  it("draws the ghost tier as the ghost glyph: an opaque surface body and an outline at the theme's ink-3", () => {
+    const ghost = featureOf("ghost");
+    for (const theme of ["dark", "light"] as const) {
+      expect(visibleInk(ghost, {}, theme)).toEqual({
+        // The circle draws nothing, so no disc peeks out beside the glyph.
+        fill: 0,
+        ring: 0,
+        icon: null,
+        ghost: { body: 1, line: MAP_PALETTE[theme].ghostInk, selected: 0 },
+      });
+    }
+    expect(evaluate(LAYER.ghostBody, "layout", "icon-image", ghost)?.toString()).toBe(MARK_IMAGE.ghostBody);
+    expect(evaluate(LAYER.ghostLine, "layout", "icon-image", ghost)?.toString()).toBe(MARK_IMAGE.ghostLine);
+    expect(evaluate(LAYER.ghostSelected, "layout", "icon-image", ghost)?.toString()).toBe(MARK_IMAGE.ghostSelected);
+  });
+
+  it("gives the ghost glyph only to the ghost tier", () => {
+    for (const id of ["fading", "quiet", "healthy", "state-lake", "quiet-no-data"]) {
+      for (const layer of [LAYER.ghostBody, LAYER.ghostLine, LAYER.ghostSelected, LAYER.ghostRing]) {
+        expect(passesFilter(layer, featureOf(id))).toBe(false);
+      }
+    }
+    expect(passesFilter(LAYER.marks, featureOf("ghost"))).toBe(false);
+    expect(passesFilter(LAYER.ring, featureOf("ghost"))).toBe(false);
+  });
+
+  it("sizes the ghost's box at GHOST_SCALE times a ring mark's outer diameter, at every zoom", () => {
+    const ghost = featureOf("ghost");
+    for (const zoom of [9, 10.4, 12, 13.5, 15, 17]) {
+      const radius = Number(evaluate(LAYER.dots, "paint", "circle-radius", ghost, {}, zoom));
+      const stroke = Number(evaluate(LAYER.dots, "paint", "circle-stroke-width", ghost, {}, zoom));
+      const iconSize = Number(evaluate(LAYER.ghostLine, "layout", "icon-size", ghost, {}, zoom));
+      expect(stroke).toBeCloseTo(radius * STROKE_RATIO);
+      expect(iconSize * ghostGeometry().box).toBeCloseTo(GHOST_SCALE * 2 * (radius + stroke));
+      // The selection ring clears the glyph's hem corners.
+      const ringRadius = Number(evaluate(LAYER.ghostRing, "paint", "circle-radius", ghost, {}, zoom));
+      expect(ringRadius).toBeCloseTo(iconSize * ghostGeometry().unit * GHOST_REACH);
+      expect(ringRadius).toBeGreaterThan((iconSize * ghostGeometry().box) / 2);
+    }
+    expect(GHOST_BOX).toBe(24);
+  });
+
   it("draws the closed mark as a 52% ring with the bar, and the no-data mark as a 44% dotted ring", () => {
-    expect(visibleInk(featureOf("state-lake"))).toEqual({ fill: 1, ring: 0.52, icon: 0.52 });
+    expect(visibleInk(featureOf("state-lake"))).toEqual({ fill: 1, ring: 0.52, icon: 0.52, ghost: null });
     expect(evaluate(LAYER.marks, "layout", "icon-image", featureOf("state-lake"))?.toString()).toBe(MARK_IMAGE.bar);
-    expect(visibleInk(featureOf("quiet-no-data"))).toEqual({ fill: 1, ring: 0, icon: 0.44 });
+    expect(visibleInk(featureOf("quiet-no-data"))).toEqual({ fill: 1, ring: 0, icon: 0.44, ghost: null });
     expect(evaluate(LAYER.marks, "layout", "icon-image", featureOf("quiet-no-data"))?.toString()).toBe(MARK_IMAGE.dotted);
   });
 
@@ -232,21 +288,36 @@ describe("station layer paint", () => {
   it("dims a filtered-out station's mark and label without hiding them", () => {
     const greenOff = { ...ALL_LINES_ON, Green: false };
     expect(visibleInk(featureOf("fading", greenOff)).ring).toBeCloseTo(0.72 * DIMMED.mark);
-    expect(visibleInk(featureOf("ghost", greenOff)).icon).toBeCloseTo(0.44 * DIMMED.mark);
+    expect(visibleInk(featureOf("ghost", greenOff)).ghost?.line).toBeCloseTo(MAP_PALETTE.dark.ghostInk * DIMMED.mark);
+    // Like a ring's hole, the ghost's body stays opaque.
+    expect(visibleInk(featureOf("ghost", greenOff)).ghost?.body).toBe(1);
     expect(evaluate(LAYER.labels, "paint", "text-opacity", featureOf("ghost", greenOff))).toBe(DIMMED.label);
   });
 
-  it("inverts the selected mark, rings it at 2px, and hides its dashes", () => {
+  it("inverts the selected mark and rings it at 2px", () => {
     const selected = { selected: true };
-    const ghost = featureOf("ghost");
-    expect(visibleInk(ghost, selected)).toEqual({ fill: 1, ring: 1, icon: 0 });
-    expect(evaluate(LAYER.dots, "paint", "circle-color", ghost, selected)?.toString()).toBe(rgba(MAP_PALETTE.dark.ink));
-    expect(evaluate(LAYER.dots, "paint", "circle-stroke-color", ghost, selected)?.toString()).toBe(
+    const fading = featureOf("fading");
+    expect(visibleInk(fading, selected)).toEqual({ fill: 1, ring: 1, icon: null, ghost: null });
+    expect(evaluate(LAYER.dots, "paint", "circle-color", fading, selected)?.toString()).toBe(rgba(MAP_PALETTE.dark.ink));
+    expect(evaluate(LAYER.dots, "paint", "circle-stroke-color", fading, selected)?.toString()).toBe(
       rgba(MAP_PALETTE.dark.surface),
     );
-    expect(evaluate(LAYER.ring, "paint", "circle-stroke-width", ghost, selected)).toBe(2);
-    expect(evaluate(LAYER.ring, "paint", "circle-stroke-opacity", ghost, selected)).toBe(1);
-    expect(evaluate(LAYER.ring, "paint", "circle-stroke-opacity", ghost)).toBe(0);
+    expect(evaluate(LAYER.ring, "paint", "circle-stroke-width", fading, selected)).toBe(2);
+    expect(evaluate(LAYER.ring, "paint", "circle-stroke-opacity", fading, selected)).toBe(1);
+    expect(evaluate(LAYER.ring, "paint", "circle-stroke-opacity", fading)).toBe(0);
+
+    // The closed mark's bar steps aside for the inverted dot too.
+    expect(visibleInk(featureOf("state-lake"), selected).icon).toBe(0);
+  });
+
+  it("inverts a selected ghost (ink body, surface outline) and rings it at 2px", () => {
+    const selected = { selected: true };
+    const ghost = featureOf("ghost");
+    expect(visibleInk(ghost, selected)).toEqual({ fill: 0, ring: 0, icon: null, ghost: { body: 0, line: 0, selected: 1 } });
+    expect(evaluate(LAYER.ghostRing, "paint", "circle-stroke-width", ghost, selected)).toBe(2);
+    expect(evaluate(LAYER.ghostRing, "paint", "circle-stroke-opacity", ghost, selected)).toBe(1);
+    expect(evaluate(LAYER.ghostRing, "paint", "circle-stroke-opacity", ghost, { hover: true })).toBe(0.6);
+    expect(evaluate(LAYER.ghostRing, "paint", "circle-stroke-opacity", ghost)).toBe(0);
   });
 
   it("shows the hovered or selected name at any zoom through the focus layer, and only there", () => {

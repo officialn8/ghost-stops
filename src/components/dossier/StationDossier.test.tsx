@@ -136,7 +136,7 @@ describe("the why card", () => {
       expect(within(part(key)).queryByText("n/a")).not.toBeInTheDocument();
     }
 
-    const why = section("Why it ranks here");
+    const why = section("Why it\u2019s fading");
     expect(within(why).getByRole("list", { name: "Data notes" })).toHaveTextContent("reopened Jul 2025");
     expect(within(why).queryByText(/small but/i)).not.toBeInTheDocument();
   });
@@ -146,12 +146,13 @@ describe("the why card", () => {
     const why = section("Why it is not ranked");
     expect(within(why).getByText(/^State\/Lake has been closed since Jan 2026\./)).toBeInTheDocument();
     expect(screen.queryByRole("list", { name: "Score parts" })).not.toBeInTheDocument();
-    expect(within(why).queryByText("Score")).not.toBeInTheDocument();
+    expect(within(why).queryByText("Ghost score")).not.toBeInTheDocument();
   });
 
   it("shows the 0 to 100 score once, with its tier, the 30-day average, and the weights", () => {
     renderDossier(dossierFixture("Damen (Green)"));
-    const why = section("Why it ranks here");
+    const why = section("Why it\u2019s quiet");
+    expect(within(why).getByText("Ghost score")).toBeInTheDocument();
     expect(screen.getAllByText("58")).toHaveLength(1);
     expect(within(why).getByText("58")).toBeInTheDocument();
     expect(within(why).getByText(/Quiet tier, scores 50 to 74\./)).toBeInTheDocument();
@@ -183,7 +184,7 @@ describe("the why card", () => {
 
   it("links the peers the residual used and states their median", () => {
     renderDossier(dossierFixture("Halsted (Green)"));
-    const why = section("Why it ranks here");
+    const why = section("Why it\u2019s a ghost stop");
     const peers = within(why).getByText(/^Peers:/);
     expect(within(peers).getByRole("link", { name: "Garfield" })).toHaveAttribute("href", "/station/garfield-green");
     expect(peers).toHaveTextContent("its nearest neighbors on the Green Line. Their median is 547 riders a day over the last 12 months.");
@@ -209,15 +210,17 @@ describe("the story", () => {
       const { container } = renderDossier(dossierFixture(station));
       const title = screen.getByRole("heading", { level: 3 });
       expect(["Gaining Riders.", "Holding Its Own."]).toContain(title.textContent);
-      expect(screen.getByRole("heading", { level: 2, name: "Why it ranks here" })).toBeInTheDocument();
+      expect(screen.getByRole("heading", { level: 2, name: "Why it\u2019s healthy" })).toBeInTheDocument();
       for (const heading of screen.getAllByRole("heading")) expect(heading.textContent).not.toMatch(/ghost/i);
-      expect(container.textContent).not.toMatch(/ghost/i);
+      // The metric keeps its name (the Ghost score), but a healthy station is never called a ghost.
+      expect(container.textContent).not.toMatch(/ghost stop|ghost tier|is a ghost/i);
+      expect(container.querySelector('[data-mark="ghost"]')).toBeNull();
     },
   );
 
   it("renders the story's figures as text, with no markup characters, and its evidence as a definition list", () => {
     renderDossier(dossierFixture("Halsted (Green)"));
-    const why = section("Why it ranks here");
+    const why = section("Why it\u2019s a ghost stop");
     expect(within(why).getByRole("heading", { level: 3, name: "The Suburban Shift." })).toBeInTheDocument();
     expect(why.textContent).not.toContain("*");
     expect(within(why).getByText("523", { selector: "strong" })).toHaveClass("font-mono");
@@ -231,7 +234,7 @@ describe("the story", () => {
 
   it("leaves the story out entirely when the response has none", () => {
     renderDossier(noNarrativeDossier());
-    const why = section("Why it ranks here");
+    const why = section("Why it\u2019s a ghost stop");
     expect(screen.getByRole("list", { name: "Score parts" })).toBeInTheDocument();
     expect(screen.queryByRole("heading", { level: 3 })).not.toBeInTheDocument();
     expect(within(why).queryByText("Evidence")).not.toBeInTheDocument();
@@ -326,5 +329,23 @@ describe("rendered text", () => {
     for (const el of container.querySelectorAll("[aria-label],[title]")) {
       expect(`${el.getAttribute("aria-label") ?? ""}${el.getAttribute("title") ?? ""}`).not.toMatch(/[–—]/);
     }
+  });
+});
+
+describe("the why heading", () => {
+  it.each<[FixtureStationName, string]>([
+    ["Halsted (Green)", "Why it’s a ghost stop"],
+    ["Lawrence", "Why it’s fading"],
+    ["Damen (Green)", "Why it’s quiet"],
+    ["Logan Square", "Why it’s healthy"],
+    ["State/Lake", "Why it is not ranked"],
+  ])("follows %s's own tier: %s", (station, heading) => {
+    renderDossier(dossierFixture(station));
+    expect(screen.getByRole("heading", { level: 2, name: heading })).toBeInTheDocument();
+  });
+
+  it("marks only a ghost-tier station with the ghost", () => {
+    const { container } = renderDossier(dossierFixture("Halsted (Green)"));
+    expect(container.querySelector('[data-mark="ghost"]')).not.toBeNull();
   });
 });

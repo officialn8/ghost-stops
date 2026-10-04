@@ -9,9 +9,9 @@ import type {
 import { noLineActive, passesLineFilter } from "@/components/shell/model";
 import type { ActiveLines } from "@/components/shell/ShellContext";
 import type { Theme } from "@/components/theme";
-import { CTA_LINE_ORDER, ctaLineColors, tierStyle, type CTALine, type TierMark } from "@/lib/utils";
+import { CTA_LINE_ORDER, ctaLineColors, tierStyle, type CTALine } from "@/lib/utils";
 import type { StationListItem } from "@/types/station";
-import { IMAGE_RADIUS, MARK_IMAGE, STROKE_RATIO, radiusStops } from "./marks";
+import { GHOST_REACH_PER_RADIUS, IMAGE_RADIUS, MARK_IMAGE, STROKE_RATIO, radiusStops } from "./marks";
 
 /**
  * The map's layers as data (U19, KTD13): what each station feature carries, and the paint and
@@ -27,14 +27,22 @@ import { IMAGE_RADIUS, MARK_IMAGE, STROKE_RATIO, radiusStops } from "./marks";
 export interface MapPalette {
   /** Text and marks: the theme's --ink. */
   ink: string;
-  /** Hollow mark interiors, label halos, and track casings: the theme's --surface. */
+  /** Hollow mark interiors, the ghost's body, label halos, and track casings: --surface. */
   surface: string;
+  /**
+   * The ghost glyph's outline and eyes: the theme's ink-3 alpha (--ink-3-alpha), as PresenceMark
+   * draws them (GHOST_INK). The 44% ring ink would fall below 3:1 on the light surface.
+   */
+  ghostInk: number;
 }
 
-/** The two themes' --ink and --surface from src/app/globals.css; layers.test.ts holds them equal. */
+/**
+ * The two themes' --ink, --surface, and --ink-3-alpha from src/app/globals.css; layers.test.ts
+ * holds them equal.
+ */
 export const MAP_PALETTE: Readonly<Record<Theme, MapPalette>> = {
-  dark: { ink: "#F2F1EC", surface: "#141518" },
-  light: { ink: "#141518", surface: "#F4F3EE" },
+  dark: { ink: "#F2F1EC", surface: "#141518", ghostInk: 0.52 },
+  light: { ink: "#141518", surface: "#F4F3EE", ghostInk: 0.62 },
 };
 
 /** Mapbox's monochrome base styles; their POI, transit, and road labels are hidden on load. */
@@ -53,8 +61,11 @@ export const SYSTEM_BOUNDS: [[number, number], [number, number]] = [
 // STATION FEATURES
 // ═══════════════════════════════════════════════════════════════
 
-/** A station's mark: a tier's, or one of the two marks for stations outside the ranking (R24). */
-export type StationMark = TierMark | "closed" | "no-data";
+/**
+ * A station's mark: a ring or dot for a ranked tier, the ghost glyph for the ghost tier (as
+ * PresenceMark draws it), or one of the two marks for stations outside the ranking (R24).
+ */
+export type StationMark = "solid" | "hollow" | "ghost" | "closed" | "no-data";
 
 /** PresenceMark's ink for the two marks outside the ranking: closed 52%, no data 44%. */
 export const EXCLUDED_INK: Readonly<Record<"closed" | "no-data", number>> = { closed: 0.52, "no-data": 0.44 };
@@ -68,7 +79,10 @@ export interface StationFeatureProperties {
   slug: string | null;
   name: string;
   mark: StationMark;
-  /** The mark's ink presence, 0 to 1. */
+  /**
+   * The mark's ink presence, 0 to 1, from tierStyle. The ghost glyph draws its outline at the
+   * theme's ink-3 instead (MapPalette.ghostInk), as PresenceMark does.
+   */
   ink: number;
   /** Ranked stations carry a name label; closed and no-data marks never do (AE2). */
   labeled: boolean;
@@ -80,8 +94,8 @@ export interface StationFeatureProperties {
 
 /**
  * A station's mark and ink. Ranked stations take their tier's from `tierStyle`, the one owner of
- * the tier-to-ink mapping (R17); a station outside the ranking is closed when its status says so
- * and otherwise has no recent data.
+ * the tier-to-ink mapping (R17), and a ghost-tier station is a ghost; a station outside the
+ * ranking is closed when its status says so and otherwise has no recent data.
  */
 export function stationMark(station: Pick<StationListItem, "tier" | "rank" | "status">): {
   mark: StationMark;
@@ -92,7 +106,8 @@ export function stationMark(station: Pick<StationListItem, "tier" | "rank" | "st
     return { mark, ink: EXCLUDED_INK[mark] };
   }
   const { mark, ink } = tierStyle(station.tier);
-  return { mark, ink };
+  if (station.tier === "ghost") return { mark: "ghost", ink };
+  return { mark: mark === "solid" ? "solid" : "hollow", ink };
 }
 
 /** Every station as a point feature, for the stations source. */
@@ -138,10 +153,18 @@ export const LAYER = {
   hit: "station-hit",
   /** Solid and hollow marks, and the selected mark's inverted dot. */
   dots: "station-dots",
-  /** The dashed, dotted, and barred marks a circle cannot draw (marks.ts). */
+  /** The dotted (no data) and barred (closed) marks a circle cannot draw (marks.ts). */
   marks: "station-marks",
-  /** The 2px selection ring, and a fainter one on hover. */
+  /** The ghost glyph's surface body, so tracks never show through it. */
+  ghostBody: "station-ghost-body",
+  /** The ghost glyph's outline and eyes, at the theme's ink-3. */
+  ghostLine: "station-ghost-line",
+  /** The selected ghost, inverted: ink body, surface outline and eyes. */
+  ghostSelected: "station-ghost-selected",
+  /** The 2px selection ring around a dot or ring mark, and a fainter one on hover. */
   ring: "station-ring",
+  /** The same ring, sized to clear the larger ghost glyph. */
+  ghostRing: "station-ghost-ring",
   /** Names from zoom 12.5, collision-managed. */
   labels: "station-labels",
   /** The hovered or selected station's name at any zoom. */
@@ -170,20 +193,35 @@ const HOVERED: ExpressionSpecification = ["boolean", ["feature-state", "hover"],
 const FOCUSED: ExpressionSpecification = ["any", SELECTED, HOVERED];
 const IS_DIMMED: ExpressionSpecification = ["boolean", ["get", "dimmed"], false];
 const MARK: ExpressionSpecification = ["get", "mark"];
+const IS_GHOST: ExpressionSpecification = ["==", MARK, "ghost"];
 const LABELED: ExpressionSpecification = ["==", ["get", "labeled"], true];
 const IS_LOOP: ExpressionSpecification = ["boolean", ["get", "is_loop"], false];
 
+/** Full presence, or less while the filter leaves out all the station's lines. */
+const PRESENCE: ExpressionSpecification = ["case", IS_DIMMED, DIMMED.mark, 1];
+
 /** The mark's ink: its tier's presence, less while the filter leaves out all its lines. */
-const INK: ExpressionSpecification = ["*", ["number", ["get", "ink"], 1], ["case", IS_DIMMED, DIMMED.mark, 1]];
+const INK: ExpressionSpecification = ["*", ["number", ["get", "ink"], 1], PRESENCE];
 
 function byZoom(stops: unknown[]): ExpressionSpecification {
   return ["interpolate", ["linear"], ["zoom"], ...stops];
 }
 
-/** The selection ring's radius: just outside the mark, times `scale` while it scales in. */
+/** The selection ring's radius: just outside a dot or ring mark, times `scale` while it scales in. */
 export function ringRadius(scale = 1): ExpressionSpecification {
   return byZoom(radiusStops((1 + STROKE_RATIO) * scale));
 }
+
+/** The selection ring's radius around a ghost: clear of its hem's corners. */
+export function ghostRingRadius(scale = 1): ExpressionSpecification {
+  return byZoom(radiusStops(GHOST_REACH_PER_RADIUS * scale));
+}
+
+/** The two selection ring layers and their radius at a scale, which the ring's scale-in animates. */
+export const RING_LAYERS: readonly { id: string; radius: (scale: number) => ExpressionSpecification }[] = [
+  { id: LAYER.ring, radius: ringRadius },
+  { id: LAYER.ghostRing, radius: ghostRingRadius },
+];
 
 const LABEL_FONT = ["DIN Pro Medium", "Arial Unicode MS Regular"];
 
@@ -255,25 +293,37 @@ export function trackCasingOpacity(line: CTALine, activeLines: ActiveLines): num
 }
 
 /**
- * The station layers, bottom to top. Radius follows zoom only. Paint reads the feature's mark and
+ * The station layers, bottom to top. Size follows zoom only. Paint reads the feature's mark and
  * ink, the `dimmed` flag, and the `selected` and `hover` feature state:
  *
  * - healthy: a solid ink dot; quiet and fading: a hollow ring at their ink over a surface hole.
- * - ghost and no data: the hole only, with the dashed or dotted ring drawn by the marks layer.
+ * - ghost: the ghost glyph, GHOST_SCALE times a ring's size, its body the opaque surface and its
+ *   outline and eyes at the theme's ink-3. The circle draws nothing for it.
+ * - no data: the surface hole, with the dotted ring from the marks layer.
  * - closed: a ring at 52% with the bar from the marks layer, and no label.
- * - selected: inverted, a full-ink dot with a surface gap, then a 2px ink ring.
+ * - selected: inverted, then ringed at 2px: a full-ink dot with a surface gap, or an ink ghost
+ *   with a surface outline and eyes.
  */
 export function stationLayers(palette: MapPalette): LayerSpecification[] {
-  const { ink, surface } = palette;
+  const { ink, surface, ghostInk } = palette;
   const radius = byZoom(radiusStops());
   const stroke = byZoom(radiusStops(STROKE_RATIO));
+  const iconLayout = (image: string | ExpressionSpecification): SymbolLayerSpecification["layout"] => ({
+    "icon-image": image,
+    // Every mark image is drawn for IMAGE_RADIUS, so this keeps each in step with the circles.
+    "icon-size": byZoom(radiusStops(1 / IMAGE_RADIUS)),
+    "icon-allow-overlap": true,
+    "icon-ignore-placement": true,
+    "icon-rotation-alignment": "viewport",
+    "icon-pitch-alignment": "viewport",
+  });
 
   const hit: CircleLayerSpecification = {
     id: LAYER.hit,
     type: "circle",
     source: SOURCE.stations,
     paint: {
-      "circle-radius": byZoom([9, 8, 13, 12, 17, 14]),
+      "circle-radius": byZoom([9, 8, 13, 12, 17, 16]),
       "circle-color": ink,
       "circle-opacity": 0,
       "circle-stroke-width": 0,
@@ -287,10 +337,10 @@ export function stationLayers(palette: MapPalette): LayerSpecification[] {
     paint: {
       "circle-radius": radius,
       "circle-color": ["case", SELECTED, ink, ["==", MARK, "solid"], ink, surface],
-      "circle-opacity": ["case", SELECTED, 1, ["==", MARK, "solid"], INK, 1],
+      "circle-opacity": ["case", IS_GHOST, 0, SELECTED, 1, ["==", MARK, "solid"], INK, 1],
       "circle-stroke-width": stroke,
       "circle-stroke-color": ["case", SELECTED, surface, ink],
-      "circle-stroke-opacity": ["case", SELECTED, 1, ["match", MARK, ["hollow-dashed", "no-data"], 0, INK]],
+      "circle-stroke-opacity": ["case", IS_GHOST, 0, SELECTED, 1, ["==", MARK, "no-data"], 0, INK],
     },
   };
 
@@ -298,33 +348,66 @@ export function stationLayers(palette: MapPalette): LayerSpecification[] {
     id: LAYER.marks,
     type: "symbol",
     source: SOURCE.stations,
-    filter: ["match", MARK, ["hollow-dashed", "no-data", "closed"], true, false],
-    layout: {
-      "icon-image": ["match", MARK, "hollow-dashed", MARK_IMAGE.dashed, "no-data", MARK_IMAGE.dotted, MARK_IMAGE.bar],
-      "icon-size": byZoom(radiusStops(1 / IMAGE_RADIUS)),
-      "icon-allow-overlap": true,
-      "icon-ignore-placement": true,
-      "icon-rotation-alignment": "viewport",
-      "icon-pitch-alignment": "viewport",
-    },
-    paint: {
-      "icon-opacity": ["case", SELECTED, 0, INK],
-    },
+    filter: ["match", MARK, ["no-data", "closed"], true, false],
+    layout: iconLayout(["match", MARK, "no-data", MARK_IMAGE.dotted, MARK_IMAGE.bar]),
+    paint: { "icon-opacity": ["case", SELECTED, 0, INK] },
   };
+
+  // The ghost is two images on two layers, so its body stays opaque while its outline takes the
+  // ink-3 alpha and the filter's dimming; selected, a third, inverted image replaces both.
+  const ghostBody: SymbolLayerSpecification = {
+    id: LAYER.ghostBody,
+    type: "symbol",
+    source: SOURCE.stations,
+    filter: IS_GHOST,
+    layout: iconLayout(MARK_IMAGE.ghostBody),
+    paint: { "icon-opacity": ["case", SELECTED, 0, 1] },
+  };
+
+  const ghostLine: SymbolLayerSpecification = {
+    id: LAYER.ghostLine,
+    type: "symbol",
+    source: SOURCE.stations,
+    filter: IS_GHOST,
+    layout: iconLayout(MARK_IMAGE.ghostLine),
+    paint: { "icon-opacity": ["case", SELECTED, 0, ["*", ghostInk, PRESENCE]] },
+  };
+
+  const ghostSelected: SymbolLayerSpecification = {
+    id: LAYER.ghostSelected,
+    type: "symbol",
+    source: SOURCE.stations,
+    filter: IS_GHOST,
+    layout: iconLayout(MARK_IMAGE.ghostSelected),
+    paint: { "icon-opacity": ["case", SELECTED, 1, 0] },
+  };
+
+  // Two ring layers, because the ghost needs a wider ring and a data-driven radius would not
+  // animate: mapbox-gl transitions only zoom-driven values.
+  const ringPaint = (radiusAt: (scale: number) => ExpressionSpecification): CircleLayerSpecification["paint"] => ({
+    "circle-radius": radiusAt(1),
+    "circle-radius-transition": INSTANT,
+    "circle-color": ink,
+    "circle-opacity": 0,
+    "circle-stroke-width": ["case", SELECTED, 2, 1],
+    "circle-stroke-color": ink,
+    "circle-stroke-opacity": ["case", SELECTED, 1, HOVERED, 0.6, 0],
+  });
 
   const ring: CircleLayerSpecification = {
     id: LAYER.ring,
     type: "circle",
     source: SOURCE.stations,
-    paint: {
-      "circle-radius": ringRadius(1),
-      "circle-radius-transition": INSTANT,
-      "circle-color": ink,
-      "circle-opacity": 0,
-      "circle-stroke-width": ["case", SELECTED, 2, 1],
-      "circle-stroke-color": ink,
-      "circle-stroke-opacity": ["case", SELECTED, 1, HOVERED, 0.6, 0],
-    },
+    filter: ["!", IS_GHOST],
+    paint: ringPaint(ringRadius),
+  };
+
+  const ghostRing: CircleLayerSpecification = {
+    id: LAYER.ghostRing,
+    type: "circle",
+    source: SOURCE.stations,
+    filter: IS_GHOST,
+    paint: ringPaint(ghostRingRadius),
   };
 
   const labelPaint = {
@@ -356,7 +439,7 @@ export function stationLayers(palette: MapPalette): LayerSpecification[] {
     paint: { ...labelPaint, "text-opacity": ["case", FOCUSED, 1, 0] },
   };
 
-  return [hit, dots, marks, ring, labels, focusLabel];
+  return [hit, dots, marks, ghostBody, ghostLine, ghostSelected, ring, ghostRing, labels, focusLabel];
 }
 
 // ═══════════════════════════════════════════════════════════════

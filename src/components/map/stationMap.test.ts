@@ -9,6 +9,7 @@ import {
   MAP_PALETTE,
   SOURCE,
   SUBDUED_LABEL_OPACITY,
+  ghostRingRadius,
   ringRadius,
   stationLayers,
   trackLayerId,
@@ -97,7 +98,16 @@ describe("StationMap after a style swap", () => {
 
     const labels = map.layers.find((l) => l.id === LAYER.labels);
     expect(labels?.paint).toMatchObject({ "text-color": MAP_PALETTE.light.ink, "text-halo-color": MAP_PALETTE.light.surface });
-    expect([...(map.images.get(MARK_IMAGE.dashed)?.image.data.slice(0, 3) ?? [])]).toEqual([0x14, 0x15, 0x18]);
+    expect(map.paintOf(LAYER.ghostLine, "icon-opacity")).toEqual(["case", expect.anything(), 0, ["*", MAP_PALETTE.light.ghostInk, expect.anything()]]);
+
+    // The ghost images are drawn again, in the light theme's ink and surface.
+    const pixels = (id: string) => map.images.get(id)?.image.data ?? new Uint8ClampedArray();
+    const opaque = (data: Uint8ClampedArray) => {
+      for (let i = 0; i < data.length; i += 4) if (data[i + 3] === 255) return [...data.slice(i, i + 3)];
+      return null;
+    };
+    expect(opaque(pixels(MARK_IMAGE.ghostLine))).toEqual([0x14, 0x15, 0x18]);
+    expect(opaque(pixels(MARK_IMAGE.ghostBody))).toEqual([0xf4, 0xf3, 0xee]);
   });
 
   it("holds changes made while the new style loads and applies them when it does", () => {
@@ -140,20 +150,25 @@ describe("StationMap selection and hover", () => {
     expect(map.stateOf(SOURCE.stations, "state-lake-id")).toEqual({ selected: false });
   });
 
-  it("scales the selected ring in over 200ms", () => {
+  it("scales the selected ring in over 200ms, around a ring mark or a ghost", () => {
     const { map, stationMap } = setup({ reducedMotion: false });
     stationMap.select("halsted-id");
     expect(map.paintOf(LAYER.ring, "circle-radius")).toEqual(ringRadius(RING_START_SCALE));
+    expect(map.paintOf(LAYER.ghostRing, "circle-radius")).toEqual(ghostRingRadius(RING_START_SCALE));
 
     map.fire("render");
-    expect(map.paintOf(LAYER.ring, "circle-radius-transition")).toEqual({ duration: RING_SCALE_MS, delay: 0 });
+    for (const id of [LAYER.ring, LAYER.ghostRing]) {
+      expect(map.paintOf(id, "circle-radius-transition")).toEqual({ duration: RING_SCALE_MS, delay: 0 });
+    }
     expect(map.paintOf(LAYER.ring, "circle-radius")).toEqual(ringRadius(1));
+    expect(map.paintOf(LAYER.ghostRing, "circle-radius")).toEqual(ghostRingRadius(1));
   });
 
   it("does not animate the ring for a reader who prefers reduced motion", () => {
     const { map, stationMap } = setup({ reducedMotion: true });
     stationMap.select("halsted-id");
     expect(map.paint.get(LAYER.ring)).toBeUndefined();
+    expect(map.paint.get(LAYER.ghostRing)).toBeUndefined();
     expect(map.paintOf(LAYER.ring, "circle-radius")).toEqual(ringRadius(1));
   });
 

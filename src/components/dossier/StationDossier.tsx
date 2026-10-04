@@ -10,7 +10,7 @@ import { Section } from "./parts";
 import { RidershipChart } from "./RidershipChart";
 import { SignHeader } from "./SignHeader";
 import { Sources } from "./Sources";
-import { standingOf } from "./standing";
+import { standingOf, whyHeading } from "./standing";
 import { WhyCard } from "./WhyCard";
 
 /**
@@ -41,7 +41,7 @@ export function StationDossier({ detail }: { detail: StationDetailResponse }) {
       </div>
       <SignHeader detail={detail} standing={standing} headingRef={headingRef} />
       <Baselines detail={detail} />
-      <Section title={standing.kind === "closed" || standing.kind === "no-data" ? "Why it is not ranked" : "Why it ranks here"}>
+      <Section title={whyHeading(standing)}>
         <WhyCard card={detail.whyCard} detail={detail} standing={standing} />
         {detail.narrative && (
           <div className="mt-6 border-t border-rule pt-5">

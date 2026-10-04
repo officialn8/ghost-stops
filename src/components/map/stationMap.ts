@@ -4,13 +4,12 @@ import { ALL_LINES_ON } from "@/components/shell/model";
 import type { ActiveLines } from "@/components/shell/ShellContext";
 import {
   EMPTY_COLLECTION,
-  LAYER,
+  RING_LAYERS,
   SOURCE,
   SUBDUED_LABEL_OPACITY,
   TRACK_RENDER_ORDER,
   baseStyleAdjustments,
   drawerPadding,
-  ringRadius,
   stationLayers,
   trackCasingId,
   trackCasingOpacity,
@@ -144,7 +143,7 @@ export class StationMap {
     for (const id of hide) map.setLayoutProperty(id, "visibility", "none");
     for (const id of subdue) map.setPaintProperty(id, "text-opacity", SUBDUED_LABEL_OPACITY);
 
-    for (const [id, image] of Object.entries(markImages(this.palette.ink, this.pixelRatio))) {
+    for (const [id, image] of Object.entries(markImages(this.palette, this.pixelRatio))) {
       if (!map.hasImage(id)) map.addImage(id, image, { pixelRatio: this.pixelRatio });
     }
 
@@ -274,19 +273,24 @@ export class StationMap {
   }
 
   /**
-   * The selected ring scales in over 200ms. Feature state never animates, so the ring layer's
+   * The selected ring scales in over 200ms. Feature state never animates, so the ring layers'
    * radius drops to half for one frame and then transitions back. Skipped entirely for a reader
    * who prefers reduced motion.
    */
   private scaleInRing(): void {
     const { map } = this;
-    if (this.reducedMotion() || !map.getLayer(LAYER.ring)) return;
-    map.setPaintProperty(LAYER.ring, "circle-radius-transition", { duration: 0, delay: 0 });
-    map.setPaintProperty(LAYER.ring, "circle-radius", ringRadius(RING_START_SCALE));
+    const rings = RING_LAYERS.filter(({ id }) => map.getLayer(id));
+    if (this.reducedMotion() || rings.length === 0) return;
+    for (const { id, radius } of rings) {
+      map.setPaintProperty(id, "circle-radius-transition", { duration: 0, delay: 0 });
+      map.setPaintProperty(id, "circle-radius", radius(RING_START_SCALE));
+    }
     map.once("render", () => {
-      if (!map.getLayer(LAYER.ring)) return;
-      map.setPaintProperty(LAYER.ring, "circle-radius-transition", { duration: RING_SCALE_MS, delay: 0 });
-      map.setPaintProperty(LAYER.ring, "circle-radius", ringRadius(1));
+      for (const { id, radius } of rings) {
+        if (!map.getLayer(id)) continue;
+        map.setPaintProperty(id, "circle-radius-transition", { duration: RING_SCALE_MS, delay: 0 });
+        map.setPaintProperty(id, "circle-radius", radius(1));
+      }
     });
   }
 }

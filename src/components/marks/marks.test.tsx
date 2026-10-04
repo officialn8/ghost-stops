@@ -4,15 +4,23 @@ import { LineBars } from "./LineBars";
 import { PresenceMark } from "./PresenceMark";
 
 describe("PresenceMark", () => {
-  it("draws healthy as a solid dot and ghost as a dashed ring at 44% ink", () => {
+  it("draws healthy as a solid dot and fading as a hollow ring at 72% ink", () => {
     const { container: healthy } = render(<PresenceMark tier="healthy" />);
     expect(healthy.querySelector("circle")).toHaveAttribute("fill", "currentColor");
 
-    const { container: ghost } = render(<PresenceMark tier="ghost" />);
-    const ring = ghost.querySelector("circle");
+    const { container: fading } = render(<PresenceMark tier="fading" />);
+    const ring = fading.querySelector("circle");
     expect(ring).toHaveAttribute("fill", "none");
-    expect(ring).toHaveAttribute("stroke-dasharray");
-    expect(ring).toHaveAttribute("opacity", "0.44");
+    expect(ring).toHaveAttribute("opacity", "0.72");
+  });
+
+  it("draws a ghost-tier station as a ghost, larger than the rings, in the AA-calibrated ink-3", () => {
+    const { container } = render(<PresenceMark tier="ghost" size={10} />);
+    const ghost = container.querySelector('[data-mark="ghost"]');
+    expect(ghost).not.toBeNull();
+    expect(ghost).toHaveAttribute("width", "15");
+    expect(ghost).toHaveAttribute("stroke", "rgb(var(--ink) / var(--ink-3-alpha))");
+    expect(ghost).toHaveAttribute("aria-hidden", "true");
   });
 
   it("crosses a closed station's ring with a bar and dots a no-data ring", () => {

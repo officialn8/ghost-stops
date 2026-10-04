@@ -1,3 +1,4 @@
+import { Ghost } from "lucide-react";
 import { tierStyle } from "@/lib/utils";
 import type { ScoreTierName } from "@/types/station";
 
@@ -8,6 +9,12 @@ export const TIER_LABEL: Readonly<Record<ScoreTierName, string>> = {
   quiet: "Quiet",
   healthy: "Healthy",
 };
+
+/** The ghost glyph's box relative to a ring mark's diameter: its body matches the ring's width. */
+export const GHOST_SCALE = 1.5;
+
+/** The ghost glyph's ink: the theme's ink-3 token (0.52 dark, 0.62 light; src/app/globals.css). */
+export const GHOST_INK = "rgb(var(--ink) / var(--ink-3-alpha))";
 
 /** Why a station sits outside the ranking (R24): closed, or no riders in recent data. */
 export type Exclusion = "closed" | "no-data";
@@ -28,7 +35,10 @@ export interface PresenceMarkProps {
  * - healthy: solid ink dot
  * - quiet: hollow ring, full ink
  * - fading: hollow ring at 72% ink
- * - ghost: dashed hollow ring at 44% ink
+ * - ghost: a small ghost (lucide's Ghost glyph), its body filled with the surface, drawn a size
+ *   larger than the rings so it reads at a glance. Its shape now says "ghost", so it takes the
+ *   ink-3 text token (the faintest ink that keeps AA contrast) rather than the 44% ring ink,
+ *   which drops below 3:1 on the light surface. Static: it never floats.
  * - closed: a ring crossed by a bar, like a no-entry sign, at 52% ink
  * - no data: a dotted ring at 44% ink
  *
@@ -60,6 +70,22 @@ export function PresenceMark({ tier, excluded = null, size = 10, className }: Pr
     );
   }
 
+  if (tier === "ghost") {
+    const glyph = Math.round(size * GHOST_SCALE);
+    return (
+      <Ghost
+        width={glyph}
+        height={glyph}
+        strokeWidth={2}
+        fill="rgb(var(--surface))"
+        stroke={GHOST_INK}
+        className={className}
+        aria-hidden
+        focusable="false"
+        data-mark="ghost"
+      />
+    );
+  }
   const { ink, mark } = tierStyle(tier);
   return (
     <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} className={className} aria-hidden focusable="false">

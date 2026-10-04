@@ -26,7 +26,7 @@ export function StationNotFound() {
           <CloseDrawer />
         </span>
       </div>
-      <h1 className="mt-2 font-narrow text-24 font-semibold">No station at this address</h1>
+      <h1 className="mt-2 font-narrow text-24 font-semibold">This stop doesn’t exist. Not even as a ghost.</h1>
       <p className="mt-2 text-15 text-ink-2">The link may be old or mistyped. Search for the station instead.</p>
       <label className="mt-6 block text-13 text-ink-2" htmlFor="not-found-search">
         Station name
