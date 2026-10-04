@@ -50,12 +50,13 @@ type Neighbor = {
     slug: string;
     displayName: string;
     status: string;
+    closedAt?: Date | null;
     metrics: (ReturnType<typeof metrics> & { tier?: string }) | null;
 };
 const BY_CTA_ID: Record<string, Neighbor> = {
     "40180": { id: "oak-park-uuid", name: "Oak Park (Blue)", slug: "oak-park-blue", displayName: "Oak Park", status: "ACTIVE", metrics: { ...metrics(1200, 55), tier: "QUIET" } },
     "40390": { id: "forest-park-uuid", name: "Forest Park", slug: "forest-park", displayName: "Forest Park", status: "ACTIVE", metrics: metrics(1800, 40) },
-    "40260": { id: "state-lake-uuid", name: "State/Lake", slug: "state-lake", displayName: "State/Lake", status: "CLOSED", metrics: null },
+    "40260": { id: "state-lake-uuid", name: "State/Lake", slug: "state-lake", displayName: "State/Lake", status: "CLOSED", closedAt: day("2026-01-05"), metrics: null },
     "40680": { id: "adams-wabash-uuid", name: "Adams/Wabash", slug: "adams-wabash", displayName: "Adams/Wabash", status: "ACTIVE", metrics: metrics(5000, 20) },
 };
 
@@ -323,6 +324,7 @@ describe("GET /api/chicago/stations/[slug] neighbors", () => {
             name: "Oak Park (Blue)",
             displayName: "Oak Park",
             status: "ACTIVE",
+            closedAt: null,
             rolling30dAvg: 1200,
             ghostScore: 55,
             tier: "quiet",
@@ -388,6 +390,8 @@ describe("GET /api/chicago/stations/[slug] neighbors", () => {
             name: "State/Lake",
             slug: "state-lake",
             status: "CLOSED",
+            // The row reads "closed Jan 2026" (AE2).
+            closedAt: "2026-01-05",
             ghostScore: null,
             tier: null,
         });

@@ -148,6 +148,7 @@ export async function readStationDetail(key: string): Promise<StationDetailResul
             slug: true,
             displayName: true,
             status: true,
+            closedAt: true,
             metrics: { select: { rolling30dAvg: true, ghostScore: true, dataStatus: true, tier: true } }
           }
         })
@@ -185,6 +186,7 @@ export async function readStationDetail(key: string): Promise<StationDetailResul
       name: found.name,
       displayName: found.displayName ?? found.name,
       status: found.status,
+      closedAt: optionalDay(found.closedAt),
       rolling30dAvg: found.metrics?.rolling30dAvg ?? 0,
     };
     const m = found.metrics;

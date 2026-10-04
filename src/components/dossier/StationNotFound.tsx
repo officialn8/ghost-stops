@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { LineBars } from "@/components/marks/LineBars";
 import { useShell } from "@/components/shell/ShellContext";
 import { BackToMap, CloseDrawer } from "./CloseControls";
 
@@ -18,14 +19,14 @@ export function StationNotFound() {
     : [];
 
   return (
-    <div className="px-5 pb-10 pt-3">
-      <div className="flex h-10 items-center justify-between">
+    <div className="px-5 pb-16">
+      <div className="flex h-14 items-center justify-between">
         <BackToMap />
         <span className="ml-auto">
           <CloseDrawer />
         </span>
       </div>
-      <h1 className="mt-4 font-narrow text-24 font-semibold">No station at this address</h1>
+      <h1 className="mt-2 font-narrow text-24 font-semibold">No station at this address</h1>
       <p className="mt-2 text-15 text-ink-2">The link may be old or mistyped. Search for the station instead.</p>
       <label className="mt-6 block text-13 text-ink-2" htmlFor="not-found-search">
         Station name
@@ -45,9 +46,12 @@ export function StationNotFound() {
           ) : (
             matches.map((s) => (
               <li key={s.id}>
-                <Link href={`/station/${s.slug}`} className="flex h-11 items-center border-b border-rule text-15 hover:bg-ink/[.04]">
-                  {s.displayName}
-                  <span className="ml-2 text-13 text-ink-2">{s.lines.join(", ")}</span>
+                <Link
+                  href={`/station/${s.slug}`}
+                  className="flex h-11 items-center gap-3 border-b border-rule px-1 text-15 hover:bg-ink/[.06]"
+                >
+                  <span className="min-w-0 truncate">{s.displayName}</span>
+                  <LineBars lines={s.lines} />
                 </Link>
               </li>
             ))

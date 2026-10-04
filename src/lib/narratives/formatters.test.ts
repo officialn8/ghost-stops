@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { isLevelChange } from "@/lib/format";
-import { formatChange, formatPercent, formatPercentChange, getFactLabel } from "./formatters";
+import { formatChange, formatPercent, formatPercentChange, formatTimeframe, getFactLabel } from "./formatters";
 
 describe("formatChange", () => {
   it("signs every change, with a decimal only when the whole percent would read as zero", () => {
@@ -47,4 +47,18 @@ describe("getFactLabel", () => {
   it("humanizes a key it does not know", () => {
     expect(getFactLabel("bus_routes_cut")).toBe("Bus Routes Cut");
   });
+});
+
+describe("formatTimeframe", () => {
+    it("writes a range of years in words, never with a dash (R19)", () => {
+        expect(formatTimeframe(2010, 2024)).toBe("2010 to 2024");
+        expect(formatTimeframe(2010, 2024, "as_of")).toBe("2010 to 2024");
+        expect(formatTimeframe(2010, 2024)).not.toMatch(/[\u2013\u2014]/);
+    });
+
+    it("collapses a one-year range and names open ends", () => {
+        expect(formatTimeframe(2019, 2019)).toBe("2019");
+        expect(formatTimeframe(2001, null)).toBe("since 2001");
+        expect(formatTimeframe(null, 2024)).toBe("as of 2024");
+    });
 });

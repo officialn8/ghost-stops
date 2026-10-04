@@ -137,11 +137,12 @@ export function formatTimeframe(
   switch (type) {
     case "since":
       return `since ${start}`;
+    // Words, not an en dash: rendered text carries no dashes (R19).
     case "as_of":
-      return `${start}–${end}`;
+      return `${start} to ${end}`;
     case "range":
     default:
-      return `${start}–${end}`;
+      return `${start} to ${end}`;
   }
 }
 

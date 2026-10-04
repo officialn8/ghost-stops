@@ -178,6 +178,8 @@ export interface NeighborEntry {
   name: string;
   displayName: string;
   status: StationStatus;
+  /** The day a closed neighbor closed (YYYY-MM-DD), so its row can say "closed Jan 2026" (AE2). */
+  closedAt: string | null;
   rolling30dAvg: number;
   ghostScore: number | null;
   tier: ScoreTierName | null;

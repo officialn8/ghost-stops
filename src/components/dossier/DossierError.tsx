@@ -19,14 +19,14 @@ export function DossierError({ reset }: { reset: () => void }) {
     });
 
   return (
-    <div className="px-5 pb-10 pt-3">
-      <div className="flex h-10 items-center justify-between">
+    <div className="px-5 pb-16">
+      <div className="flex h-14 items-center justify-between">
         <BackToMap />
         <span className="ml-auto">
           <CloseDrawer />
         </span>
       </div>
-      <div role="alert" className="mt-6 border-t border-rule pt-5">
+      <div role="alert" className="mt-2 border-t border-rule pt-5">
         <p className="text-15">This station could not be loaded.</p>
         <p className="mt-1 text-13 text-ink-2">The connection may have dropped. Try again in a moment.</p>
         <button
