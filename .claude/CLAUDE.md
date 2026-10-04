@@ -178,6 +178,7 @@ Migrations run only from an operator machine as `neondb_owner` over the direct h
 - On a phone's map page, the bottom sheet (vaul 1.1.2) always runs as a modal dialog: it hides the top bar and map from screen readers and keeps focus inside the sheet. Station pages unmount it. Replacing vaul with a non-modal sheet is the fix.
 - `/station/<unknown>` renders the not-found page with status 200 and `noindex`, because the route streams its loading state before `notFound()` runs.
 - Some track paths cannot be stitched into one line and are drawn as separate segments, which logs a warning in the browser console.
+- `npm audit` reports 15 high findings, all in build and dev tooling (`eslint-config-next`, `mapshaper`, Tailwind 3, the Prisma CLI's `mysql2` and `deepmerge-ts`). None runs when the app serves a request. Nate accepted them on 2026-10-04 (revival plan, Deferred / Open Questions); revisit when patched releases ship.
 
 ## Further reading
 
