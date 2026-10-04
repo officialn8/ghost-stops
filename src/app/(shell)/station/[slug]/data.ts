@@ -23,8 +23,7 @@ const KNOWN_SLUGS = new Set(
 
 /**
  * Only a station's slug or a retired slug is cached; anything else is read uncached, so arbitrary
- * URLs cannot fill the data cache with entries. That includes a station id, which the detail lookup
- * still accepts until the uuid fallback goes (KTD7, U23): it reads uncached, as the API route does.
+ * URLs cannot fill the data cache with entries.
  */
 export function cacheable(slug: string): boolean {
   return KNOWN_SLUGS.has(slug) || resolveSlugAlias(slug) !== undefined;

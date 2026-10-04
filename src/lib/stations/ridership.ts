@@ -14,7 +14,7 @@ type RawDb = Pick<PrismaClient, "$queryRaw">;
 
 export const SPARKLINE_DAYS = 7;
 
-/** The v1 chart's range: the station's last date and the 90 days before it. */
+/** The chart's range: the station's last date and the 90 days before it. */
 export const SERIES_DAYS_BEFORE_END = 90;
 
 export interface SparklineRow {

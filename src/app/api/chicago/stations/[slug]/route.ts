@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { readStationDetail } from "@/lib/stations/detail";
 
-/** GET /api/chicago/stations/{slug or uuid}: one station's detail (src/lib/stations/detail.ts). */
+/** GET /api/chicago/stations/{slug}: one station's detail (src/lib/stations/detail.ts). */
 export async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ slug: string }> }

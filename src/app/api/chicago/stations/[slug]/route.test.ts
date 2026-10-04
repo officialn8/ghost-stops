@@ -81,7 +81,7 @@ let peerStationRows: { id: string; slug: string; name: string; displayName: stri
 let closuresByCtaId: Record<string, { startDate: Date; endDate: Date | null }[]> = {};
 
 type StationWhere = {
-    OR?: { slug?: string; id?: string }[];
+    slug?: string;
     ctaStationId?: { in: string[] };
 };
 
@@ -117,14 +117,15 @@ function stationRow(ctaStationId: string | null, lines: string[], self: Self = {
 }
 
 /**
- * Stubs the station the route resolves (by slug or uuid), and any `others` its query may also
- * match, the neighbor lookup by CTA station id, and the peer lookup by station id.
+ * Stubs the station the route resolves by slug, the neighbor lookup by CTA station id, and the
+ * peer lookup by station id.
  */
-function stubStation(ctaStationId: string | null, lines: string[], self: Self = {}, others: Self[] = []) {
-    const rows = [stationRow(ctaStationId, lines, self), ...others.map((o) => stationRow(null, lines, o))];
+function stubStation(ctaStationId: string | null, lines: string[], self: Self = {}) {
+    const row = stationRow(ctaStationId, lines, self);
+    prismaMock.station.findFirst.mockImplementation((async (args: { where: StationWhere }) =>
+        args.where.slug === row.slug ? row : null) as never);
     prismaMock.station.findMany.mockImplementation((async (args: { where: StationWhere }) => {
-        const { OR, ctaStationId: byCtaId } = args.where;
-        if (OR) return rows.filter((row) => OR.some((c) => c.slug === row.slug || c.id === row.id));
+        const { ctaStationId: byCtaId } = args.where;
         if (byCtaId) {
             return byCtaId.in.flatMap((cta) =>
                 BY_CTA_ID[cta] ? [{ ctaStationId: cta, ...BY_CTA_ID[cta], closures: closuresByCtaId[cta] ?? [] }] : [],
@@ -168,8 +169,6 @@ beforeEach(() => {
     peerStationRows = [];
     closuresByCtaId = {};
     prismaMock.$queryRaw.mockResolvedValue([] as never);
-    prismaMock.stationMetrics.aggregate.mockResolvedValue({ _avg: { rolling30dAvg: 1000 } } as never);
-    prismaMock.station.count.mockResolvedValue(143);
     prismaMock.stationMetrics.findMany.mockResolvedValue([]);
     prismaMock.station.findMany.mockResolvedValue([]);
     prismaMock.stationFact.findMany.mockResolvedValue([]);
@@ -182,47 +181,29 @@ beforeEach(() => {
 });
 
 describe("GET /api/chicago/stations/[slug] resolution", () => {
-    it("resolves a slug, redirects a retired slug with 308, resolves a uuid, and answers 404 otherwise", async () => {
+    it("resolves a slug, redirects a retired slug with 308, and answers 404 for a station id or anything else (KTD7)", async () => {
         stubStation("40980", ["Blue"], { slug: "harlem-blue-forest-park", name: "Harlem", displayName: "Harlem" });
 
         const bySlug = await detail("harlem-blue-forest-park");
         expect(bySlug.station).toMatchObject({ id: STATION_UUID, slug: "harlem-blue-forest-park", displayName: "Harlem" });
-        // Slugs are unique per city, so the lookup is scoped to Chicago.
-        expect(prismaMock.station.findMany.mock.calls[0][0]).toMatchObject({
-            where: { OR: [{ slug: "harlem-blue-forest-park" }, { id: "harlem-blue-forest-park" }], city: { code: "chicago" } },
+        // Slugs are unique per city, so the lookup is scoped to Chicago, and it never matches an id.
+        expect(prismaMock.station.findFirst.mock.calls[0][0]).toMatchObject({
+            where: { slug: "harlem-blue-forest-park", city: { code: "chicago" } },
         });
 
         const alias = await get("harlem-forest-park");
         expect(alias.status).toBe(308);
         expect(alias.headers.get("location")).toBe("http://localhost/api/chicago/stations/harlem-blue-forest-park");
 
-        // The v1 panels fetch by uuid until U21.
-        prismaMock.station.findMany.mockClear();
-        expect((await detail(STATION_UUID)).station.slug).toBe("harlem-blue-forest-park");
-        expect(prismaMock.station.findMany.mock.calls[0][0]?.where).toEqual({
-            OR: [{ slug: STATION_UUID }, { id: STATION_UUID }],
-            city: { code: "chicago" },
-        });
-
-        const missing = await get("nowhere");
-        expect(missing.status).toBe(404);
-        expect(await missing.json()).toEqual({ error: "Station not found" });
-    });
-
-    it("prefers a slug match to an id match, and a retired slug to an id match (KTD7)", async () => {
-        // Two other stations whose ids read as this station's slug and as a retired slug.
-        stubStation("40980", ["Blue"], { slug: "harlem-blue-forest-park", name: "Harlem" }, [
-            { id: "harlem-blue-forest-park", slug: "other-1", name: "Other 1" },
-            { id: "harlem-forest-park", slug: "other-2", name: "Other 2" },
-        ]);
-
-        expect((await detail("harlem-blue-forest-park")).station.name).toBe("Harlem");
-        expect((await get("harlem-forest-park")).status).toBe(308);
-        expect((await detail("other-1")).station.name).toBe("Other 1");
+        for (const key of [STATION_UUID, "nowhere"]) {
+            const missing = await get(key);
+            expect(missing.status, key).toBe(404);
+            expect(await missing.json()).toEqual({ error: "Station not found" });
+        }
     });
 
     it("answers 500 without the error text when the database fails", async () => {
-        prismaMock.station.findMany.mockRejectedValue(new Error("connect ECONNREFUSED postgres://user:secret-pw@db.example.test/neondb"));
+        prismaMock.station.findFirst.mockRejectedValue(new Error("connect ECONNREFUSED postgres://user:secret-pw@db.example.test/neondb"));
         const logged = vi.spyOn(console, "error").mockImplementation(() => {});
 
         const response = await get("anything");
@@ -236,53 +217,55 @@ describe("GET /api/chicago/stations/[slug] resolution", () => {
     });
 });
 
-describe("GET /api/chicago/stations/[slug] v1 contract", () => {
-    it("carries every key the v1 panel, mobile layout, pills, and comparison bars read", async () => {
+describe("GET /api/chicago/stations/[slug] payload", () => {
+    it("carries the fields the dossier reads and none of the v1 panel's", async () => {
         stubStation("40980", ["Blue"], { metrics: v2Metrics() });
         const body = await detail();
 
-        // StationDetailPanel rejects a response without these two (src/components/station/StationDetailPanel.tsx).
-        expect(body.station).toBeTruthy();
-        expect(body.metrics).toBeTruthy();
-        const v1Keys = [
+        const keys = [
             "station.id",
-            "station.name",
-            "station.latitude",
-            "station.longitude",
+            "station.slug",
+            "station.displayName",
             "station.lines",
-            "station.ghostScore",
             "station.rolling30dAvg",
-            "station.trend",
+            "series",
+            "metrics.ranked",
+            "metrics.tier",
+            "metrics.avg12m",
+            "metrics.avg30d",
+            "comparisons.systemMedian",
+            "comparisons.primaryLine",
+            "comparisons.lineMedian",
+            "comparisons.neighbors.neighborAvg",
+            "comparisons.lineNeighbors",
+            "comparisons.vsSystemMedian",
+            "comparisons.vsLineMedian",
+            "comparisons.vsNeighbors",
+            "whyCard",
+            "facts",
+            "narrative",
+            "sources",
+        ];
+        for (const key of keys) expect(body, key).toHaveProperty(key);
+        const retired = [
             "ridershipSeries",
+            "station.ghostScore",
+            "station.trend",
             "metrics.ghostScore",
             "metrics.percentile",
             "metrics.systemAverage",
             "metrics.systemMedian",
             "metrics.explanation",
-            "metrics.ranked",
-            "comparisons.systemMedian",
-            "comparisons.primaryLine",
-            "comparisons.lineMedian",
-            "comparisons.neighbors.neighborAvg",
-            "comparisons.vsSystemMedian",
-            "comparisons.vsLineMedian",
-            "comparisons.vsNeighbors",
-            "facts",
-            "narrative",
-            "sources",
+            "comparisons.neighbors.prev.ghostScore",
+            "comparisons.lineNeighbors.prev.ghostScore",
         ];
-        for (const key of v1Keys) expect(body, key).toHaveProperty(key);
-        // NeighborPills reads id, name, and ghostScore; the v2 pills navigate by slug.
-        for (const side of ["prev", "next"] as const) {
-            for (const key of ["id", "slug", "name", "rolling30dAvg", "ghostScore"]) {
-                expect(body.comparisons.neighbors[side], `${side}.${key}`).toHaveProperty(key);
-            }
-        }
-        expect(body.metrics).toMatchObject({ ghostScore: 67, ranked: true });
-        expect(Array.isArray(body.ridershipSeries)).toBe(true);
+        for (const key of retired) expect(body, key).not.toHaveProperty(key);
+        // The system average and the percentile were the only readers of these three queries.
+        expect(prismaMock.stationMetrics.aggregate).not.toHaveBeenCalled();
+        expect(prismaMock.station.count).not.toHaveBeenCalled();
     });
 
-    it("adds the v2 fields beside the v1 ones", async () => {
+    it("states the station's identity, standing, and score version", async () => {
         stubStation("40770", ["Red"], {
             slug: "lawrence",
             name: "Lawrence",
@@ -326,10 +309,9 @@ describe("GET /api/chicago/stations/[slug] neighbors", () => {
             status: "ACTIVE",
             closedAt: null,
             rolling30dAvg: 1200,
-            ghostScore: 55,
             tier: "quiet",
         });
-        expect(result.next).toMatchObject({ id: "forest-park-uuid", slug: "forest-park", name: "Forest Park", ghostScore: 40 });
+        expect(result.next).toMatchObject({ id: "forest-park-uuid", slug: "forest-park", name: "Forest Park" });
         expect(result.neighborAvg).toBe(1500);
     });
 
@@ -351,7 +333,7 @@ describe("GET /api/chicago/stations/[slug] neighbors", () => {
         );
     });
 
-    it("names a closed or no-rider neighbor without a score in the line walk, and leaves it out of the v1 pills and the average", async () => {
+    it("names a closed or no-rider neighbor without a tier in the line walk, and leaves it out of the ranked pair and the average", async () => {
         const stateLake = BY_CTA_ID["40260"];
         const variants: Neighbor[] = [
             { ...stateLake, metrics: metrics(0, -1, "zero") }, // what the sync writes for State/Lake
@@ -368,10 +350,9 @@ describe("GET /api/chicago/stations/[slug] neighbors", () => {
                     id: "state-lake-uuid",
                     slug: "state-lake",
                     status: variant.status,
-                    ghostScore: null,
                     tier: null,
                 });
-                // v1: an unranked neighbor is null, so the v1 pills show no badge for it.
+                // An unranked neighbor stays out of the ranked pair behind the neighbor average.
                 expect(body.comparisons.neighbors.prev).toBeNull();
                 expect(body.comparisons.neighbors.neighborAvg).toBe(5000);
                 expect(body.comparisons.vsNeighbors).toBe(-94);
@@ -392,13 +373,12 @@ describe("GET /api/chicago/stations/[slug] neighbors", () => {
             status: "CLOSED",
             // The row reads "closed Jan 2026" (AE2).
             closedAt: "2026-01-05",
-            ghostScore: null,
             tier: null,
         });
-        expect(body.comparisons.lineNeighbors.next).toMatchObject({ name: "Adams/Wabash", slug: "adams-wabash", ghostScore: 20 });
-        // v1 compatibility: the closed neighbor is null where the v1 pills read it.
+        expect(body.comparisons.lineNeighbors.next).toMatchObject({ name: "Adams/Wabash", slug: "adams-wabash" });
+        // The closed neighbor is left out of the ranked pair, so it never enters the neighbor average.
         expect(body.comparisons.neighbors.prev).toBeNull();
-        expect(body.comparisons.neighbors.next).toMatchObject({ name: "Adams/Wabash", slug: "adams-wabash", ghostScore: 20 });
+        expect(body.comparisons.neighbors.next).toMatchObject({ name: "Adams/Wabash", slug: "adams-wabash" });
         expect(body.comparisons.neighbors.neighborAvg).toBe(5000);
     });
 });
@@ -418,54 +398,27 @@ describe("GET /api/chicago/stations/[slug] peer comparisons", () => {
 
         const body = await detail();
         expect(body.comparisons.systemMedian).toBe(2000);
-        expect(body.metrics.systemMedian).toBe(2000);
         expect(body.comparisons.lineMedian).toBe(1500);
     });
 
-    it("explains a station outside the ranking instead of comparing it", async () => {
+    it("marks a closed or no-data station as outside the ranking", async () => {
         prismaMock.stationMetrics.findMany.mockResolvedValue([peer(1000, ["Brown"]), peer(2000, ["Brown"])] as never);
-        const closed = "This station is closed, so it is not compared with other stations.";
-        const noData = "No ridership data available for this station.";
         const cases = [
-            { self: { status: "CLOSED", metrics: metrics(0, -1, "zero") }, explanation: closed }, // State/Lake after the sync
-            { self: { status: "CLOSED", metrics: metrics(300, 30) }, explanation: closed }, // closed this week
-            { self: { status: "TEMP_CLOSED", metrics: null }, explanation: closed },
-            { self: { metrics: metrics(0.4, 45, "zero") }, explanation: noData },
-            { self: { metrics: metrics(0, -1, "missing") }, explanation: noData },
-            { self: { metrics: null }, explanation: noData },
+            { status: "CLOSED", metrics: metrics(0, -1, "zero") }, // State/Lake after the sync
+            { status: "CLOSED", metrics: metrics(300, 30) }, // closed this week
+            { status: "TEMP_CLOSED", metrics: null },
+            { metrics: metrics(0.4, 45, "zero") },
+            { metrics: metrics(0, -1, "missing") },
+            { metrics: null },
         ];
-        for (const { self, explanation } of cases) {
+        for (const self of cases) {
             stubStation(null, ["Brown"], self);
-            const { metrics: result } = await detail();
-            expect(result.explanation).toBe(explanation);
-            // The panels hide the percentile line and the comparison bars when ranked is false.
-            expect(result.ranked).toBe(false);
+            // The dossier hides the baselines when ranked is false.
+            expect((await detail()).metrics.ranked).toBe(false);
         }
 
         stubStation(null, ["Brown"]);
         expect((await detail()).metrics.ranked).toBe(true);
-    });
-
-    it("counts only ranked stations in the system average and percentile", async () => {
-        stubStation("40980", ["Blue"]);
-        await detail();
-
-        expect(prismaMock.stationMetrics.aggregate).toHaveBeenCalledWith({
-            where: { station: { cityId: CITY, status: "ACTIVE" }, dataStatus: "normal" },
-            _avg: { rolling30dAvg: true },
-        });
-        expect(prismaMock.station.count).toHaveBeenCalledWith({
-            where: { cityId: CITY, status: "ACTIVE", metrics: { dataStatus: "normal" } },
-        });
-        expect(prismaMock.station.count).toHaveBeenCalledWith({
-            where: { cityId: CITY, status: "ACTIVE", metrics: { dataStatus: "normal", rolling30dAvg: { lt: 300 } } },
-        });
-    });
-
-    it("gives a station with no metrics row percentile 0, not the share of every ranked station", async () => {
-        stubStation("40980", ["Blue"], { metrics: null });
-        // The count mock answers 143 for any filter: a dropped ridership filter would read as 100.
-        expect((await detail()).metrics.percentile).toBe(0);
     });
 });
 
@@ -479,7 +432,7 @@ describe("GET /api/chicago/stations/[slug] freshness and series", () => {
         expect(prismaMock.syncRun.findFirst).toHaveBeenCalledWith(expect.objectContaining({ where: { status: "OK" } }));
     });
 
-    it("fills the series with a gap for each missing day and keeps ridershipSeries to the days with rows", async () => {
+    it("fills the series with a gap for each missing day", async () => {
         stubStation("40980", ["Blue"], { metrics: v2Metrics() });
         prismaMock.$queryRaw.mockResolvedValue([
             { serviceDate: "2026-05-02", entries: 100, dayType: "A" },
@@ -488,11 +441,6 @@ describe("GET /api/chicago/stations/[slug] freshness and series", () => {
         ] as never);
 
         const body = await detail();
-        expect(body.ridershipSeries).toEqual([
-            { date: "2026-05-02", entries: 100 },
-            { date: "2026-07-29", entries: 120 },
-            { date: "2026-07-31", entries: 80 },
-        ]);
         expect(body.series).toMatchObject({ start: "2026-05-02", end: "2026-07-31" });
         expect(body.series!.days).toHaveLength(91);
         expect(body.series!.days[0]).toEqual({ date: "2026-05-02", entries: 100, dayType: "A" });
@@ -514,14 +462,13 @@ describe("GET /api/chicago/stations/[slug] freshness and series", () => {
 
         const body = await detail();
         expect(body.series).toMatchObject({ start: "2026-05-07", end: "2026-08-05" });
-        expect(body.ridershipSeries).toEqual([{ date: "2026-08-05", entries: 80 }]);
+        expect(body.series!.days.filter((d) => d.entries !== null)).toEqual([{ date: "2026-08-05", entries: 80, dayType: "W" }]);
     });
 
     it("returns a null series for a station with no ridership", async () => {
         stubStation("40980", ["Blue"], { metrics: null });
         const body = await detail();
         expect(body.series).toBeNull();
-        expect(body.ridershipSeries).toEqual([]);
     });
 });
 

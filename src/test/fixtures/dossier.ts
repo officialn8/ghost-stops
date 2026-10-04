@@ -26,7 +26,6 @@ import { tierName, toUiDataStatus } from "@/lib/utils";
 import type { ArchetypeKey, DataSourceInfo, FactKey } from "@/types/narrative";
 import type {
   NeighborEntry,
-  RankedNeighborEntry,
   StationDetailFact,
   StationDetailFacts,
   StationDetailResponse,
@@ -220,15 +219,14 @@ export function dossierFixture(name: FixtureStationName, options: DossierOptions
       status: statusOf(i),
       closedAt: closedAtOf(i),
       rolling30dAvg: avg30(i),
-      ghostScore: s.score,
       tier: tierName(s.tier),
     };
   };
   const neighborIds = primaryLineNeighbors(ctaStationId, self.lines);
   const prev = neighborEntry(neighborIds?.prev);
   const next = neighborEntry(neighborIds?.next);
-  const rankedOnly = (n: NeighborEntry | null): RankedNeighborEntry | null =>
-    n !== null && n.ghostScore !== null && n.status === "ACTIVE" ? (n as RankedNeighborEntry) : null;
+  const rankedOnly = (n: NeighborEntry | null): NeighborEntry | null =>
+    n !== null && n.tier !== null && n.status === "ACTIVE" ? n : null;
   const neighborAvg = mean([rankedOnly(prev), rankedOnly(next)].flatMap((n) => (n ? [n.rolling30dAvg] : []))) ?? 0;
 
   const own30 = self.avg30d ?? 0;
@@ -317,9 +315,7 @@ export function dossierFixture(name: FixtureStationName, options: DossierOptions
       latitude: 41.88,
       longitude: -87.63,
       lines: self.lines,
-      ghostScore: columns.ghostScore,
       rolling30dAvg: self.avg30d,
-      trend: null,
       slug: self.slug,
       displayName: self.displayName,
       status: input.status,
@@ -327,14 +323,8 @@ export function dossierFixture(name: FixtureStationName, options: DossierOptions
       openedAt: input.openedAt,
       dataStatus: toUiDataStatus(input.dataStatus),
     },
-    ridershipSeries: self.days.map((d) => ({ date: d.serviceDate, entries: d.entries })),
     series: seriesStart && seriesEnd ? seriesFor(seriesStart, seriesEnd, self.days) : null,
     metrics: {
-      ghostScore: columns.ghostScore,
-      percentile: 0,
-      systemAverage: Math.round(mean(rankedIdx.map(avg30)) ?? 0),
-      systemMedian: Math.round(systemMedian),
-      explanation: "",
       ranked: score.ranked,
       tier: tierName(score.tier),
       rank: score.rank,
