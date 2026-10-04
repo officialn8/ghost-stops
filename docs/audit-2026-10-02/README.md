@@ -9,6 +9,14 @@ Four parallel read-only audits of the repo after eight idle months (last commit 
 
 Reproduction script for the score analysis: the `analyze.py` referenced in ghost-score.md reproduces the stored score for all 143 stations exactly.
 
+## Resolved since the audit
+
+The audit's documents disagree in three places. The revival plan (`docs/plans/2026-10-02-2208-feat-ghost-stops-revival-plan.md`) settled each one, and short notes at each spot point back here.
+
+1. **Tier count.** design.md proposes three ink buckets (ghost, fading, present); ghost-score.md and this README propose four tiers. Four were built (plan KTD10): ghost is a score of 90 or more, fading 75 to 89, quiet 50 to 74, healthy under 50. Ghost marks are hollow and dashed at 44% ink, fading hollow at 72%, quiet hollow at full ink, healthy solid. `getTier` in `src/lib/utils.ts` is the one place that maps them.
+2. **"Nov 29".** design.md's mock top bar reads "Data through Nov 29, 2025", but the data ended 30 Nov 2025. The 29 was a time-zone off-by-one in the old UI. Dates are now calendar strings end to end (plan KTD17), and `serviceDate` became a `DATE` column in the schema v2 migration (plan U5).
+3. **Phase 1 scope.** The Phase 1 list below and data-pipeline.md section 7 load only a window from 2024-10-01 through the Go ETL, while ghost-score.md's v2 model needs history back to at least 2019. The plan's Phase 1 loaded the full history instead: the schema v2 migration with the station identity fixes (U5), then the deduplicated history from 2001-01-02 to 2025-11-30 loaded into Neon (U8). The months after that came in Phase 2 from the TypeScript sync, which replaced the Go ETL.
+
 ## State of the system in one paragraph
 
 The site at ghost-stops.vercel.app is up and the map renders. The Neon Postgres behind it is reachable and holds ridership through 30 Nov 2025 with metrics computed 1 Feb 2026. Upstream CTA data at the Chicago Data Portal now runs through 31 Jul 2026 and was last updated 28 Sep 2026. The Go ETL has never fed production: it only speaks SQLite, the Railway service builds against a SQLite volume, and every Railway deployment from 2 Feb 2026 onward failed (checked via the Railway connector; build logs have since expired). The detail API returns 500 for about half of concurrent requests because each route creates and disconnects its own Prisma client against the Neon pooler. The January 2026 redesign shipped as a visual skin on an unchanged information architecture, and roughly half of the current UI is dead or broken.
@@ -60,6 +68,8 @@ Phases are ordered so the data is trustworthy before the redesign shows it. Each
 - Fix the `strings` import so `go build ./...` passes.
 
 ### Phase 1: Current, correct data in production (one to two days)
+
+*Resolved: the plan's Phase 1 loaded the full history, not this window. See "Resolved since the audit", item 3.*
 
 - Dedupe the local SQLite (drop non-RFC3339 twins and orphans). Normalize `serviceDate` in both writers.
 - Fix station identities: Western swap, Washington id, Jefferson Park id, add State/Lake with a `status`/`closedAt` field (needs a small migration), fix `Station.lines` for the four Loop stations and Wilson, add Damen to the Green sequence, resolve the four alias collisions.
