@@ -222,36 +222,39 @@ describe("closing", () => {
     expect(navigation.push).toHaveBeenCalledWith("/");
   });
 
-  it("closes on Escape on a phone, where the bottom sheet stays mounted under the station page", async () => {
+  it("keeps a phone's station page readable: no sheet mounted, nothing hidden from screen readers, Escape closes", async () => {
     asPhone();
     navigation.params = { slug: "halsted-green" };
     answerList(listPayload());
-    renderShell(
+    const { container } = renderShell(
       <Shell>
         <FakeDossier name="Halsted" />
       </Shell>,
     );
 
-    // The phone layout: no ledger column, and the sheet's ledger mounted (CSS hides it here).
+    // vaul 1.1.2 renders its dialog as modal whatever `modal` says, which would mark the rest of
+    // the page aria-hidden and trap focus; the sheet belongs to the map page only.
+    await waitFor(() => expect(fetch).toHaveBeenCalled());
+    expect(screen.queryByRole("dialog", { name: "Stations" })).not.toBeInTheDocument();
     expect(screen.queryByRole("complementary", { name: "Stations" })).not.toBeInTheDocument();
-    const sheet = await screen.findByRole("dialog", { name: "Stations" });
-    await waitFor(() => expect(within(sheet).getAllByRole("button", { name: /King Drive/ }).length).toBeGreaterThan(0));
+    expect(container.querySelector("[aria-hidden=true] [data-dossier-name], [aria-hidden=true] [data-testid=dossier]")).toBeNull();
+    expect(document.body.querySelector(":scope > div[aria-hidden=true]")).toBeNull();
 
     await userEvent.keyboard("{Escape}");
     expect(navigation.push).toHaveBeenCalledWith("/");
   });
 
-  it("lets a non-empty search field in the phone's sheet clear itself without closing", async () => {
+  it("mounts the phone's sheet on the map, where a non-empty search clears itself on Escape", async () => {
     asPhone();
-    navigation.params = { slug: "halsted-green" };
     answerList(listPayload());
     renderShell(
       <Shell>
-        <FakeDossier name="Halsted" />
+        <SelectionProbe />
       </Shell>,
     );
 
     const sheet = await screen.findByRole("dialog", { name: "Stations" });
+    await waitFor(() => expect(within(sheet).getAllByRole("button", { name: /King Drive/ }).length).toBeGreaterThan(0));
     const search = within(sheet).getByRole("searchbox", { name: "Search stations" });
     // Focused, not clicked: vaul's pointerdown calls setPointerCapture, which jsdom lacks.
     act(() => search.focus());

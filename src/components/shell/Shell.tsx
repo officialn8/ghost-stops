@@ -154,7 +154,10 @@ export function Shell({ children }: { children: React.ReactNode }) {
               {isOpen ? <Drawer entrance={!arrivedOpen}>{children}</Drawer> : children}
             </main>
           </div>
-          {isPhone && <MobileSheet hidden={isOpen} />}
+          {/* The sheet belongs to the phone's map page. vaul 1.1.2 renders it as a modal dialog
+              whatever `modal` says (it never hands `modal` to Radix), which marks the rest of the
+              page aria-hidden and traps focus, so a station page must not have it mounted. */}
+          {isPhone && !isOpen && <MobileSheet />}
         </div>
       </MotionConfig>
     </ShellContext.Provider>
