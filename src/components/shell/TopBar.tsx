@@ -15,18 +15,18 @@ export function TopBar() {
   const dataThrough = list.status === "ready" ? list.data.dataThrough : null;
 
   return (
-    <header className="z-chrome flex h-14 shrink-0 items-center gap-3 border-b border-rule bg-surface px-4 md:gap-4 md:px-5">
+    <header className="z-chrome flex h-14 shrink-0 items-center gap-2 whitespace-nowrap border-b border-rule bg-surface px-4 md:gap-4 md:px-5">
       <Link
         href="/"
-        className="-mx-1 flex items-center gap-2 rounded px-1 py-1"
+        className="-mx-1 flex shrink-0 items-center gap-1.5 rounded px-1 py-1 md:gap-2"
         aria-label="Ghost Stops: back to the map"
       >
         <Ghost className="h-5 w-5 shrink-0" strokeWidth={1.75} aria-hidden data-logo />
-        <span className="font-narrow text-18 font-bold uppercase tracking-[0.06em]">Ghost Stops</span>
+        <span className="font-narrow text-15 font-bold uppercase tracking-[0.06em] md:text-18">Ghost Stops</span>
         <span className="hidden text-13 text-ink-2 md:inline">Chicago L</span>
       </Link>
       <p
-        className="ml-auto text-13 text-ink-2"
+        className="ml-auto min-w-0 truncate text-13 text-ink-2"
         title="CTA publishes daily ridership about two months after the fact."
       >
         {dataThrough && (

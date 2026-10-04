@@ -33,7 +33,9 @@ export function SignHeader({
       <h1
         ref={headingRef}
         tabIndex={-1}
-        className="break-words font-narrow text-36 font-bold uppercase"
+        // Focus lands here on open so screen readers start at the name (R28); it is not a control,
+        // so it draws no focus ring.
+        className="break-words font-narrow text-36 font-bold uppercase outline-none"
         data-dossier-heading
       >
         {displayName}
