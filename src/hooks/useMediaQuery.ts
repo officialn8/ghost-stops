@@ -1,42 +1,23 @@
-import { useState, useEffect } from 'react';
+import { useSyncExternalStore } from "react";
 
+/**
+ * Whether a media query matches, for the few things CSS cannot decide: mounting the phone's
+ * bottom sheet (a portal) and choosing the map camera's padding. Layout itself is CSS (KTD13).
+ * The server and the first client render report false.
+ */
 export function useMediaQuery(query: string): boolean {
-  const [matches, setMatches] = useState(false);
-
-  useEffect(() => {
-    const media = window.matchMedia(query);
-
-    // Set the initial state
-    setMatches(media.matches);
-
-    // Define the listener
-    const listener = (event: MediaQueryListEvent) => {
-      setMatches(event.matches);
-    };
-
-    // Add the listener
-    if (media.addEventListener) {
-      media.addEventListener('change', listener);
-    } else {
-      // Fallback for older browsers
-      media.addListener(listener);
-    }
-
-    // Clean up
-    return () => {
-      if (media.removeEventListener) {
-        media.removeEventListener('change', listener);
-      } else {
-        // Fallback for older browsers
-        media.removeListener(listener);
-      }
-    };
-  }, [query]);
-
-  return matches;
+  return useSyncExternalStore(
+    (onChange) => {
+      const media = window.matchMedia(query);
+      media.addEventListener("change", onChange);
+      return () => media.removeEventListener("change", onChange);
+    },
+    () => window.matchMedia(query).matches,
+    () => false,
+  );
 }
 
-// Preset breakpoints
-export const useIsMobile = () => useMediaQuery('(max-width: 768px)');
-export const useIsTablet = () => useMediaQuery('(min-width: 769px) and (max-width: 1024px)');
-export const useIsDesktop = () => useMediaQuery('(min-width: 1025px)');
+/** The phone layout: below Tailwind's md breakpoint (768px). */
+export const PHONE_QUERY = "(max-width: 767.98px)";
+
+export const useIsPhone = () => useMediaQuery(PHONE_QUERY);
