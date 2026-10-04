@@ -1,393 +1,188 @@
-# Ghost Stops - Claude AI Development Guide
+# Ghost Stops
 
-A comprehensive guide for working with the Ghost Stops CTA ridership analytics platform.
+Ghost Stops ranks Chicago's 144 CTA "L" stations by how empty they are for their context, and explains each ranking in plain words. Live at https://ghost-stops.vercel.app.
 
-## Project Overview
+The ranking is the **Ghost score**: a 0 to 100 percentile over the ranked stations, where 100 is the most ghost-like. Every station has a shareable page at `/station/[slug]` with its riders per day, its tier, a "why this score" card, a story, and the stations beside it on the line.
 
-Ghost Stops is a data visualization platform that identifies Chicago CTA "ghost stations" - stations with unusually low ridership relative to their context. The platform combines ridership data, multi-factor analysis, and interactive visualizations to explain *why* certain stations are underutilized.
+## Stack
 
-### Technology Stack
+- **App:** Next.js 16 (App Router, Turbopack), React 19, TypeScript, Tailwind CSS 3 with the theme replaced by design tokens.
+- **Data:** Neon Postgres through Prisma 7 (`@prisma/adapter-pg` over one `pg` pool). The client is generated into `src/generated/prisma` and is not committed.
+- **Map:** Mapbox GL JS through `react-map-gl`, with stations as circle and symbol layers.
+- **Motion:** `motion` 14, imported from `motion/react`.
+- **Hosting:** Vercel, with Fluid compute and two Vercel Cron schedules for the ridership sync.
+- **Source data:** CTA daily station entries, Chicago Data Portal dataset `5neh-572f`, read over Socrata's SODA API.
 
-- **Frontend**: Next.js 14 (App Router), React, TypeScript, Tailwind CSS
-- **Backend**: Next.js API Routes, Go ETL pipeline
-- **Database**: SQLite via Prisma ORM
-- **Mapping**: Mapbox GL JS with custom layers
-- **Animations**: Framer Motion, React Spring
-- **Charts**: Recharts (main charts), Custom SVG (sparklines)
+## Commands
 
-### Key Features
+```bash
+npm install          # also runs `prisma generate` (postinstall)
+npm run dev          # dev server on :3000; needs DATABASE_URL and NEXT_PUBLIC_MAPBOX_TOKEN
+npm run build        # production build
+npm run lint         # eslint ., including the server-only import rule
+npx tsc --noEmit     # type check
+npm test             # unit (node) and components (jsdom) projects; no database
+npm run test:db      # database project; needs a local Postgres with migrations applied
+npx tsx scripts/run-sync.ts [--since YYYY-MM-DD] [--station-id ID] [--reconcile]   # sync from a shell
+```
 
-- **Ghost Score Ranking**: Multi-factor composite scoring to identify underutilized stations
-- **Interactive Map**: Mapbox visualization with route segments colored by ridership
-- **Station Comparisons**: System median, line median, and neighbor station comparisons
-- **Sparklines**: 7-day trend visualization in station lists
-- **Mobile Support**: Responsive design with bottom sheet navigation
+Prisma 7 does not read `.env`. Next reads `.env.local` and `.env.development.local` for the dev server, but the Prisma CLI, `scripts/*`, and `npm run test:db` need the variables exported in the shell. `.env.example` lists them all.
 
----
-
-## Architecture
-
-### Frontend Structure (`src/`)
+## Layout
 
 ```
 src/
 ├── app/
-│   ├── api/chicago/stations/      # Station data API routes
-│   │   ├── route.ts               # List all stations with sparklines
-│   │   └── [id]/route.ts          # Station detail with comparisons
-│   └── page.tsx                   # Main map page
+│   ├── (shell)/                     route group: the persistent shell
+│   │   ├── layout.tsx               Shell: top bar, ledger, map, drawer
+│   │   ├── page.tsx                 "/" renders nothing; the shell is the page
+│   │   └── station/[slug]/          the station page: data.ts, page.tsx, loading, error, not-found
+│   ├── api/
+│   │   ├── chicago/stations/route.ts          GET: every station for the map and ledger
+│   │   ├── chicago/stations/[slug]/route.ts   GET: one station's detail
+│   │   ├── cron/sync-ridership/route.ts       the sync, run by Vercel Cron
+│   │   └── health/route.ts                    sync health, checked daily by GitHub Actions
+│   ├── layout.tsx, globals.css      fonts, theme script, design tokens
+│   ├── icon.svg                     the ghost tab icon
+│   └── robots.ts, sitemap.ts
 ├── components/
-│   ├── station/
-│   │   ├── StationRow.tsx         # Station list item with sparkline
-│   │   ├── StationList.tsx        # Scrollable station list
-│   │   ├── StationDetailPanel.tsx # Full station detail view
-│   │   └── NeighborPills.tsx      # Prev/next station navigation
-│   ├── charts/
-│   │   ├── Sparkline.tsx          # SVG sparkline component
-│   │   └── RidershipChart.tsx     # Full ridership chart
-│   ├── comparison/
-│   │   └── ComparisonBars.tsx     # Horizontal comparison bars
-│   ├── ghost/
-│   │   └── GhostScoreGauge.tsx    # Animated circular gauge
-│   └── mobile/
-│       ├── MobileStationCard.tsx  # Compact mobile card
-│       └── MobileStationDetail.tsx # Mobile detail view
-└── lib/
-    ├── cta/
-    │   ├── roster.ts              # The 144 stations by CTA station id
-    │   ├── sequences.ts           # Branch-aware line order, neighbors, primary line
-    │   ├── slug.ts                # Station slugs (stored on Station.slug)
-    │   ├── closures.ts            # Closures that drive Station.status
-    │   ├── normalizeStationLines.ts
-    │   └── explodeAndStitchSegments.ts
-    ├── motion/
-    │   └── tokens.ts              # Animation configurations
-    └── utils.ts                   # Utilities including ghost score colors
+│   ├── shell/       Shell, TopBar, Drawer, MobileSheet, HealthBanner, ShellContext, useStationList
+│   ├── ledger/      the station list: header (sort, line filter, search), rows
+│   ├── dossier/     the station page: SignHeader, WhyCard, Baselines, RidershipChart, AlongTheLine, Sources
+│   ├── map/         MapView, layers, marks (rasterized presence marks), stationMap
+│   ├── marks/       PresenceMark (tier marks), LineBars
+│   ├── narrative/   StationStory, FactCard
+│   ├── charts/      Sparkline (SVG)
+│   └── theme/       ThemeProvider, ThemeToggle, THEME_SCRIPT
+├── lib/
+│   ├── cta/         roster (144 stations by CTA id), sequences (line topology), slug, slugAliases,
+│   │                closures, explodeAndStitchSegments (track drawing), normalizeStationLines
+│   ├── sync/        Socrata client, run, lease, upsert, reconcile, baseMetrics, status, health,
+│   │                freshness, schedule, window
+│   ├── scoring/     score (v2), components, peers, availability, windows, percentile, whyCard
+│   ├── narratives/  archetypes, generate (the narrative job), renderer, formatters
+│   ├── stations/    detail (the detail payload), ridership (series), metadata (page titles)
+│   ├── prisma.ts    the one Prisma client
+│   ├── utils.ts     tiers (getTier, tierStyle), CTA line colors, contrast helpers
+│   ├── format.ts    shared number and date formatters
+│   ├── staleness.ts the 10-day staleness rule shared by health and the UI
+│   ├── site.ts, cacheTags.ts
+├── types/           station.ts (API payloads), narrative.ts
+├── test/            db guard, jsdom setup, Prisma mock, fixtures, repo-wide tests
+└── generated/       Prisma client (gitignored)
+prisma/              schema.prisma, migrations/ (Postgres)
+scripts/             run-sync, seed-reference-data, export-history, sample-upstream,
+                     extract-score-snapshot, reconcile-track-segments, ingest/ (facts), archive/
+docs/                plans/ (the revival plan), runbooks/history-load.md, audit-2026-10-02/, archive/
 ```
 
-### Backend ETL (`go-etl/`)
+## Data pipeline
 
-```
-go-etl/
-├── cmd/etl/main.go                # CLI entry point
-├── internal/
-│   ├── compute/
-│   │   └── ghost_score.go         # Multi-factor ghost score algorithm
-│   ├── db/
-│   │   └── client.go              # Database operations
-│   └── ingest/
-│       └── ridership.go           # CTA data ingestion
-```
+`/api/cron/sync-ridership` runs `runSync` (`src/lib/sync/run.ts`) on two schedules from `vercel.json`. The route checks the `CRON_SECRET` bearer token.
 
----
+| Schedule (UTC) | Mode | What it does |
+|---|---|---|
+| `0 10 * * *` | daily | refetches the trailing 60 days, plus up to three months the weekly run flagged as drifted, and upserts changed rows |
+| `0 14 * * 0` | weekly | refetches the trailing 60 days, then compares every station-month's row count and ride sum with Socrata and records the months that differ |
 
-## Ghost Score Algorithm
+Each run:
 
-The ghost score uses a **multi-factor composite scoring** system to identify underutilized stations:
+1. Inserts a `SyncRun` row holding a unique lease, so only one run writes at a time. A run still marked running after an hour is expired by the next one.
+2. Reads CTA's portal metadata alongside the sync and stores when CTA last updated the dataset (`SyncRun.upstreamUpdatedAt`). The read gets one 10-second try and never fails a run.
+3. Fetches month by month, deduplicates, matches CTA station ids to stations, and upserts `RidershipDaily`.
+4. Recomputes station statuses from `StationClosure`, base metrics, score v2, and the narratives, outside any transaction. Then it writes metrics, narratives, and statuses in one short transaction of set-based statements.
+5. Finalizes the row as `OK`, `PARTIAL`, or `FAILED`, and the route expires the `stations` cache tag after an OK or partial run.
 
-### Score Components
-
-| Factor | Weight | Description |
-|--------|--------|-------------|
-| **Ridership Percentile** | 40% | Station's 30-day average vs. all stations (inverted: low = high score) |
-| **Trend Score** | 25% | 30-day vs. 90-day change (declining = higher score) |
-| **Variability Score** | 15% | Coefficient of variation (erratic patterns = higher score) |
-| **Context Adjustment** | 20% | Station type modifier (terminal/transfer/normal) |
+CTA publishes in roughly monthly batches, about two months behind, with no announced schedule. Data through 2026-07-31 was current in October 2026.
 
-### Station Context Types
-
-- **Terminal** (score: 30): End-of-line stations naturally have lower ridership
-- **Transfer** (score: 70): Multi-line hubs should have high ridership, so low is notable
-- **Normal** (score: 50): Neutral baseline for regular stations
-
-### Implementation
-
-```go
-// go-etl/internal/compute/ghost_score.go
-compositeScore := (WeightRidership * ridershipScore) +
-    (WeightTrend * trendScore) +
-    (WeightVariability * variabilityScore) +
-    (WeightContext * contextScore)
-```
-
-### Score Range
-
-- **Maximum observed**: ~72 (practical ceiling due to weighted components)
-- **Thresholds**: 65+ (critical), 50-65 (warning), 35-50 (moderate), <35 (healthy)
-
----
-
-## Key Components
-
-### Sparkline (`src/components/charts/Sparkline.tsx`)
-
-Lightweight SVG-based sparkline for performance with 100+ stations:
-
-```typescript
-interface SparklineProps {
-  data: number[];        // 7 values (last 7 days)
-  width?: number;        // default 56px
-  height?: number;       // default 28px
-  color?: string;        // line color (uses primary CTA line color)
-  showTrend?: boolean;   // up/down arrow indicator
-}
-```
-
-**Design Decision**: Uses pure SVG instead of Recharts for performance in list views.
-
-### Station Comparisons (`src/components/comparison/ComparisonBars.tsx`)
-
-Horizontal bar visualization showing:
-- Station vs. System Median
-- Station vs. Line Median (primary line only for multi-line stations)
-- Station vs. Neighbor Average
-
-### Neighbor Navigation (`src/components/station/NeighborPills.tsx`)
-
-Clickable pills showing adjacent stations on the line:
-```
-← Thorndale (72)  •  Bryn Mawr (65) →
-```
-
-### Ghost Score Gauge (`src/components/ghost/GhostScoreGauge.tsx`)
-
-Animated circular gauge with:
-- React Spring count-up animation
-- Color gradient based on score
-- Particle effects for scores > 65
-- Pulsing ring for scores > 55
-
-### Station Row (`src/components/station/StationRow.tsx`)
-
-List item with:
-- Rank badge (colored by primary line)
-- Station name and line badges
-- Daily average ridership
-- 7-day sparkline
-- Ghost score circular indicator
-- Animated ghost icon (Framer Motion)
-
----
-
-## API Responses
-
-### List Stations (`GET /api/chicago/stations`)
-
-```typescript
-{
-  stations: [{
-    id: string;
-    name: string;
-    lines: string[];
-    ghostScore: number;
-    rolling30dAvg: number;
-    dataStatus: 'available' | 'missing' | 'zero';
-    sparkline: number[];  // Last 7 days of ridership
-    lat: number;
-    lon: number;
-  }]
-}
-```
-
-### Station Detail (`GET /api/chicago/stations/[id]`)
-
-```typescript
-{
-  station: { /* base station data */ },
-  comparisons: {
-    systemMedian: number;
-    primaryLine: string;
-    lineMedian: number;
-    neighbors: {
-      prev: { id, name, rolling30dAvg, ghostScore } | null;
-      next: { id, name, rolling30dAvg, ghostScore } | null;
-      neighborAvg: number;
-    };
-    vsSystemMedian: number;   // % difference
-    vsLineMedian: number;
-    vsNeighbors: number;
-  },
-  ridership: { /* historical data */ }
-}
-```
-
----
-
-## CTA Station Sequences
-
-Line order lives in `src/lib/cta/sequences.ts`, keyed by CTA station id (never by name). Each line
-is a set of branches: Blue is one branch from O'Hare to Forest Park; Green's Ashland/63rd and
-Cottage Grove branches join its trunk at Garfield; the Loop is a ring branch on Brown, Orange,
-Pink, and Purple. `Station.lines` is derived from these branches, and
-`scripts/seed-reference-data.ts` writes them to the `StationLineSequence` table.
-
-```typescript
-// Adjacent stations on one line, in travel order (two at a fork or a Loop entry)
-neighborsOnLine(ctaStationId: string, line: CTALine): { prev: string[]; next: string[] } | null
-
-// The prev/next pair on a station's primary line, used by the detail route's neighbor pills
-primaryLineNeighbors(ctaStationId: string, lines: readonly string[]): PrimaryLineNeighbors | null
-
-// First line in canonical CTA order (Red, Blue, Brown, Green, Orange, Purple, Pink, Yellow)
-getPrimaryLine(lines: readonly string[]): CTALine | null
-```
-
-**Design Decision**: Hardcoded instead of GTFS parsing because CTA has 8 lines with stable station
-order; a unit test checks the sequences against CTA's official stop list.
-
----
-
-## Color Thresholds
-
-### Ghost Score Colors (`src/lib/utils.ts`)
-
-```typescript
-export function getGhostScoreColor(score: number): string {
-  if (score >= 65) return "#DC2626" // red-600 (critical ghost)
-  if (score >= 50) return "#EA580C" // orange-600
-  if (score >= 35) return "#F59E0B" // amber-500
-  if (score >= 20) return "#84CC16" // lime-500
-  return "#22C55E" // green-500
-}
-```
-
-### CTA Line Colors
-
-```typescript
-export const ctaLineColors = {
-  "Red": "#C60C30",
-  "Blue": "#00A1DE",
-  "Brown": "#62361B",
-  "Green": "#009B3A",
-  "Orange": "#F9461C",
-  "Purple": "#522398",
-  "Pink": "#E27EA6",
-  "Yellow": "#F9E300"
-}
-```
+`/api/health` answers 503 when no run has succeeded in 10 days (`stale`), a run has been running for over an hour (`stuck`), or no weekly reconciliation has succeeded in 15 days (`reconcile-stale`). `.github/workflows/health.yml` checks it daily at 12:30 UTC.
 
----
+## Ghost score v2
 
-## Animation Patterns
+`src/lib/scoring/score.ts`. Four components, each a percentile over the ranked stations, oriented so higher is more ghost-like:
 
-### Framer Motion (Infinite Animations)
+| Component | Weight | Sentence on the card |
+|---|---|---|
+| Riders against peers (residual) | 45% | "Gets X% of the riders its neighbors get" |
+| Change from last year (trailing 90 days, weekday and weekend separated) | 25% | "Down X% from the same period last year" |
+| Change since 2019 (12-month average) | 20% | "Carries X% fewer riders than in 2019" |
+| Day-to-day swings (MAD over median, by day type) | 10% | "Ridership swings about X% day to day" |
 
-```typescript
-// Floating ghost icon in StationRow
-<motion.div
-  animate={{ y: [0, -2, 0] }}
-  transition={{ repeat: Infinity, duration: 1.5, ease: "easeInOut" }}
->
-  <Ghost className="w-3 h-3" />
-</motion.div>
-```
+- The weighted sum is re-ranked, so the score is itself a percentile. An unknown component counts as 50.
+- **Peers** (`peers.ts`) are the nearest eligible stations along the primary line. A Loop station's peers are the other Loop stations. Terminal, transfer, and Loop only choose peers; they never add points.
+- **Availability** (`availability.ts`) nulls a component whose window overlaps a closure or predates the station's opening, and nulls year-over-year when a station next door closed or reopened across its windows. The card states the reason in place of the number.
+- **Ranked** means open with recent riders. Closed stations (State/Lake since 2026-01-05) and stations with no recent data get no score, rank, or tier and stay out of every comparison.
+- **Tiers** (`getTier` in `src/lib/utils.ts`, the one mapping): ghost 90 and up, fading 75 to 89, quiet 50 to 74, healthy under 50.
+- `src/lib/scoring/snapshot.db.test.ts` is the acceptance oracle: it scores the 2025-11-30 snapshot fixture and checks the result.
 
-### React Spring (Count-up, Progress)
-
-```typescript
-// GhostScoreGauge number animation
-const { number } = useSpring({
-  from: { number: 0 },
-  to: { number: score },
-  delay: 300,
-  config: springConfigs.countUp,
-});
-```
-
----
-
-## Database Schema
-
-### Key Tables
-
-- **Station**: CTA stations with `lines` (JSON array), coordinates
-- **RidershipDaily**: Daily ridership entries per station
-- **StationMetric**: Computed metrics (rolling averages, ghost score)
-
-### Running ETL
-
-```bash
-cd go-etl
-DATABASE_URL="file:../prisma/dev.db" go run cmd/etl/main.go ghost-scores chicago
-```
-
----
-
-## Common Tasks
-
-### Adding a New Comparison Metric
-
-1. Add calculation to `src/app/api/chicago/stations/[id]/route.ts`
-2. Update `ComparisonBars.tsx` to display the new metric
-3. Add to `StationDetailPanel.tsx` comparisons section
-
-### Modifying Ghost Score Weights
-
-1. Edit weights in `go-etl/internal/compute/ghost_score.go`
-2. Re-run ETL: `go run cmd/etl/main.go ghost-scores chicago`
-3. Update color thresholds if score range changes significantly
-
-### Adding a New CTA Line
-
-1. Add the line's branches to `src/lib/cta/sequences.ts` and re-run `scripts/seed-reference-data.ts`
-2. Add color to `src/lib/cta/explodeAndStitchSegments.ts` CTA_LINE_COLORS
-3. Add color to `src/lib/utils.ts` ctaLineColors
-4. Update terminal stations in `go-etl/internal/compute/ghost_score.go`
-
----
-
-## Environment Variables
-
-| Variable | Description |
-|----------|-------------|
-| `DATABASE_URL` | SQLite database path (e.g., `file:./prisma/dev.db`) |
-| `NEXT_PUBLIC_MAPBOX_TOKEN` | Mapbox GL JS access token |
-
----
-
-## Build & Development
-
-```bash
-# Install dependencies
-npm install
-
-# Development server
-npm run dev
-
-# Production build
-npm run build
-
-# Type checking
-npm run lint
-
-# Run ETL (from go-etl directory)
-cd go-etl
-DATABASE_URL="file:../prisma/dev.db" go run cmd/etl/main.go [command]
-```
-
----
-
-## Recent Changes (January 2025)
-
-### Enhanced Comparisons & Sparklines
-- Added `Sparkline.tsx` component for 7-day trend visualization
-- Added `ComparisonBars.tsx` for station vs. system/line/neighbor comparisons
-- Added `NeighborPills.tsx` for line-based station navigation
-- Extended station detail API with comparison data
-
-### Multi-Factor Ghost Score
-- Refactored from simple percentile to composite scoring
-- Added trend analysis (30d vs 90d)
-- Added variability scoring (coefficient of variation)
-- Added station context adjustment (terminal/transfer/normal)
-
-### Animation Updates
-- Updated thresholds for new score range (max ~72)
-- Added animated ghost icon to StationRow
-- Particle effects trigger at score > 65
-- Pulsing ring triggers at score > 55
-
-### Bug Fixes
-- Fixed LaSalle station line assignment (Blue, not Red)
-- Fixed type errors with CTA_LINE_COLORS indexing
-- Fixed mobile layout GeoJSON type issues
+## API
+
+- `GET /api/chicago/stations`: every station (`StationListResponse` in `src/types/station.ts`), rank 1 first, then unranked stations by name, with tier, rank, 12-month and 30-day averages, a 7-day sparkline, and freshness. Cached with `unstable_cache` under the `stations` tag.
+- `GET /api/chicago/stations/{slug}`: one station (`StationDetailResponse`): the station, a 91-day series with gaps, metrics, comparisons (system median, primary-line median, neighbor average, the line walk), the why card, facts, narrative, sources, and freshness. A retired slug answers 308 to the current one (`src/lib/cta/slugAliases.ts`). Anything else, a station id included, answers 404.
+
+Both carry `dataThrough` (YYYY-MM-DD) and `lastSuccessfulFetch` from the latest OK sync run (`src/lib/sync/freshness.ts`), so the list, the detail, and health always report the same date.
+
+## The UI
+
+The shell (`src/components/shell/Shell.tsx`) lives in the `app/(shell)` route-group layout and stays mounted across station pages. The URL is the only selection state: opening a station pushes `/station/[slug]`, and closing always pushes `/`.
+
+- **1100px and up:** the ledger column, the map, and the station drawer over the map's right edge.
+- **768 to 1100px:** the drawer replaces the ledger while open.
+- **Under 768px:** the map is full-bleed under a bottom sheet holding the ledger, and a station page shrinks the same map to 28vh with the dossier below. One Mapbox instance serves every layout.
+
+The station page renders on the server from `readStationDetail`, cached under the `stations` tag for known slugs only (`app/(shell)/station/[slug]/data.ts`).
+
+### Design rules (Direction A, "Wayfinding")
+
+- **Tokens only.** `tailwind.config.ts` replaces Tailwind's theme. Colors: `surface`, `surface-2`, `ink`, `ink-2`, `ink-3`, `rule`, with values in `src/app/globals.css`. Text: `text-11` to `text-56`, nothing smaller. Radius: `rounded` (4px) for controls, `rounded-none` for panels, `rounded-full` for dots.
+- **Type.** Archivo for words (`font-narrow` for station names), JetBrains Mono with `tabular` for every number.
+- **Themes.** Dark by default. `data-theme` on `<html>`, set before hydration by `THEME_SCRIPT`. `src/test/contrast.test.ts` checks every text token on both surfaces against WCAG AA, which is why `ink-3` sits at 52% (dark) and 62% (light).
+- **Hue belongs to the CTA lines.** The official colors live in one table, `ctaLineColors` in `src/lib/utils.ts`, and appear only on tracks, line bars, and line filters. Text on a line color uses `lineLabelInk`.
+- **Ghostliness is ink, never hue.** `PresenceMark` draws healthy as a solid dot, quiet as a hollow ring, fading as a hollow ring at 72% ink, and ghost as a small static ghost glyph. Closed is a ring crossed by a bar, and no data a dotted ring. The tier is always also written in words.
+- **The ghost theme.** The score is the "Ghost score". Headings follow the tier ("Why it's a ghost stop", "Why it's fading", "Why it's quiet", "Why it's healthy"). A healthy station is never called a ghost. The logo and tab icon are a ghost.
+- **Motion.** Enter, count-once, draw-once, and fly-to only, under `MotionConfig reducedMotion="user"`. No infinite or looping animation (`src/test/retired-styles.test.ts`).
+
+## Database
+
+`prisma/schema.prisma`, Postgres:
+
+- `City`, `Station`: slug, displayName, status, openedAt, closedAt, lines as a JSON array.
+- `StationClosure`, `StationLineSequence`, `StationAlias`.
+- `RidershipDaily`: `(stationId, serviceDate DATE)` primary key, entries, dayType W/A/U.
+- `StationMetrics`: base metrics plus the score v2 columns, `dataThrough`, `scoreVersion`.
+- `SyncRun`: one row per sync, holding the lease.
+- `DataSource`, `StationFact`, `StationNarrative`: the facts and stories.
+
+Migrations run only from an operator machine as `neondb_owner` over the direct host, never in the Vercel build (DEPLOYMENT.md). Code that reads a new column can deploy only after the migration: Prisma's `create` and `update` return every column.
+
+## Conventions
+
+- **Server-only modules.** Components never import `lib/sync`, `lib/scoring`, `lib/narratives/generate`, `lib/prisma`, or `generated/prisma`; ESLint enforces it. UI gets data from the API routes or the server-rendered page.
+- **One Prisma client.** Import `prisma` from `src/lib/prisma.ts`. Never construct another client or call `$disconnect()` in a route (`src/lib/prisma.test.ts` scans for both).
+- **Dates are calendar strings.** `YYYY-MM-DD` end to end, formatted with `timeZone: 'UTC'` (`src/lib/format.ts`).
+- **CTA station ids, never names.** The roster, sequences, closures, and Socrata matching all key on the five-digit CTA id.
+- **Secrets.** Never commit a connection string or token. `.env*` is gitignored except `.env.example`, and CI runs gitleaks over the full history.
+- **Tests sit next to their code.** `*.test.ts` runs in the unit project, `*.test.tsx` in components, and `*.db.test.ts` in db. The db project refuses a non-local `DATABASE_URL` (`src/test/db-guard.ts`).
+- **Retired dependencies stay retired.** `src/test/retired-deps.test.ts` keeps react-spring, use-gesture, recharts, and date-fns out.
+
+## Common tasks
+
+- **A station closes or reopens:** add or edit its row in `src/lib/cta/closures.ts` and run `scripts/seed-reference-data.ts` against production. The next sync recomputes its status and drops it from, or returns it to, the ranking.
+- **A station is renamed:** change the roster entry, add the old slug to `SLUG_ALIASES` so old links redirect, and run the seed.
+- **Score weights or rules change:** edit `src/lib/scoring/`, update the oracle in `snapshot.db.test.ts`, and bump `SCORE_VERSION` if stored scores change meaning. The next sync rewrites every station.
+- **A schema change:** edit `prisma/schema.prisma`, write the migration under `prisma/migrations/`, test it with `npm run test:db`, and have the operator apply it to production before the code deploys.
+- **A wide backfill or a per-station refetch:** `scripts/run-sync.ts` from a shell (DEPLOYMENT.md, "Local runner"). It does not expire the cache tag; only the cron route does.
+
+## Known issues
+
+- On a phone's map page, the bottom sheet (vaul 1.1.2) always runs as a modal dialog: it hides the top bar and map from screen readers and keeps focus inside the sheet. Station pages unmount it. Replacing vaul with a non-modal sheet is the fix.
+- `/station/<unknown>` renders the not-found page with status 200 and `noindex`, because the route streams its loading state before `notFound()` runs.
+- Some track paths cannot be stitched into one line and are drawn as separate segments, which logs a warning in the browser console.
+
+## Further reading
+
+- `README.md`: setup from a fresh clone.
+- `DEPLOYMENT.md`: Vercel, Neon, migrations, the sync, health, rollback.
+- `docs/plans/2026-10-02-2208-feat-ghost-stops-revival-plan.md`: the requirements (R-IDs) and key decisions (KTD-IDs) the code cites.
+- `docs/runbooks/history-load.md`: every production migration, backfill, and go-live, step by step.
+- `docs/audit-2026-10-02/`: the October 2026 audit that started the revival.

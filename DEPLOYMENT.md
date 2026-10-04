@@ -53,6 +53,11 @@ The last command prints `No difference detected` when the database matches the s
 manual Neon snapshot before any migration that changes or drops data; the runbook names each one
 taken so far.
 
+Run a migration before the code that uses it deploys, and before that branch is pushed. Prisma's
+`create` and `update` return every column the generated client knows, so new code fails against a
+table without its column. A new nullable column does not affect the code already running. Pushing
+first would also give the branch's preview a Neon branch copied from the unmigrated production.
+
 ## The daily sync
 
 `vercel.json` schedules `/api/cron/sync-ridership` twice:
@@ -66,9 +71,15 @@ Vercel may start a run up to 59 minutes late. The route checks `CRON_SECRET`, re
 row, and expires the `stations` cache tag after an OK or partial run, so the station list shows
 the new data on the next request.
 
+Each run also records when CTA last updated the dataset: the portal's `rowsUpdatedAt`, stored in
+`SyncRun.upstreamUpdatedAt`. CTA publishes in roughly monthly batches with no announced schedule,
+so the rows show its real cadence. The read gets one 10-second try; if it fails, the column stays
+null and the run carries on.
+
 ## Health and alerting
 
-`/api/health` answers 200 with the last successful run and data-through date, or 503 when:
+`/api/health` answers 200 with the last successful run, the data-through date, and when CTA last
+updated the dataset (`upstreamUpdatedAt`), or 503 when:
 
 - no run has succeeded in 10 days (`stale`);
 - a run has been marked running for over an hour (`stuck`);
