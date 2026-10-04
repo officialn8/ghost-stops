@@ -9,12 +9,13 @@ import type {
 import { noLineActive, passesLineFilter } from "@/components/shell/model";
 import type { ActiveLines } from "@/components/shell/ShellContext";
 import type { Theme } from "@/components/theme";
-import { CTA_LINE_ORDER, ctaLineColors, tierStyle, type CTALine } from "@/lib/utils";
+import { EXCLUDED_INK } from "@/components/marks/PresenceMark";
+import { CTA_LINE_ORDER, ctaLineColors, isClosedStatus, tierStyle, type CTALine } from "@/lib/utils";
 import type { StationListItem } from "@/types/station";
 import { GHOST_REACH_PER_RADIUS, IMAGE_RADIUS, MARK_IMAGE, STROKE_RATIO, radiusStops } from "./marks";
 
 /**
- * The map's layers as data (U19, KTD13): what each station feature carries, and the paint and
+ * The map's layers as data (KTD13): what each station feature carries, and the paint and
  * layout that turn it into a mark. Nothing here touches a map, so every rule is testable. The
  * vocabulary is PresenceMark's (R23): ink presence and mark shape, never a hue; hue is the eight
  * line colors on the tracks.
@@ -67,9 +68,6 @@ export const SYSTEM_BOUNDS: [[number, number], [number, number]] = [
  */
 export type StationMark = "solid" | "hollow" | "ghost" | "closed" | "no-data";
 
-/** PresenceMark's ink for the two marks outside the ranking: closed 52%, no data 44%. */
-export const EXCLUDED_INK: Readonly<Record<"closed" | "no-data", number>> = { closed: 0.52, "no-data": 0.44 };
-
 /** What a station or track keeps while the line filter leaves out every one of its lines. */
 export const DIMMED = { mark: 0.3, label: 0.4, track: 0.2 } as const;
 
@@ -102,7 +100,7 @@ export function stationMark(station: Pick<StationListItem, "tier" | "rank" | "st
   ink: number;
 } {
   if (station.rank === null || station.tier === null) {
-    const mark = station.status === "ACTIVE" ? "no-data" : "closed";
+    const mark = isClosedStatus(station.status) ? "closed" : "no-data";
     return { mark, ink: EXCLUDED_INK[mark] };
   }
   const { mark, ink } = tierStyle(station.tier);

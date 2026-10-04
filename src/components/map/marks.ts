@@ -115,16 +115,22 @@ const GHOST_HEM: readonly (readonly [number, number])[] = [
   [17, 19],
   [20, 22],
 ];
+const GHOST_EYE_Y = 10;
 const GHOST_EYES: readonly (readonly [number, number])[] = [
-  [9, 10],
-  [15, 10],
+  [9, GHOST_EYE_Y],
+  [15, GHOST_EYE_Y],
 ];
-/** Straight edges of the outline: the left side, the hem, and the right side. */
-const GHOST_EDGES: readonly (readonly [number, number, number, number])[] = [
+type Segment = readonly [x0: number, y0: number, x1: number, y1: number];
+/** The outline's straight sides, from the head down to the hem's outer corners. */
+const GHOST_SIDES: readonly Segment[] = [
   [4, 10, 4, 22],
-  ...GHOST_HEM.slice(1).map(([x, y], i) => [GHOST_HEM[i][0], GHOST_HEM[i][1], x, y] as const),
   [20, 22, 20, 10],
 ];
+/** The hem's zigzag, corner to corner. */
+const GHOST_HEM_EDGES: readonly Segment[] = GHOST_HEM.slice(1).map(
+  ([x, y], i): Segment => [GHOST_HEM[i][0], GHOST_HEM[i][1], x, y],
+);
+const GHOST_HEM_TOP = Math.min(...GHOST_HEM.map(([, y]) => y));
 
 /** The farthest the drawn glyph reaches from the box's center: a hem corner plus the stroke. */
 export const GHOST_REACH = Math.hypot(20 - GHOST_BOX / 2, 22 - GHOST_BOX / 2) + GHOST_HALF_STROKE;
@@ -148,114 +154,198 @@ export function ghostGeometry() {
 /** The bottom edge of the body at `u`: the hem's zigzag. */
 function hemAt(u: number): number {
   for (let i = 1; i < GHOST_HEM.length; i++) {
-    const [x0, y0] = GHOST_HEM[i - 1];
-    const [x1, y1] = GHOST_HEM[i];
-    if (u <= x1) return y0 + ((u - x0) / (x1 - x0)) * (y1 - y0);
+    const from = GHOST_HEM[i - 1];
+    const to = GHOST_HEM[i];
+    if (u <= to[0]) return from[1] + ((u - from[0]) / (to[0] - from[0])) * (to[1] - from[1]);
   }
   return GHOST_HEM[GHOST_HEM.length - 1][1];
 }
 
 /** Whether a point in glyph units is inside the body, up to the outline's centerline. */
 function inGhostBody(u: number, v: number): boolean {
-  if (v <= GHOST_HEAD.cy) return Math.hypot(u - GHOST_HEAD.cx, v - GHOST_HEAD.cy) <= GHOST_HEAD.r;
+  if (v <= GHOST_HEAD.cy) {
+    const dx = u - GHOST_HEAD.cx;
+    const dy = v - GHOST_HEAD.cy;
+    return Math.sqrt(dx * dx + dy * dy) <= GHOST_HEAD.r;
+  }
   return u >= 4 && u <= 20 && v <= hemAt(u);
 }
 
-function distanceToSegment(u: number, v: number, [x0, y0, x1, y1]: readonly [number, number, number, number]) {
-  const dx = x1 - x0;
-  const dy = y1 - y0;
+/** Whether a point is within the outline's half stroke of a segment (its ends round, like joins). */
+function nearSegment(u: number, v: number, segment: Segment): boolean {
+  const x0 = segment[0];
+  const y0 = segment[1];
+  const dx = segment[2] - x0;
+  const dy = segment[3] - y0;
   const t = Math.max(0, Math.min(1, ((u - x0) * dx + (v - y0) * dy) / (dx * dx + dy * dy)));
-  return Math.hypot(u - (x0 + t * dx), v - (y0 + t * dy));
+  const ex = u - (x0 + t * dx);
+  const ey = v - (y0 + t * dy);
+  return Math.sqrt(ex * ex + ey * ey) <= GHOST_HALF_STROKE;
 }
 
-/** Whether a point in glyph units is under the 2-unit outline (round joins) or an eye. */
+/**
+ * Whether a point in glyph units is under the 2-unit outline (round joins) or an eye. Each part
+ * is tested only where its stroke can reach (a half stroke around it), which keeps sampling
+ * cheap: the eyes' row, the sides' columns, and each hem edge's span below the hem's top.
+ */
 function onGhostLine(u: number, v: number): boolean {
-  if (GHOST_EYES.some(([x, y]) => Math.hypot(u - x, v - y) <= GHOST_HALF_STROKE)) return true;
-  if (v <= GHOST_HEAD.cy && Math.abs(Math.hypot(u - GHOST_HEAD.cx, v - GHOST_HEAD.cy) - GHOST_HEAD.r) <= GHOST_HALF_STROKE) {
-    return true;
+  if (Math.abs(v - GHOST_EYE_Y) <= GHOST_HALF_STROKE) {
+    for (const eye of GHOST_EYES) {
+      const dx = u - eye[0];
+      const dy = v - eye[1];
+      if (Math.sqrt(dx * dx + dy * dy) <= GHOST_HALF_STROKE) return true;
+    }
   }
-  return GHOST_EDGES.some((edge) => distanceToSegment(u, v, edge) <= GHOST_HALF_STROKE);
-}
-
-/** A glyph-unit shape as a shape in CSS px from the image's center. */
-function inGlyphUnits(test: (u: number, v: number) => boolean): Shape {
-  const { unit } = ghostGeometry();
-  return (x, y) => test(GHOST_BOX / 2 + x / unit, GHOST_BOX / 2 + y / unit);
+  if (v <= GHOST_HEAD.cy) {
+    const dx = u - GHOST_HEAD.cx;
+    const dy = v - GHOST_HEAD.cy;
+    if (Math.abs(Math.sqrt(dx * dx + dy * dy) - GHOST_HEAD.r) <= GHOST_HALF_STROKE) return true;
+  }
+  if (Math.abs(u - 4) <= GHOST_HALF_STROKE || Math.abs(u - 20) <= GHOST_HALF_STROKE) {
+    for (const side of GHOST_SIDES) if (nearSegment(u, v, side)) return true;
+  }
+  if (v >= GHOST_HEM_TOP - GHOST_HALF_STROKE) {
+    for (const edge of GHOST_HEM_EDGES) {
+      if (u >= edge[0] - GHOST_HALF_STROKE && u <= edge[2] + GHOST_HALF_STROKE && nearSegment(u, v, edge)) return true;
+    }
+  }
+  return false;
 }
 
 // ═══════════════════════════════════════════════════════════════
 // RASTERIZING
 // ═══════════════════════════════════════════════════════════════
 
-type Shape = (x: number, y: number) => boolean;
-
-/** A shape and its color; an image stacks these bottom to top. */
-interface Fill {
-  shape: Shape;
-  color: string;
-}
+type Rgb = readonly [number, number, number];
 
 const SUPERSAMPLE = 4;
+const SAMPLES = SUPERSAMPLE ** 2;
 
 /**
- * Draws `fills` (CSS px from the center, bottom to top) into a square image `half` CSS px from
- * center to edge, antialiased by supersampling each pixel: each sample takes the color of the
- * topmost fill covering it. Uncovered pixels carry the top fill's color at zero alpha, so a
- * filtered edge blends toward the outermost color rather than black.
+ * Sorts each of a square image's supersamples (CSS px from its center, `half` px to an edge)
+ * into channels: `classify` returns a bit mask, and each set bit counts the sample for that
+ * channel. The result is one count (0 to 16) per pixel per channel. Shape coverage never depends
+ * on color, so this runs once per pixel ratio and every theme's images are painted from it.
  */
-function rasterize(fills: readonly Fill[], half: number, pixelRatio: number): RasterImage {
+function countSamples(
+  half: number,
+  pixelRatio: number,
+  channels: number,
+  classify: (x: number, y: number) => number,
+): { size: number; counts: Uint8Array[] } {
   const size = 2 * half * pixelRatio;
-  const colors = fills.map((fill) => hexToRgb(fill.color));
-  const edge = colors[colors.length - 1];
-  const samples = SUPERSAMPLE ** 2;
-  const data = new Uint8ClampedArray(size * size * 4);
-
+  const counts = Array.from({ length: channels }, () => new Uint8Array(size * size));
   for (let py = 0; py < size; py++) {
     for (let px = 0; px < size; px++) {
-      let covered = 0;
-      const sum = [0, 0, 0];
+      const pixel = py * size + px;
       for (let sy = 0; sy < SUPERSAMPLE; sy++) {
+        const y = (py + (sy + 0.5) / SUPERSAMPLE) / pixelRatio - half;
         for (let sx = 0; sx < SUPERSAMPLE; sx++) {
           const x = (px + (sx + 0.5) / SUPERSAMPLE) / pixelRatio - half;
-          const y = (py + (sy + 0.5) / SUPERSAMPLE) / pixelRatio - half;
-          for (let i = fills.length - 1; i >= 0; i--) {
-            if (!fills[i].shape(x, y)) continue;
-            covered++;
-            for (let c = 0; c < 3; c++) sum[c] += colors[i][c];
-            break;
-          }
+          const mask = classify(x, y);
+          for (let c = 0; c < channels; c++) if (mask & (1 << c)) counts[c][pixel]++;
         }
       }
-      const i = (py * size + px) * 4;
-      for (let c = 0; c < 3; c++) data[i + c] = covered ? sum[c] / covered : edge[c];
-      data[i + 3] = Math.round((covered / samples) * 255);
     }
   }
+  return { size, counts };
+}
 
+/**
+ * Paints an image from sample counts, bottom to top, where each sample counts toward at most one
+ * fill: a pixel takes the coverage-weighted mix of its fills' colors and an alpha of the share of
+ * samples covered. Uncovered pixels carry the top fill's color at zero alpha, so a filtered edge
+ * blends toward the outermost color rather than black.
+ */
+function paint(size: number, fills: readonly { counts: Uint8Array; rgb: Rgb }[]): RasterImage {
+  const data = new Uint8ClampedArray(size * size * 4);
+  const edge = fills[fills.length - 1].rgb;
+  for (let pixel = 0; pixel < size * size; pixel++) {
+    let covered = 0;
+    let r = 0;
+    let g = 0;
+    let b = 0;
+    for (const { counts, rgb } of fills) {
+      const n = counts[pixel];
+      if (n === 0) continue;
+      covered += n;
+      r += n * rgb[0];
+      g += n * rgb[1];
+      b += n * rgb[2];
+    }
+    const i = pixel * 4;
+    data[i] = covered ? r / covered : edge[0];
+    data[i + 1] = covered ? g / covered : edge[1];
+    data[i + 2] = covered ? b / covered : edge[2];
+    data[i + 3] = Math.round((covered / SAMPLES) * 255);
+  }
   return { width: size, height: size, data };
 }
 
+const RING = { dotted: 1 << 0, bar: 1 << 1 };
+const GHOST = { line: 1 << 0, bodyOnly: 1 << 1, body: 1 << 2 };
+
 /**
- * A ring broken into `count` dashes, each `fraction` of its repeat. Angles run clockwise from
- * three o'clock, where an SVG circle's dash pattern starts.
+ * Sorts a ring image's samples: the no-data ring's dots (dashes clockwise from three o'clock,
+ * where an SVG circle's dash pattern starts) and the closed mark's bar.
  */
-function brokenRing(count: number, fraction: number): Shape {
+function ringClassifier(): (x: number, y: number) => number {
   const { stroke, centerline } = imageGeometry();
+  const halfStroke = stroke / 2;
+  const barReach = centerline * CLOSED_BAR_REACH;
   return (x, y) => {
-    if (Math.abs(Math.hypot(x, y) - centerline) > stroke / 2) return false;
-    const turn = (Math.atan2(y, x) / (2 * Math.PI) + 1) % 1;
-    return (turn * count) % 1 < fraction;
+    let mask = 0;
+    if (Math.abs(y) <= halfStroke && Math.abs(x) <= barReach) mask |= RING.bar;
+    if (Math.abs(Math.sqrt(x * x + y * y) - centerline) <= halfStroke) {
+      const turn = (Math.atan2(y, x) / (2 * Math.PI) + 1) % 1;
+      if ((turn * NO_DATA_DOTS.count) % 1 < NO_DATA_DOTS.fraction) mask |= RING.dotted;
+    }
+    return mask;
   };
 }
 
-function closedBar(): Shape {
-  const { stroke, centerline } = imageGeometry();
-  return (x, y) => Math.abs(y) <= stroke / 2 && Math.abs(x) <= centerline * CLOSED_BAR_REACH;
+/** Sorts a ghost image's samples: on the outline or an eye, inside the body, or inside and not on it. */
+function ghostClassifier(): (x: number, y: number) => number {
+  const { unit } = ghostGeometry();
+  return (x, y) => {
+    const u = GHOST_BOX / 2 + x / unit;
+    const v = GHOST_BOX / 2 + y / unit;
+    // Outside the glyph's bounds (x 4 to 20, y 2 to 22, plus the half stroke) nothing is drawn.
+    if (u < 4 - GHOST_HALF_STROKE || u > 20 + GHOST_HALF_STROKE || v < 2 - GHOST_HALF_STROKE || v > 22 + GHOST_HALF_STROKE) {
+      return 0;
+    }
+    const line = onGhostLine(u, v);
+    const body = inGhostBody(u, v);
+    return (line ? GHOST.line : 0) | (body ? GHOST.body : 0) | (body && !line ? GHOST.bodyOnly : 0);
+  };
+}
+
+interface Coverage {
+  ring: { size: number; dotted: Uint8Array; bar: Uint8Array };
+  ghost: { size: number; line: Uint8Array; bodyOnly: Uint8Array; body: Uint8Array };
+}
+
+const coverageByRatio = new Map<number, Coverage>();
+
+function coverage(pixelRatio: number): Coverage {
+  const cached = coverageByRatio.get(pixelRatio);
+  if (cached) return cached;
+  const ring = countSamples(imageGeometry().half, pixelRatio, 2, ringClassifier());
+  const ghost = countSamples(ghostGeometry().half, pixelRatio, 3, ghostClassifier());
+  const result: Coverage = {
+    ring: { size: ring.size, dotted: ring.counts[0], bar: ring.counts[1] },
+    ghost: { size: ghost.size, line: ghost.counts[0], bodyOnly: ghost.counts[1], body: ghost.counts[2] },
+  };
+  coverageByRatio.set(pixelRatio, result);
+  return result;
 }
 
 const cache = new Map<string, Readonly<Record<MarkImageId, RasterImage>>>();
 
-/** Every mark image in one theme's colors, drawn once per theme and pixel ratio. */
+/**
+ * Every mark image in one theme's colors, drawn once per theme and pixel ratio. The shapes are
+ * sampled once per pixel ratio; a theme only paints those counts in its colors.
+ */
 export function markImages(
   { ink, surface }: MarkColors,
   pixelRatio = IMAGE_PIXEL_RATIO,
@@ -264,24 +354,19 @@ export function markImages(
   const cached = cache.get(key);
   if (cached) return cached;
 
-  const ring = imageGeometry().half;
-  const ghost = ghostGeometry().half;
-  const body = inGlyphUnits(inGhostBody);
-  const line = inGlyphUnits(onGhostLine);
+  const { ring, ghost } = coverage(pixelRatio);
+  const inkRgb = hexToRgb(ink);
+  const surfaceRgb = hexToRgb(surface);
 
   const images = {
-    [MARK_IMAGE.dotted]: rasterize([{ shape: brokenRing(NO_DATA_DOTS.count, NO_DATA_DOTS.fraction), color: ink }], ring, pixelRatio),
-    [MARK_IMAGE.bar]: rasterize([{ shape: closedBar(), color: ink }], ring, pixelRatio),
-    [MARK_IMAGE.ghostBody]: rasterize([{ shape: body, color: surface }], ghost, pixelRatio),
-    [MARK_IMAGE.ghostLine]: rasterize([{ shape: line, color: ink }], ghost, pixelRatio),
-    [MARK_IMAGE.ghostSelected]: rasterize(
-      [
-        { shape: body, color: ink },
-        { shape: line, color: surface },
-      ],
-      ghost,
-      pixelRatio,
-    ),
+    [MARK_IMAGE.dotted]: paint(ring.size, [{ counts: ring.dotted, rgb: inkRgb }]),
+    [MARK_IMAGE.bar]: paint(ring.size, [{ counts: ring.bar, rgb: inkRgb }]),
+    [MARK_IMAGE.ghostBody]: paint(ghost.size, [{ counts: ghost.body, rgb: surfaceRgb }]),
+    [MARK_IMAGE.ghostLine]: paint(ghost.size, [{ counts: ghost.line, rgb: inkRgb }]),
+    [MARK_IMAGE.ghostSelected]: paint(ghost.size, [
+      { counts: ghost.bodyOnly, rgb: inkRgb },
+      { counts: ghost.line, rgb: surfaceRgb },
+    ]),
   };
   cache.set(key, images);
   return images;

@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { Ghost } from "lucide-react";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
@@ -88,6 +89,52 @@ describe("mark images", () => {
   it("are drawn once per theme", () => {
     expect(markImages(DARK)).toBe(images);
     expect(markImages(LIGHT)).not.toBe(images);
+  });
+});
+
+/**
+ * SHA-256 prefixes of every image's RGBA bytes, pinned from the straightforward per-sample
+ * rasterizer before coverage caching replaced it: the faster builder must draw the same bytes.
+ */
+const PINNED: Record<string, Record<string, string>> = {
+  "dark@3": {
+    "station-mark-dotted": "a17febc4706dd4d7",
+    "station-mark-bar": "5654e6bbabcf95f2",
+    "station-mark-ghost-body": "f0881b192e3f0e0c",
+    "station-mark-ghost-line": "b1f45f1a5a98c123",
+    "station-mark-ghost-selected": "328c3aa6fcdcbb7f",
+  },
+  "light@3": {
+    "station-mark-dotted": "8d0ddf3ae2918530",
+    "station-mark-bar": "a9853dc4bb5eab15",
+    "station-mark-ghost-body": "fede97e609810ddc",
+    "station-mark-ghost-line": "cc4d4ce5536de5e9",
+    "station-mark-ghost-selected": "c445124156d44e42",
+  },
+  "dark@2": {
+    "station-mark-dotted": "2e6cd916245ae686",
+    "station-mark-bar": "60b8f8042346ae5b",
+    "station-mark-ghost-body": "999023792313fcd1",
+    "station-mark-ghost-line": "7d0e7d7495347f80",
+    "station-mark-ghost-selected": "73477c1815065525",
+  },
+  "light@2": {
+    "station-mark-dotted": "6f8b38479cbbc755",
+    "station-mark-bar": "9f658dd7896bb7a6",
+    "station-mark-ghost-body": "26b4519b46ad3682",
+    "station-mark-ghost-line": "468422dfc6e30020",
+    "station-mark-ghost-selected": "be80cd3f2d1dd5ec",
+  },
+};
+
+describe("mark image bytes", () => {
+  it.each(Object.keys(PINNED))("match the pinned rasterization for %s", (key) => {
+    const [theme, ratio] = key.split("@") as ["dark" | "light", string];
+    const images = markImages(MAP_PALETTE[theme], Number(ratio));
+    const sums = Object.fromEntries(
+      Object.entries(images).map(([id, image]) => [id, createHash("sha256").update(image.data).digest("hex").slice(0, 16)]),
+    );
+    expect(sums).toEqual(PINNED[key]);
   });
 });
 

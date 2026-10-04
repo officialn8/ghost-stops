@@ -178,6 +178,8 @@ describe("station features", () => {
 
   it("give a closed station the closed mark at 52% and no label", () => {
     expect(featureOf("state-lake")).toMatchObject({ mark: "closed", ink: 0.52, labeled: false, slug: "state-lake" });
+    const temporarilyClosed = station({ id: "temp", status: "TEMP_CLOSED", tier: null, rank: null });
+    expect(stationFeatures([temporarilyClosed], ALL_LINES_ON).features[0].properties).toMatchObject({ mark: "closed", ink: 0.52 });
   });
 
   it("give an unranked open station the no-data mark at 44% and no label", () => {

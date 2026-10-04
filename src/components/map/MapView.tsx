@@ -83,7 +83,7 @@ function stationAt(event: MapMouseEvent): StationHit | null {
 }
 
 /**
- * The one map (U19, KTD13), shared by every viewport: CTA tracks in the official colors and every
+ * The one map (KTD13), shared by every viewport: CTA tracks in the official colors and every
  * station as a presence mark, drawn by StationMap as Mapbox layers with no DOM markers. Clicking
  * or tapping any mark, closed and no-data ones included, opens its station page; selecting a
  * station inverts its mark and flies the camera to it, clear of the drawer.
