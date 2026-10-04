@@ -964,3 +964,21 @@ Record (2026-10-04, run by the agent on Nate's "go migrate"):
 
 Rollback: `ALTER TABLE "SyncRun" DROP COLUMN "upstreamUpdatedAt";` and delete the migration's row
 from `_prisma_migrations`, after rolling the app back to a deployment that predates the column.
+
+## 12. First scheduled syncs (2026-10-04)
+
+Every sync before this day was started by hand. These are the first runs Vercel Cron started on
+its own, on the code from #11 (`85ec211`). Both finished OK and stored CTA's last update time.
+
+| Run | Started (UTC) | Duration | Fetched | Inserted | Revised | Upstream max date | CTA updated | Drift months | Unmatched ids |
+|---|---|---|---|---|---|---|---|---|---|
+| `cron-daily` | 10:25:59 | 5.4 s | 8,784 | 0 | 0 | 2026-07-31 | 2026-09-28 18:04:46 | none | none |
+| `cron-weekly` | 14:23:59 | 14.0 s | 8,784 | 0 | 0 | 2026-07-31 | 2026-09-28 18:04:46 | none | none |
+
+Checked at 15:19 UTC: `/api/health` answered 200 with status `ok`, `lastSuccessfulRunAt` and
+`lastReconciliationAt` both 14:24:13, and `upstreamUpdatedAt` 2026-09-28T18:04:46Z. Vercel showed
+no runtime errors since 09:55. Zero inserts and revisions are expected: CTA has published nothing
+since 2026-09-28, so the trailing 60 days already matched upstream.
+
+The plan's seven-day reliability gate (U11) was waived for the Railway retirement; the first day
+with an OK scheduled run is 2026-10-04, so seven in a row can be reached on 2026-10-10.

@@ -790,7 +790,7 @@ No `release:validate` script exists in this repo.
 
 | Phase | Done when |
 |---|---|
-| 0 | Old credentials fail; the full-history secret scan passes with the committed config; preview concurrency sweep is clean; CI runs both test tiers; `npm audit` has no critical or high findings |
+| 0 | Old credentials fail; the full-history secret scan passes with the committed config; preview concurrency sweep is clean; CI runs both test tiers; `npm audit` has no critical or high findings (amended 2026-10-04: the remaining high findings in build and dev tooling are accepted; see Deferred / Open Questions) |
 | 1 | Production holds the deduplicated history through 2025-11-30 on the lean schema under 800 MB with facts and narratives unchanged; the upstream sample matched; every station has a slug, status, and sequence rows; neighbor payloads are correct for the Forest Park end of Blue; the Phase 1 PR is merged after the migration and the live site still shows November 2025 data |
 | 2 | Data-through is 2026-07-31 or later; both Western stations match upstream; a scheduled run has finalized ok; health returns 200 and a forced failure emailed Nate; Railway is gone after seven consecutive days of ok cron runs |
 | 3 | The snapshot score oracle passes in CI; production top and bottom 15 are reviewed and explained; all stations have v2 narratives with matching data-through; Logan Square reads as growth; the slug-addressed API serves the current UI; the Phase 3 PR states the v1 color scale is miscalibrated until U18 |
@@ -807,3 +807,7 @@ No `release:validate` script exists in this repo.
 - **Snapshot history may be a different vintage than upstream for years before 2025** — KTD3 (load history from the SQLite snapshot) and U7 (history export, upstream sample, dry run) (P2, adversarial, confidence 75)
 
   If CTA restated years before 2025 the way it restated 2025, the versus-2019 score component and the match-upstream requirement are wrong for most months with only a sixty-sample check protecting them. The alternative is to load all history from upstream through the local runner, which removes the export script, the Western exclusion, and calendar-derived day types but makes Phase 1 depend on the sync library. The U7 sample gate decides: if any sampled day differs, switch to the upstream load before touching production.
+
+### Decided 2026-10-04
+
+- **The remaining `npm audit` high findings are accepted (Nate, 2026-10-04).** After Phase 6, `npm audit` reports 15 high findings, and every one is in build or development tooling: the Next lint config (`eslint-config-next`), the map-data script dependency `mapshaper`, Tailwind 3, and the Prisma CLI's transitive `mysql2` and `deepmerge-ts`. None of them runs when the app serves a request; the app reaches Postgres through `pg` and `@prisma/adapter-pg`. The offered fixes are major-version downgrades or Tailwind 4, which the scope boundaries exclude. Nate accepted them as known on 2026-10-04 in place of Phase 0's "no high findings" condition. Revisit when those packages ship patched releases.
