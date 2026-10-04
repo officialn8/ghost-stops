@@ -2,6 +2,8 @@ import type { DuplicateDay, RidershipSource, StationMonthTotal, UpstreamDay } fr
 import { addDays, type DateWindow } from "../window";
 
 export const UPDATED_AT = "2026-09-28T18:04:45.135Z";
+/** The portal's `rowsUpdatedAt` for that batch, which is whole seconds. */
+export const ROWS_UPDATED_AT = "2026-09-28T18:04:46.000Z";
 
 /** One upstream row per station per day from `start` to `end`, with rides from `rides`. */
 export function upstreamDays(
@@ -80,6 +82,10 @@ export function fakeSource(days: UpstreamDay[], fail?: (call: FakeSourceCall) =>
                 });
             }
             return duplicates;
+        },
+        async rowsUpdatedAt() {
+            record({ method: "rowsUpdatedAt" });
+            return ROWS_UPDATED_AT;
         },
     };
     return { source, calls };

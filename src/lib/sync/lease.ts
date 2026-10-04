@@ -58,6 +58,7 @@ export interface RunOutcome {
     rowsRevised: number;
     unmatchedStationIds: string[];
     driftMonths: string[];
+    upstreamUpdatedAt: Date | null;
     error: string | null;
 }
 

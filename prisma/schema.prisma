@@ -176,6 +176,7 @@ model SyncRun {
   windowStart         DateTime?     @db.Date
   windowEnd           DateTime?     @db.Date
   upstreamMaxDate     DateTime?     @db.Date
+  upstreamUpdatedAt   DateTime? // CTA's last change to the dataset's rows, from the portal's metadata; null when unread
   rowsFetched         Int           @default(0)
   rowsInserted        Int           @default(0)
   rowsRevised         Int           @default(0)

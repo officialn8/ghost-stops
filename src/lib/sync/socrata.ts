@@ -9,6 +9,10 @@ import { ISO_DATE, type DateWindow } from "./window";
 
 const RIDERSHIP_DATASET = "5neh-572f";
 const RIDERSHIP_ENDPOINT = `https://data.cityofchicago.org/resource/${RIDERSHIP_DATASET}.json`;
+const RIDERSHIP_METADATA = `https://data.cityofchicago.org/api/views/${RIDERSHIP_DATASET}.json`;
+
+/** The update time is a record, not an input to the sync, so it gets one short try. */
+const METADATA_TIMEOUT_MS = 10_000;
 
 /** Rows per request; SODA 2.1 pages with $limit and $offset. */
 const PAGE_SIZE = 50_000;
@@ -52,6 +56,11 @@ export interface RidershipSource {
     /** Row count and ride sum for every station and month, for the weekly reconciliation. */
     stationMonthTotals(): Promise<StationMonthTotal[]>;
     duplicateDays(): Promise<DuplicateDay[]>;
+    /**
+     * When CTA last changed the dataset's rows, as an ISO timestamp: the portal's `rowsUpdatedAt`.
+     * CTA publishes in roughly monthly batches with no announced schedule, so each run records it.
+     */
+    rowsUpdatedAt(): Promise<string>;
 }
 
 /** The subset of `fetch` the client uses, so tests can answer without the network. */
@@ -133,32 +142,33 @@ export function createSocrataSource(options: SocrataOptions = {}): RidershipSour
     const headers: Record<string, string> = { Accept: "application/json" };
     if (options.appToken) headers["X-App-Token"] = options.appToken;
 
-    async function query(params: Record<string, string>): Promise<RawRow[]> {
-        const url = `${RIDERSHIP_ENDPOINT}?${new URLSearchParams(params)}`;
+    async function request(url: string, timeout: number, retryDelays: readonly number[]): Promise<unknown> {
         for (let attempt = 0; ; attempt++) {
             let status: number | null = null;
             try {
-                const response = await http(url, { headers, signal: AbortSignal.timeout(timeoutMs) });
-                if (response.ok) {
-                    const body = await response.json();
-                    if (!Array.isArray(body)) throw new SocrataError("Socrata returned a body that is not an array");
-                    return body as RawRow[];
-                }
+                const response = await http(url, { headers, signal: AbortSignal.timeout(timeout) });
+                if (response.ok) return await response.json();
                 status = response.status;
             } catch (error) {
                 if (error instanceof SocrataError) throw error;
                 // A network failure or timeout; the error's own text may carry the URL, so drop it.
             }
             const retryable = status === null || status === 429 || status >= 500;
-            if (!retryable || attempt >= retryDelaysMs.length) {
+            if (!retryable || attempt >= retryDelays.length) {
                 throw new SocrataError(
                     status === null
                         ? "Socrata request failed: network error or timeout"
                         : `Socrata request failed with HTTP ${status}`,
                 );
             }
-            await sleep(retryDelaysMs[attempt]);
+            await sleep(retryDelays[attempt]);
         }
+    }
+
+    async function query(params: Record<string, string>): Promise<RawRow[]> {
+        const body = await request(`${RIDERSHIP_ENDPOINT}?${new URLSearchParams(params)}`, timeoutMs, retryDelaysMs);
+        if (!Array.isArray(body)) throw new SocrataError("Socrata returned a body that is not an array");
+        return body as RawRow[];
     }
 
     async function queryAll(params: Record<string, string>): Promise<RawRow[]> {
@@ -225,6 +235,16 @@ export function createSocrataSource(options: SocrataOptions = {}): RidershipSour
                 maxRides: count(row, "hi"),
                 sameUpdate: text(row, "first_update") === text(row, "last_update"),
             }));
+        },
+
+        async rowsUpdatedAt() {
+            const body = await request(RIDERSHIP_METADATA, Math.min(timeoutMs, METADATA_TIMEOUT_MS), []);
+            // Unix seconds.
+            const seconds = (body as { rowsUpdatedAt?: unknown } | null)?.rowsUpdatedAt;
+            if (typeof seconds !== "number" || !Number.isSafeInteger(seconds) || seconds <= 0) {
+                throw new SocrataError(`Socrata metadata has no rowsUpdatedAt: ${String(seconds)}`);
+            }
+            return new Date(seconds * 1000).toISOString();
         },
     };
 }

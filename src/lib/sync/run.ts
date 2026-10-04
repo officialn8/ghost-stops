@@ -10,7 +10,7 @@
  *    so a scoring failure leaves the previous run's metrics in place. A narrative failure, in its
  *    read or its generation, does not hold back the metrics (KTD11).
  * 5. Finalize the row as ok, partial (data changed before an error, or the narratives failed), or
- *    failed, and release the lease.
+ *    failed, record when CTA last updated the dataset, and release the lease.
  */
 import type { PrismaClient, SyncRunStatus } from "@/generated/prisma/client";
 import { todayInChicago } from "@/lib/cta/closures";
@@ -70,6 +70,8 @@ export interface SyncSummary {
     status: SyncRunStatus;
     window: DateWindow | null;
     upstreamMaxDate: string | null;
+    /** When CTA last changed the dataset's rows (ISO timestamp); null when the portal did not say. */
+    upstreamUpdatedAt: string | null;
     dataThrough: string | null;
     rowsFetched: number;
     rowsInserted: number;
@@ -195,6 +197,7 @@ export async function runSync(db: PrismaClient, source: RidershipSource, options
         status: "SKIPPED",
         window: null,
         upstreamMaxDate: null,
+        upstreamUpdatedAt: null,
         dataThrough: null,
         rowsFetched: 0,
         rowsInserted: 0,
@@ -208,6 +211,11 @@ export async function runSync(db: PrismaClient, source: RidershipSource, options
     };
     if (!lease.acquired) return summary;
 
+    // Read alongside the sync and only recorded, so a failed read leaves it null and fails nothing.
+    const upstreamUpdatedRead = source.rowsUpdatedAt().catch((error: unknown) => {
+        options.log?.(`CTA's update time not recorded: ${errorText(error)}`);
+        return null;
+    });
     const ctaStationIds = options.ctaStationIds?.length ? options.ctaStationIds : undefined;
     const unmatched = new Set<string>();
     let status: RunOutcome["status"];
@@ -328,6 +336,7 @@ export async function runSync(db: PrismaClient, source: RidershipSource, options
     summary.status = status;
 
     summary.unmatchedStationIds = [...unmatched].sort();
+    summary.upstreamUpdatedAt = await upstreamUpdatedRead;
     const finishedAt = now();
     summary.durationMs = finishedAt.getTime() - startedAt.getTime();
     await finishRun(db, lease.runId, {
@@ -339,6 +348,7 @@ export async function runSync(db: PrismaClient, source: RidershipSource, options
         rowsRevised: summary.rowsRevised,
         unmatchedStationIds: summary.unmatchedStationIds,
         driftMonths: summary.driftMonths,
+        upstreamUpdatedAt: summary.upstreamUpdatedAt === null ? null : new Date(summary.upstreamUpdatedAt),
         error: summary.error,
     });
     return summary;
