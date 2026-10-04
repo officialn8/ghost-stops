@@ -21,15 +21,13 @@ const KNOWN_SLUGS = new Set(
   generateSlugs(CTA_ROSTER.map((s) => ({ ...s, lines: linesForStation(s.ctaStationId) }))).values(),
 );
 
-/** A station id, which the detail lookup still accepts until the uuid fallback goes (KTD7, U23). */
-const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-
 /**
- * Only addresses that can name a station are cached; anything else is read uncached (and comes
- * back not found), so arbitrary URLs cannot fill the data cache with entries.
+ * Only a station's slug or a retired slug is cached; anything else is read uncached, so arbitrary
+ * URLs cannot fill the data cache with entries. That includes a station id, which the detail lookup
+ * still accepts until the uuid fallback goes (KTD7, U23): it reads uncached, as the API route does.
  */
-function cacheable(slug: string): boolean {
-  return KNOWN_SLUGS.has(slug) || resolveSlugAlias(slug) !== undefined || UUID.test(slug);
+export function cacheable(slug: string): boolean {
+  return KNOWN_SLUGS.has(slug) || resolveSlugAlias(slug) !== undefined;
 }
 
 export const getStationDetail = cache((slug: string) => (cacheable(slug) ? readCached(slug) : readStationDetail(slug)));
