@@ -126,4 +126,4 @@ CI runs all of these, plus a gitleaks scan of the full history, on every push.
 
 ## License
 
-MIT
+MIT. See `LICENSE`.
