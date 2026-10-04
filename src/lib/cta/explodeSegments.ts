@@ -145,9 +145,6 @@ export function explodeSegments(
 ): FeatureCollection<LineString, ExplodedProperties> {
   const explodedFeatures: Feature<LineString, ExplodedProperties>[] = [];
 
-  // Debug: count segments by line
-  const lineCountsDebug: Record<string, number> = {};
-
   for (const segment of segments.features) {
     const { lines, segment_id, corridor, is_loop } = segment.properties;
     const normalizedCoordinates = normalizeSegmentDirectionWithLines(segment.geometry.coordinates, corridor, lines);
@@ -189,14 +186,7 @@ export function explodeSegments(
           offset_px
         }
       });
-
-      // Count for debugging
-      lineCountsDebug[line] = (lineCountsDebug[line] || 0) + 1;
     });
-  }
-
-  if (process.env.NODE_ENV !== 'production') {
-    console.log('Exploded segments by line (no stitching):', lineCountsDebug);
   }
 
   return {

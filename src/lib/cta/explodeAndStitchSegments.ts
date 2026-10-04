@@ -537,7 +537,7 @@ export function explodeAndStitchSegments(
   // First, explode segments as before
   const explodedFeatures: Feature<LineString, ExplodedProperties>[] = [];
 
-  // Count segments by line for debugging
+  // Segments per line, to check below that stitching lost none
   const lineCountsBefore: Record<string, number> = {};
 
   for (const segment of segments.features) {
@@ -598,13 +598,8 @@ export function explodeAndStitchSegments(
         }
       });
 
-      // Count for debugging
       lineCountsBefore[line] = (lineCountsBefore[line] || 0) + 1;
     });
-  }
-
-  if (process.env.NODE_ENV !== 'production') {
-    console.log('Exploded segments by line (before stitching):', lineCountsBefore);
   }
 
   // Now stitch contiguous segments
@@ -651,10 +646,9 @@ export function explodeAndStitchSegments(
     lineCountsAfter[line] = (lineCountsAfter[line] || 0) + 1;
   }
 
+  // This runs on every recompute, so it stays silent unless a line lost every segment, which is
+  // a real bug rather than noise.
   if (process.env.NODE_ENV !== 'production') {
-    console.log('Stitched features by line (after stitching):', lineCountsAfter);
-
-    // Verify no segments were lost
     for (const line in lineCountsBefore) {
       const before = lineCountsBefore[line];
       const after = lineCountsAfter[line] || 0;
@@ -668,6 +662,19 @@ export function explodeAndStitchSegments(
     type: "FeatureCollection",
     features: stitchedFeatures
   };
+}
+
+let warnedFallback = false;
+
+/**
+ * A few paths cannot be merged into one line and fall back to their unmerged segments, which draw
+ * the same tracks. That is expected for this data, so it is noted once per session in development
+ * rather than on every recompute.
+ */
+function warnFallbackOnce(error: unknown): void {
+  if (warnedFallback || process.env.NODE_ENV === 'production') return;
+  warnedFallback = true;
+  console.warn('Some track paths could not be stitched and are drawn unmerged:', error);
 }
 
 /**
@@ -723,9 +730,7 @@ function stitchSegments(
             const merged = mergeSegments(groupSegments, path);
             stitchedFeatures.push(merged);
           } catch (error) {
-            if (process.env.NODE_ENV !== 'production') {
-              console.warn('Falling back to unmerged segments for path:', error);
-            }
+            warnFallbackOnce(error);
 
             for (const idx of path) {
               stitchedFeatures.push({
