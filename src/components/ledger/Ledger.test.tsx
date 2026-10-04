@@ -274,12 +274,13 @@ describe("search", () => {
     expect(openStation).not.toHaveBeenCalled();
   });
 
-  it("clears a query on the first Escape and claims the key, then lets the next Escape through", async () => {
+  it("clears a query on the first Escape and stops the key, then lets the next Escape through", async () => {
     render(<Harness list={ready()} openStation={openStation} />);
     const user = userEvent.setup();
-    const prevented: boolean[] = [];
+    // What the drawer's window listener would see.
+    let reachedWindow = 0;
     const listener = (event: KeyboardEvent) => {
-      if (event.key === "Escape") prevented.push(event.defaultPrevented);
+      if (event.key === "Escape") reachedWindow += 1;
     };
     window.addEventListener("keydown", listener);
 
@@ -287,10 +288,11 @@ describe("search", () => {
     await user.type(search, "hal");
     await user.keyboard("{Escape}");
     expect(search).toHaveValue("");
+    expect(reachedWindow).toBe(0);
     await user.keyboard("{Escape}");
     window.removeEventListener("keydown", listener);
 
-    expect(prevented).toEqual([true, false]);
+    expect(reachedWindow).toBe(1);
   });
 });
 

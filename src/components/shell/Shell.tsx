@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import dynamic from "next/dynamic";
 import { useParams, useRouter } from "next/navigation";
-import { AnimatePresence, MotionConfig } from "motion/react";
+import { MotionConfig } from "motion/react";
 import { Ledger } from "@/components/ledger/Ledger";
 import { useIsPhone } from "@/hooks/useMediaQuery";
 import { cn, type CTALine } from "@/lib/utils";
@@ -59,7 +59,13 @@ export function Shell({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const params = useParams<{ slug?: string }>();
   const selectedSlug = typeof params?.slug === "string" ? params.slug : null;
+  const isOpen = selectedSlug !== null;
   const isPhone = useIsPhone();
+
+  // The drawer the reader arrived on (a station link, server-rendered) shows at once rather than
+  // shipping at opacity 0; after it first closes, every drawer opened slides in.
+  const [arrivedOpen, setArrivedOpen] = useState(isOpen);
+  if (arrivedOpen && !isOpen) setArrivedOpen(false);
 
   const { list, retry } = useStationList();
   const [query, setQuery] = useState("");
@@ -112,8 +118,6 @@ export function Shell({ children }: { children: React.ReactNode }) {
     [list, retry, stations, stationBySlug, selectedSlug, selected, openStation, closeStation, query, activeLines, toggleLine, sort, sortBy],
   );
 
-  const isOpen = selectedSlug !== null;
-
   return (
     <ShellContext.Provider value={model}>
       <MotionConfig reducedMotion="user">
@@ -145,9 +149,9 @@ export function Shell({ children }: { children: React.ReactNode }) {
               >
                 <MapView />
               </div>
-              <AnimatePresence initial={false}>
-                {isOpen ? <Drawer key="drawer">{children}</Drawer> : children}
-              </AnimatePresence>
+              {/* No exit animation: an exiting drawer would keep its children, and the route
+                  inside them already reads "/", so it would fade an empty panel. */}
+              {isOpen ? <Drawer entrance={!arrivedOpen}>{children}</Drawer> : children}
             </main>
           </div>
           {isPhone && <MobileSheet hidden={isOpen} />}

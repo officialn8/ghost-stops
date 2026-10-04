@@ -55,8 +55,10 @@ export function LedgerHeader({
         onChange={(event) => onQueryChange(event.target.value)}
         onKeyDown={(event) => {
           if (event.key === "Escape" && query !== "") {
-            // Claimed, so the drawer's Escape listener leaves the station open (R28).
+            // Stopped here, so the key never reaches the drawer's window listener and the station
+            // stays open (R28). React listens at the root (or portal) container, below the window.
             event.preventDefault();
+            event.stopPropagation();
             onQueryChange("");
           } else if (event.key === "Enter" && !event.nativeEvent.isComposing) {
             event.preventDefault();
