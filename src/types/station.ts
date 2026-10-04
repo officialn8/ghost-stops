@@ -1,6 +1,6 @@
 /**
  * The station API's shapes (KTD14): the list route `GET /api/chicago/stations` and the
- * slug-addressed detail route `GET /api/chicago/stations/{slug or uuid}`. The routes type their
+ * slug-addressed detail route `GET /api/chicago/stations/{slug}`. The routes type their
  * responses with these, and the Phase 5 components (U17 to U21) read them.
  *
  * Dates are YYYY-MM-DD calendar strings (KTD17); only `lastSuccessfulFetch` is an instant, an ISO
@@ -241,7 +241,7 @@ export interface StationDetailComparisons {
   };
   /**
    * Every adjacent station on the primary line, closed and unranked ones included (State/Lake on
-   * the Brown Line Loop), with a null score and tier for those. Null when there is no station on
+   * the Brown Line Loop), with a null tier for those. Null when there is no station on
    * that side: past a terminal, or for a station with no CTA id.
    */
   lineNeighbors: {

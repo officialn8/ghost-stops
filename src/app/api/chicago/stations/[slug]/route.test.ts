@@ -82,6 +82,8 @@ let closuresByCtaId: Record<string, { startDate: Date; endDate: Date | null }[]>
 
 type StationWhere = {
     slug?: string;
+    id?: string;
+    OR?: { slug?: string; id?: string }[];
     ctaStationId?: { in: string[] };
 };
 
@@ -118,12 +120,15 @@ function stationRow(ctaStationId: string | null, lines: string[], self: Self = {
 
 /**
  * Stubs the station the route resolves by slug, the neighbor lookup by CTA station id, and the
- * peer lookup by station id.
+ * peer lookup by station id. Like the database, the resolution query finds the row when its where
+ * clause, or any `OR` entry, names the row's slug or its id, so a lookup that fell back to the id
+ * would find the station and fail the station-id 404 test.
  */
 function stubStation(ctaStationId: string | null, lines: string[], self: Self = {}) {
     const row = stationRow(ctaStationId, lines, self);
+    const matches = (c: { slug?: string; id?: string }) => c.slug === row.slug || c.id === row.id;
     prismaMock.station.findFirst.mockImplementation((async (args: { where: StationWhere }) =>
-        args.where.slug === row.slug ? row : null) as never);
+        matches(args.where) || args.where.OR?.some(matches) ? row : null) as never);
     prismaMock.station.findMany.mockImplementation((async (args: { where: StationWhere }) => {
         const { ctaStationId: byCtaId } = args.where;
         if (byCtaId) {

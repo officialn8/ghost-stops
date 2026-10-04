@@ -1,6 +1,6 @@
 # Ghost Stops
 
-Ghost Stops finds Chicago's emptiest "L" stations and explains why each one ranks where it does. Every one of the CTA's 144 stations gets a Ghost score, a tier, and its own page with the numbers behind the score.
+Ghost Stops finds Chicago's emptiest "L" stations and explains why each one ranks where it does. Every one of the CTA's 144 stations gets its own page with the numbers behind its standing. Each open station with recent riders also gets a Ghost score and a tier.
 
 Live at **https://ghost-stops.vercel.app**.
 
