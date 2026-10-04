@@ -75,6 +75,7 @@ describe("finishRun", () => {
             rowsRevised: 1,
             unmatchedStationIds: ["40500"],
             driftMonths: [],
+            upstreamUpdatedAt: new Date("2026-09-28T18:04:46Z"),
             error: null,
         });
 
@@ -86,6 +87,7 @@ describe("finishRun", () => {
             rowsInserted: 4,
             rowsRevised: 1,
             unmatchedStationIds: ["40500"],
+            upstreamUpdatedAt: new Date("2026-09-28T18:04:46Z"),
         });
         expect((await acquireLease(prisma, "local", new Date(NOW.getTime() + 60_000))).acquired).toBe(true);
     });

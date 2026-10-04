@@ -17,6 +17,7 @@ const summary = (overrides: Partial<SyncSummary> = {}): SyncSummary => ({
     status: "OK",
     window: { start: "2026-06-01", end: "2026-07-31" },
     upstreamMaxDate: "2026-07-31",
+    upstreamUpdatedAt: "2026-09-28T18:04:46.000Z",
     dataThrough: "2026-07-31",
     rowsFetched: 8_784,
     rowsInserted: 61,

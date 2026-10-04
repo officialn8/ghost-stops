@@ -930,3 +930,37 @@ Record (2026-10-03, run by the agent on Nate's "Retire the Go ETL and Railway no
 
 The scheduled sync is now the only pipeline. Until seven OK scheduled days have passed, watch the
 daily `/api/health` check (section 6) and the `SyncRun` rows.
+
+## 10. Phase 5: redesign (U17 to U22)
+
+No database change. Record (2026-10-04, run by the agent on Nate's "merge after and delete this
+PR's temp neon database branch"):
+
+| Step | UTC | Result |
+|---|---|---|
+| Merge | 03:38:05 | #9 merged as `d10826e` with every check green, after Nate's first-tap check on a real phone |
+| Live site | 03:40 | home, `/station/halsted-green`, the list and detail routes, and `/api/health` 200; no production runtime errors since the deploy |
+| Cleanup | 03:39 | Neon branch `preview/feat/phase-5-redesign` deleted; `preview/chore/retire-go-etl` (#8) deleted on Nate's approval at 03:51 |
+
+## 11. Record when CTA updates the dataset
+
+CTA publishes the ridership dataset in roughly monthly batches, about two months behind, with no
+announced schedule. Each sync now stores the portal's `rowsUpdatedAt` for `5neh-572f` in
+`SyncRun.upstreamUpdatedAt`, and `/api/health` reports the latest one. Before this, the dataset's
+last update was 2026-09-28 18:04 UTC, read by hand on 2026-10-03.
+
+The column has to exist before code that knows it deploys: Prisma's `create` and `update` on
+`SyncRun` return every column, so they fail against a table without it. Adding a nullable column
+does not affect code that does not know it. Order: migrate production, then push the branch (its
+Vercel preview forks a Neon branch from production), then merge.
+
+Record (2026-10-04, run by the agent on Nate's "go migrate"):
+
+| Step | UTC | Result |
+|---|---|---|
+| Guard | 03:52 | target production's direct host as `neondb_owner` (section 1); 144 stations, 5 `SyncRun` rows, no `upstreamUpdatedAt` column; `migrate status` lists only `20261004033645_sync_run_upstream_updated_at` as pending |
+| Migrate | 03:52:29 | `migrate deploy` applied it; `migrate diff` printed `No difference detected`; the column is `timestamp`, nullable, null on all 5 rows |
+| Live site | 03:53 | `/api/health`, the list, and a detail route 200 three times over, on the code deployed before the column |
+
+Rollback: `ALTER TABLE "SyncRun" DROP COLUMN "upstreamUpdatedAt";` and delete the migration's row
+from `_prisma_migrations`, after rolling the app back to a deployment that predates the column.

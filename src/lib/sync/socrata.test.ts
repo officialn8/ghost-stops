@@ -3,6 +3,7 @@ import recordedDays from "./__fixtures__/socrata-days.json";
 import { createSocrataSource, type HttpFetch } from "./socrata";
 
 interface Call {
+    path: string;
     params: URLSearchParams;
     headers: Record<string, string>;
 }
@@ -11,7 +12,7 @@ interface Call {
 function fakeHttp(responses: Array<{ status: number; body?: unknown } | Error>) {
     const calls: Call[] = [];
     const fetch: HttpFetch = async (url, init) => {
-        calls.push({ params: new URL(url).searchParams, headers: init.headers });
+        calls.push({ path: new URL(url).pathname, params: new URL(url).searchParams, headers: init.headers });
         const next = responses.shift();
         if (next === undefined) throw new Error("no response queued");
         if (next instanceof Error) throw next;
@@ -144,6 +145,31 @@ describe("createSocrataSource", () => {
         const badRequest = fakeHttp([{ status: 400 }]);
         await expect(createSocrataSource({ fetch: badRequest.fetch, retryDelaysMs: [0] }).maxDate()).rejects.toThrow(/HTTP 400/);
         expect(badRequest.calls).toHaveLength(1);
+    });
+
+    it("reads when CTA last updated the dataset from the portal's metadata", async () => {
+        const http = fakeHttp([{ status: 200, body: { id: "5neh-572f", rowsUpdatedAt: 1790618686 } }]);
+
+        expect(await createSocrataSource({ fetch: http.fetch, appToken: "test-token" }).rowsUpdatedAt()).toBe("2026-09-28T18:04:46.000Z");
+        expect(http.calls[0].path).toBe("/api/views/5neh-572f.json");
+        expect(http.calls[0].headers["X-App-Token"]).toBe("test-token");
+        expect([...http.calls[0].params.keys()]).toEqual([]);
+    });
+
+    it("gives the metadata read one try, since the update time only gets recorded", async () => {
+        const http = fakeHttp([{ status: 503 }, { status: 200, body: { rowsUpdatedAt: 1790618686 } }]);
+
+        await expect(createSocrataSource({ fetch: http.fetch, retryDelaysMs: [0, 0] }).rowsUpdatedAt()).rejects.toThrow(
+            "Socrata request failed with HTTP 503",
+        );
+        expect(http.calls).toHaveLength(1);
+    });
+
+    it("rejects metadata without a usable rowsUpdatedAt", async () => {
+        for (const body of [{}, { rowsUpdatedAt: "1790618686" }, { rowsUpdatedAt: 0 }, null]) {
+            const http = fakeHttp([{ status: 200, body }]);
+            await expect(createSocrataSource({ fetch: http.fetch }).rowsUpdatedAt()).rejects.toThrow(/no rowsUpdatedAt/);
+        }
     });
 
     it("refuses station ids that are not five digits before sending anything", async () => {

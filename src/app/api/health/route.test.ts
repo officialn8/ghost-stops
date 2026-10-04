@@ -10,19 +10,25 @@ const { GET } = await import("./route");
 const NOW = new Date("2026-08-12T12:30:00Z");
 const daysAgo = (days: number) => new Date(NOW.getTime() - days * 24 * 60 * 60 * 1000);
 
-type FindFirstArgs = { where: { status: string | { in: string[] }; OR?: unknown[] }; select: Record<string, boolean> };
+type FindFirstArgs = {
+    where: { status?: string | { in: string[] }; OR?: unknown[]; upstreamUpdatedAt?: unknown };
+    select: Record<string, boolean>;
+};
 
 /**
- * Answers the four health queries: last ok run, last ok reconciliation (the one with an OR on the
- * trigger; two days old unless given), stuck running row, latest finished run.
+ * Answers the five health queries: last ok run, last ok reconciliation (the one with an OR on the
+ * trigger; two days old unless given), stuck running row, latest finished run, and the latest run
+ * that read CTA's update time.
  */
 function stubRuns(runs: {
     lastOk?: object | null;
     lastReconcile?: object | null;
     stuck?: object | null;
     latest?: object | null;
+    upstreamUpdate?: object | null;
 }) {
     prismaMock.syncRun.findFirst.mockImplementation((async (args: FindFirstArgs) => {
+        if (args.where.upstreamUpdatedAt) return runs.upstreamUpdate ?? null;
         if (args.where.status === "OK" && args.where.OR) {
             return runs.lastReconcile === undefined ? { finishedAt: daysAgo(2) } : runs.lastReconcile;
         }
@@ -46,6 +52,7 @@ describe("GET /api/health", () => {
         stubRuns({
             lastOk: { finishedAt: daysAgo(1), windowEnd: new Date("2026-07-31") },
             latest: { unmatchedStationIds: [], driftMonths: [] },
+            upstreamUpdate: { upstreamUpdatedAt: new Date("2026-07-28T18:04:46Z") },
         });
 
         const response = await GET();
@@ -57,6 +64,7 @@ describe("GET /api/health", () => {
             dataThrough: "2026-07-31",
             unmatchedStationIds: [],
             driftBacklogMonths: 0,
+            upstreamUpdatedAt: "2026-07-28T18:04:46.000Z",
             warnings: [],
         });
     });

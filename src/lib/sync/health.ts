@@ -29,6 +29,7 @@ export interface HealthInputs {
     lastReconcile: { finishedAt: Date | null } | null;
     stuckSince: Date | null;
     latest: { unmatchedStationIds: unknown; driftMonths: unknown } | null;
+    lastUpstreamUpdate: { upstreamUpdatedAt: Date | null } | null;
 }
 
 export interface HealthReport {
@@ -38,11 +39,13 @@ export interface HealthReport {
     dataThrough: string | null;
     unmatchedStationIds: string[];
     driftBacklogMonths: number;
+    /** When CTA last updated the dataset, as the latest run that read the portal's metadata saw it. */
+    upstreamUpdatedAt: string | null;
     warnings: string[];
 }
 
 export async function readHealthInputs(db: Pick<PrismaClient, "syncRun">, now: Date): Promise<HealthInputs> {
-    const [lastSuccess, lastReconcile, stuck, latest] = await Promise.all([
+    const [lastSuccess, lastReconcile, stuck, latest, lastUpstreamUpdate] = await Promise.all([
         lastSuccessfulRun(db),
         db.syncRun.findFirst({
             where: { status: "OK", OR: RECONCILE_RUNS },
@@ -55,8 +58,13 @@ export async function readHealthInputs(db: Pick<PrismaClient, "syncRun">, now: D
             select: { startedAt: true },
         }),
         latestCompletedRun(db),
+        db.syncRun.findFirst({
+            where: { upstreamUpdatedAt: { not: null } },
+            orderBy: { startedAt: "desc" },
+            select: { upstreamUpdatedAt: true },
+        }),
     ]);
-    return { lastSuccess, lastReconcile, stuckSince: stuck?.startedAt ?? null, latest };
+    return { lastSuccess, lastReconcile, stuckSince: stuck?.startedAt ?? null, latest, lastUpstreamUpdate };
 }
 
 export function assessHealth(inputs: HealthInputs, now: Date): { httpStatus: 200 | 503; report: HealthReport } {
@@ -87,6 +95,7 @@ export function assessHealth(inputs: HealthInputs, now: Date): { httpStatus: 200
             dataThrough: freshness.dataThrough,
             unmatchedStationIds: unmatched,
             driftBacklogMonths: backlog,
+            upstreamUpdatedAt: inputs.lastUpstreamUpdate?.upstreamUpdatedAt?.toISOString() ?? null,
             warnings,
         },
     };

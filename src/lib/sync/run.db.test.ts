@@ -3,7 +3,7 @@ import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import { generateNarratives } from "@/lib/narratives/generate";
 import { prisma } from "@/lib/prisma";
 import { clearSyncRuns, createSyncTestCity, deleteSyncTestCity, stationIdFor } from "./__fixtures__/db";
-import { fakeSource, upstreamDays, UPDATED_AT } from "./__fixtures__/fake-source";
+import { fakeSource, ROWS_UPDATED_AT, upstreamDays, UPDATED_AT } from "./__fixtures__/fake-source";
 import { acquireLease, latestCompletedRun } from "./lease";
 import { runSync, type SyncOptions } from "./run";
 import type { UpstreamDay } from "./socrata";
@@ -90,12 +90,14 @@ describe("runSync", () => {
             status: "OK",
             window: { start: "2026-06-01", end: "2026-07-31" },
             upstreamMaxDate: "2026-07-31",
+            upstreamUpdatedAt: ROWS_UPDATED_AT,
             dataThrough: "2026-07-31",
             rowsFetched: 122,
             rowsInserted: 122,
             rowsRevised: 0,
         });
         expect(first.record).toMatchObject({ status: "OK", lease: null, rowsInserted: 122 });
+        expect(first.record.upstreamUpdatedAt?.toISOString()).toBe(ROWS_UPDATED_AT);
         expect(first.record.windowStart?.toISOString().slice(0, 10)).toBe("2026-06-01");
         expect(fetchedWindows(first.calls)).toEqual(["2026-06-01..2026-06-30", "2026-07-01..2026-07-31"]);
 
@@ -126,6 +128,22 @@ describe("runSync", () => {
         expect(record).toMatchObject({ status: "PARTIAL", lease: null, rowsInserted: 60 }); // June only
         expect(record.error).toMatch(/HTTP 503/);
         expect(record.finishedAt).not.toBeNull();
+    });
+
+    it("finishes ok without CTA's update time when the portal's metadata cannot be read", async () => {
+        const log: string[] = [];
+        const { summary, record } = await run(WINDOW_ROWS, { log: (line) => log.push(line) }, (call) => call.method === "rowsUpdatedAt");
+
+        expect(summary).toMatchObject({ status: "OK", upstreamUpdatedAt: null, rowsInserted: 122 });
+        expect(record).toMatchObject({ status: "OK", upstreamUpdatedAt: null, error: null });
+        expect(log).toContain("CTA's update time not recorded: Error: Socrata request failed with HTTP 503 (fake rowsUpdatedAt)");
+    });
+
+    it("still records CTA's update time on a run that fails", async () => {
+        const { record } = await run(WINDOW_ROWS, {}, (call) => call.method === "maxDate");
+
+        expect(record.status).toBe("FAILED");
+        expect(record.upstreamUpdatedAt?.toISOString()).toBe(ROWS_UPDATED_AT);
     });
 
     it("finalizes as failed when nothing was written", async () => {
