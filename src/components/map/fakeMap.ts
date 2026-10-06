@@ -2,6 +2,7 @@ import type { FeatureCollection } from "geojson";
 import type { GeoJSONSourceSpecification, LayerSpecification } from "mapbox-gl";
 import type { BaseLayer } from "./layers";
 import type { RasterImage } from "./marks";
+import type { Bounds } from "./layers";
 import type { MapLike, Padding } from "./stationMap";
 
 /**
@@ -51,6 +52,8 @@ export class FakeMap implements MapLike {
   rotationDisabled = false;
   flights: Parameters<MapLike["flyTo"]>[0][] = [];
   jumps: Parameters<MapLike["jumpTo"]>[0][] = [];
+  /** Every cameraForBounds call: what showNetwork asked the camera to frame. */
+  fits: { bounds: Bounds; padding: Padding }[] = [];
   resizes = 0;
   /** The point at the canvas center, for jumpTo checks. */
   centerAtCanvasMiddle = { lng: -87.65, lat: 41.88 };
@@ -216,6 +219,13 @@ export class FakeMap implements MapLike {
     this.padding = options.padding;
     this.zoom = options.zoom;
     return this;
+  }
+
+  /** The box's center at a fixed zoom; the real map's math is Mapbox's to test. */
+  cameraForBounds(bounds: Bounds, options: { padding: Padding }) {
+    this.fits.push({ bounds, padding: options.padding });
+    const [[west, south], [east, north]] = bounds;
+    return { center: { lng: (west + east) / 2, lat: (south + north) / 2 }, zoom: 10 };
   }
 
   jumpTo(options: Parameters<MapLike["jumpTo"]>[0]) {

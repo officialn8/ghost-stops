@@ -242,3 +242,35 @@ describe("search normalization", () => {
     expect(matchesQuery("Halsted", "")).toBe(true);
   });
 });
+
+describe("deriveLedger: tier groups", () => {
+  const tiers = (groups: ReturnType<typeof derive>["tierGroups"]) => groups?.map((group) => [group.tier, slugs(group.rows)]);
+
+  it("groups the ranked rows by tier under the rank sort, ghost first", () => {
+    expect(tiers(derive().tierGroups)).toEqual([
+      ["ghost", ["oak-park-green", "halsted-green"]],
+      ["fading", ["monroe-red"]],
+      ["quiet", ["halsted-orange"]],
+      ["healthy", ["ohare", "clark-lake"]],
+    ]);
+  });
+
+  it("reverses the groups with the direction", () => {
+    expect(derive({ sort: { key: "rank", direction: "desc" } }).tierGroups?.map((group) => group.tier)).toEqual([
+      "healthy",
+      "quiet",
+      "fading",
+      "ghost",
+    ]);
+  });
+
+  it("has no groups under the riders or name sort, where tiers interleave", () => {
+    expect(derive({ sort: { key: "riders", direction: "asc" } }).tierGroups).toBeNull();
+    expect(derive({ sort: { key: "name", direction: "desc" } }).tierGroups).toBeNull();
+  });
+
+  it("keeps only the tiers a search leaves, with a pinned selection in its tier", () => {
+    expect(tiers(derive({ query: "xyz", selectedSlug: "monroe-red" }).tierGroups)).toEqual([["fading", ["monroe-red"]]]);
+    expect(derive({ query: "xyz" }).tierGroups).toEqual([]);
+  });
+});

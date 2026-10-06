@@ -271,3 +271,24 @@ describe("StationMap camera", () => {
     expect(map.padding.right).toBe(440);
   });
 });
+
+describe("StationMap network camera", () => {
+  it("flies 900ms to the camera that frames the bounds inside the inset, leaving no padding behind", () => {
+    const { map, stationMap } = setup();
+    stationMap.focus([-87.648, 41.885], true);
+    const before = map.resizes;
+
+    stationMap.showNetwork([[-88, 41.5], [-87.5, 42]], { top: 40, bottom: 40, left: 40, right: 40 });
+
+    expect(map.resizes).toBe(before + 1);
+    expect(map.fits.at(-1)).toEqual({ bounds: [[-88, 41.5], [-87.5, 42]], padding: { top: 40, bottom: 40, left: 40, right: 40 } });
+    expect(map.flights.at(-1)).toEqual({
+      center: { lng: -87.75, lat: 41.75 },
+      zoom: 10,
+      duration: FLY_DURATION_MS,
+      padding: { top: 0, bottom: 0, left: 0, right: 0 },
+    });
+    expect(map.flights.at(-1)).not.toHaveProperty("essential");
+    expect(map.padding.right).toBe(0);
+  });
+});

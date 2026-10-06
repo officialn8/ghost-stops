@@ -15,10 +15,12 @@ import {
   LAYER,
   MAP_PALETTE,
   SOURCE,
+  SYSTEM_BOUNDS,
   TRACK_RENDER_ORDER,
   baseStyleAdjustments,
   drawerPadding,
   nearestStation,
+  networkBounds,
   stationFeatures,
   stationLayers,
   trackLayers,
@@ -446,5 +448,44 @@ describe("nearestStation", () => {
     expect(nearestStation([], { x: 0, y: 0 }, project)).toBeNull();
     expect(nearestStation(undefined, { x: 0, y: 0 }, project)).toBeNull();
     expect(nearestStation([point(0, 0, { id: "x" })], { x: 0, y: 0 }, project)).toEqual({ id: "x", slug: null });
+  });
+});
+
+describe("networkBounds", () => {
+  const pin = (slug: string, lines: string[], longitude: number, latitude: number): StationListItem => ({
+    id: `${slug}-id`,
+    slug,
+    displayName: slug,
+    name: slug,
+    lines,
+    status: "ACTIVE",
+    closedAt: null,
+    latitude,
+    longitude,
+    tier: "quiet",
+    rank: 1,
+    rankedCount: 3,
+    avg12m: 1000,
+    avg30d: 1000,
+    dataStatus: "available",
+    sparkline: null,
+    badge: null,
+  });
+  const pins = [pin("a", ["Red"], -87.63, 41.72), pin("b", ["Red"], -87.63, 42.02), pin("c", ["Blue"], -87.9, 41.98)];
+  const only = (...on: CTALine[]) =>
+    Object.fromEntries(CTA_LINE_ORDER.map((line) => [line, on.includes(line)])) as Record<CTALine, boolean>;
+
+  it("is the whole system with every line on, with every line off, and with nothing to draw", () => {
+    expect(networkBounds(stationFeatures(pins, ALL_LINES_ON))).toEqual(SYSTEM_BOUNDS);
+    expect(networkBounds(stationFeatures(pins, only()))).toEqual(SYSTEM_BOUNDS);
+    expect(networkBounds(stationFeatures([], ALL_LINES_ON))).toEqual(SYSTEM_BOUNDS);
+  });
+
+  it("boxes the stations the filter keeps, never narrower than about a kilometer", () => {
+    const [[west, south], [east, north]] = networkBounds(stationFeatures(pins, only("Red")));
+    expect(west).toBeCloseTo(-87.635, 6);
+    expect(east).toBeCloseTo(-87.625, 6);
+    expect(south).toBe(41.72);
+    expect(north).toBe(42.02);
   });
 });
