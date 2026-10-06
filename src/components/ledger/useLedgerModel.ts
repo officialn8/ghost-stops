@@ -5,7 +5,7 @@ import type { Exclusion } from "@/components/marks/PresenceMark";
 import { isExcluded, noLineActive, passesLineFilter } from "@/components/shell/model";
 import type { ActiveLines, SortState } from "@/components/shell/ShellContext";
 import { CTA_LINE_ORDER, isClosedStatus } from "@/lib/utils";
-import type { StationListItem } from "@/types/station";
+import type { ScoreTierName, StationListItem } from "@/types/station";
 
 /** A station the ledger can open: it has a page, so it has a slug. */
 export type LedgerStation = StationListItem & { slug: string };
@@ -25,9 +25,21 @@ export interface LedgerSection {
   rows: LedgerRowModel[];
 }
 
+/** The ranked rows of one tier, in display order: the ledger reads as four tiers under the rank sort. */
+export interface LedgerTierGroup {
+  tier: ScoreTierName;
+  rows: LedgerRowModel[];
+}
+
 export interface LedgerModel {
   /** Ranked stations that match, in the chosen sort, plus the selected one if it would be hidden. */
   ranked: LedgerRowModel[];
+  /**
+   * The same rows grouped by tier, ghost first (or healthy first, descending), when sorted by rank:
+   * the tier headings are the ledger's legend. Null under the riders and name sorts, where tiers
+   * interleave.
+   */
+  tierGroups: LedgerTierGroup[] | null;
   /** "Closed", then "No recent data"; only the ones with rows. Ordered by name whatever the sort. */
   sections: LedgerSection[];
   /** Stations the search and the line filter let through; the pinned selection is not counted. */
@@ -108,6 +120,18 @@ export function compareStations(a: StationListItem, b: StationListItem, sort: So
   }
 }
 
+/** Consecutive runs of one tier; under the rank sort the tiers never interleave. */
+function groupByTier(ranked: LedgerRowModel[]): LedgerTierGroup[] {
+  const groups: LedgerTierGroup[] = [];
+  for (const row of ranked) {
+    const tier = row.station.tier ?? "healthy";
+    const last = groups[groups.length - 1];
+    if (last && last.tier === tier) last.rows.push(row);
+    else groups.push({ tier, rows: [row] });
+  }
+  return groups;
+}
+
 function announce(narrowed: boolean, matchCount: number, total: number): string {
   if (!narrowed) return `${total} ${total === 1 ? "station" : "stations"}`;
   if (matchCount === 0) return "No stations match";
@@ -159,6 +183,7 @@ export function deriveLedger({ stations, query, activeLines, sort, selectedSlug 
 
   return {
     ranked,
+    tierGroups: sort.key === "rank" ? groupByTier(ranked) : null,
     sections,
     matchCount,
     total,

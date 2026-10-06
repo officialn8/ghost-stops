@@ -1,5 +1,5 @@
 import { useCallback, useMemo, useState } from "react";
-import { render, screen, within } from "@testing-library/react";
+import { act, render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ALL_LINES_ON } from "@/components/shell/model";
@@ -14,7 +14,7 @@ import {
 import { CTA_LINE_ORDER, type CTALine } from "@/lib/utils";
 import type { StationListItem } from "@/types/station";
 import { LEDGER_STATIONS } from "./__fixtures__/stations";
-import { Ledger } from "./Ledger";
+import { LEDGER_LIST_ID, Ledger } from "./Ledger";
 
 const NO_STATIONS: readonly StationListItem[] = [];
 
@@ -139,13 +139,14 @@ describe("rows", () => {
     render(<Harness list={ready()} openStation={openStation} />);
     const user = userEvent.setup();
 
-    // Search, eight line toggles, three sort heads, then the first row.
+    // Search, the line filter (one stop), three sort heads, then the first row (R28).
     await user.tab();
     expect(screen.getByRole("searchbox", { name: "Search stations" })).toHaveFocus();
-    for (let i = 0; i < 12; i++) await user.tab();
+    for (let i = 0; i < 5; i++) await user.tab();
     expect(row("oak-park-green")).toHaveFocus();
 
-    await user.tab();
+    // The rows share that one stop; the arrow keys move between them.
+    await user.keyboard("{ArrowDown}");
     expect(row("halsted-green")).toHaveFocus();
     await user.keyboard("{Enter}");
     expect(openStation).toHaveBeenCalledWith("halsted-green");
@@ -175,7 +176,7 @@ describe("trailing sections (AE2)", () => {
     const user = userEvent.setup();
 
     const check = () => {
-      const closed = screen.getByRole("list", { name: "Closed" });
+      const closed = screen.getByRole("list", { name: "Closed, 1 station" });
       expect(within(closed).getByRole("button", { name: /^State\/Lake/ })).toBeInTheDocument();
       const order = rowSlugs();
       expect(order.indexOf("state-lake")).toBeGreaterThan(order.indexOf("clark-lake"));
@@ -184,14 +185,14 @@ describe("trailing sections (AE2)", () => {
     };
 
     check();
-    for (const name of [/^Sort by ghost score/, /^Sort by riders per day/, /^Sort by name/]) {
+    for (const name of [/^Sort by rank/, /^Sort by riders per day/, /^Sort by name/]) {
       await user.click(screen.getByRole("button", { name }));
       check();
       await user.click(screen.getByRole("button", { name }));
       check();
     }
-    expect(screen.getByRole("heading", { name: "Closed" })).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "No recent data" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Closed, 1 station" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "No recent data, 1 station" })).toBeInTheDocument();
   });
 });
 
@@ -200,19 +201,19 @@ describe("sort", () => {
     render(<Harness list={ready()} openStation={openStation} />);
     const user = userEvent.setup();
 
-    expect(screen.getByRole("button", { name: "Sort by ghost score, ascending" })).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByRole("button", { name: "Sort by rank, 1 first" })).toHaveAttribute("aria-pressed", "true");
     const riders = screen.getByRole("button", { name: "Sort by riders per day" });
     expect(riders).toHaveAttribute("aria-pressed", "false");
 
     await user.click(riders);
-    expect(riders).toHaveAccessibleName("Sort by riders per day, ascending");
+    expect(riders).toHaveAccessibleName("Sort by riders per day, fewest first");
     expect(riders).toHaveAttribute("aria-pressed", "true");
     expect(rowSlugs()[0]).toBe("halsted-green");
 
     await user.click(riders);
-    expect(riders).toHaveAccessibleName("Sort by riders per day, descending");
+    expect(riders).toHaveAccessibleName("Sort by riders per day, most first");
     expect(rowSlugs()[0]).toBe("clark-lake");
-    expect(screen.getByRole("button", { name: "Sort by ghost score" })).toHaveAttribute("aria-pressed", "false");
+    expect(screen.getByRole("button", { name: "Sort by rank" })).toHaveAttribute("aria-pressed", "false");
   });
 });
 
@@ -354,5 +355,138 @@ describe("sheet variant", () => {
     expect(screen.getByRole("searchbox", { name: "Search stations" })).toHaveAttribute("data-ledger-search");
     expect(screen.getByRole("group", { name: "Filter by line" })).toBeInTheDocument();
     expect(rowSlugs()).toHaveLength(8);
+  });
+});
+
+describe("tier groups", () => {
+  const headings = () => screen.getAllByRole("heading").map((heading) => heading.textContent);
+
+  it("heads the ranked rows with each tier's word and count under the rank sort, ghost first", () => {
+    render(<Harness list={ready()} openStation={openStation} />);
+    expect(headings()).toEqual([
+      "Ghost, 2 stations",
+      "Fading, 1 station",
+      "Quiet, 1 station",
+      "Healthy, 2 stations",
+      "Closed, 1 station",
+      "No recent data, 1 station",
+    ]);
+    expect(within(screen.getByRole("list", { name: "Ghost, 2 stations" })).getAllByRole("button")).toHaveLength(2);
+    expect(rowSlugs().slice(0, 2)).toEqual(["oak-park-green", "halsted-green"]);
+  });
+
+  it("reverses the tiers with the rank order and drops them under another sort", async () => {
+    render(<Harness list={ready()} openStation={openStation} />);
+    const user = userEvent.setup();
+
+    await user.click(screen.getByRole("button", { name: /^Sort by rank/ }));
+    expect(headings().slice(0, 4)).toEqual(["Healthy, 2 stations", "Quiet, 1 station", "Fading, 1 station", "Ghost, 2 stations"]);
+
+    await user.click(screen.getByRole("button", { name: /^Sort by riders/ }));
+    expect(screen.queryByRole("heading", { name: /^Ghost/ })).not.toBeInTheDocument();
+    expect(screen.getByRole("list", { name: "Ranked stations" })).toBeInTheDocument();
+  });
+
+  it("counts only the rows a search leaves in each tier", async () => {
+    render(<Harness list={ready()} openStation={openStation} />);
+    await userEvent.type(screen.getByRole("searchbox", { name: "Search stations" }), "halsted");
+    expect(headings()).toEqual(["Ghost, 1 station", "Quiet, 1 station"]);
+  });
+});
+
+describe("the lede and the foot", () => {
+  const lede = () => document.querySelector("[data-ledger-summary]")?.textContent;
+
+  it("says what the list is, then counts the matches while it is narrowed", async () => {
+    render(<Harness list={ready()} openStation={openStation} />);
+    expect(lede()).toBe("8 stations, ranked by Ghost score");
+
+    await userEvent.click(lineToggle("Red"));
+    expect(lede()).toBe("7 of 8 stations match");
+    expect(screen.getByRole("status")).toHaveTextContent("7 stations match");
+  });
+
+  it("names the list before it loads", () => {
+    render(<Harness list={{ status: "loading" }} openStation={openStation} />);
+    expect(lede()).toBe("L stations, ranked by Ghost score");
+  });
+
+  it("states CTA's lag and the data-through date under the rows", () => {
+    render(<Harness list={ready()} openStation={openStation} />);
+    expect(screen.getByText(/CTA publishes station entries about two months after the fact/)).toBeInTheDocument();
+    expect(screen.getByText("2026-07-31")).toHaveAttribute("datetime", "2026-07-31");
+  });
+});
+
+describe("keyboard reach (R28)", () => {
+  it("moves between rows with the arrow keys, Home, and End, across the tier groups and sections", async () => {
+    render(<Harness list={ready()} openStation={openStation} />);
+    const user = userEvent.setup();
+
+    act(() => row("oak-park-green").focus());
+    await user.keyboard("{ArrowDown}{ArrowDown}");
+    expect(row("monroe-red")).toHaveFocus();
+    await user.keyboard("{End}");
+    expect(row("cicero-pink")).toHaveFocus();
+    await user.keyboard("{ArrowDown}");
+    expect(row("cicero-pink")).toHaveFocus();
+    await user.keyboard("{Home}");
+    expect(row("oak-park-green")).toHaveFocus();
+    await user.keyboard("{ArrowUp}");
+    expect(row("oak-park-green")).toHaveFocus();
+  });
+
+  it("keeps the last focused row as the list's Tab stop, and the selected row before any", () => {
+    const { rerender } = render(<Harness list={ready()} openStation={openStation} selectedSlug="monroe-red" />);
+    expect(row("monroe-red")).toHaveAttribute("tabindex", "0");
+    expect(row("oak-park-green")).toHaveAttribute("tabindex", "-1");
+
+    act(() => row("ohare").focus());
+    expect(row("ohare")).toHaveAttribute("tabindex", "0");
+    expect(row("monroe-red")).toHaveAttribute("tabindex", "-1");
+
+    rerender(<Harness list={ready()} openStation={openStation} selectedSlug="monroe-red" />);
+    expect(row("ohare")).toHaveAttribute("tabindex", "0");
+  });
+
+  it("moves across the line filter with the arrow keys, as one Tab stop", async () => {
+    render(<Harness list={ready()} openStation={openStation} />);
+    const user = userEvent.setup();
+
+    act(() => lineToggle("Red").focus());
+    await user.keyboard("{ArrowRight}{ArrowRight}");
+    expect(lineToggle("Brown")).toHaveFocus();
+    await user.keyboard("{End}");
+    expect(lineToggle("Yellow")).toHaveFocus();
+    await user.keyboard("{ArrowRight}");
+    expect(lineToggle("Red")).toHaveFocus();
+    await user.keyboard("{ArrowLeft}");
+    expect(lineToggle("Yellow")).toHaveFocus();
+    expect(lineToggle("Yellow")).toHaveAttribute("tabindex", "0");
+    expect(lineToggle("Red")).toHaveAttribute("tabindex", "-1");
+
+    await user.keyboard(" ");
+    expect(lineToggle("Yellow")).toHaveAttribute("aria-pressed", "false");
+  });
+
+  it("puts the cursor in the search on / from anywhere but a field", async () => {
+    render(<Harness list={ready()} openStation={openStation} />);
+    const user = userEvent.setup();
+    const search = screen.getByRole("searchbox", { name: "Search stations" });
+
+    act(() => row("oak-park-green").focus());
+    await user.keyboard("/");
+    expect(search).toHaveFocus();
+    expect(search).toHaveValue("");
+    await user.keyboard("a/b");
+    expect(search).toHaveValue("a/b");
+  });
+
+  it("is the skip link's target: the list itself takes focus", () => {
+    render(<Harness list={ready()} openStation={openStation} />);
+    const list = document.getElementById(LEDGER_LIST_ID);
+    expect(list).toHaveAttribute("tabindex", "-1");
+    act(() => list?.focus());
+    expect(list).toHaveFocus();
   });
 });

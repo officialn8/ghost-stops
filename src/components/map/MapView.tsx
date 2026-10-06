@@ -1,26 +1,30 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import Map, { AttributionControl, type MapEvent, type MapMouseEvent } from "react-map-gl/mapbox";
+import Map, { AttributionControl, NavigationControl, type MapEvent, type MapMouseEvent } from "react-map-gl/mapbox";
 import type { FeatureCollection, LineString } from "geojson";
-import { ALL_LINES_ON } from "@/components/shell/model";
+import { ALL_LINES_ON, sheetOpenPx } from "@/components/shell/model";
 import { useShell } from "@/components/shell/ShellContext";
 import { useTheme } from "@/components/theme";
 import { PHONE_QUERY, useIsPhone } from "@/hooks/useMediaQuery";
 import { explodeAndStitchSegments } from "@/lib/cta/explodeAndStitchSegments";
+import { cn } from "@/lib/utils";
 import {
   INTERACTIVE_LAYERS,
   MAP_PALETTE,
   MAP_STYLE,
   SYSTEM_BOUNDS,
   nearestStation,
+  networkBounds,
   stationFeatures,
   type StationHit,
 } from "./layers";
-import { StationMap } from "./stationMap";
+import { StationMap, type Padding } from "./stationMap";
 
 const MAPBOX_TOKEN = process.env.NEXT_PUBLIC_MAPBOX_TOKEN;
 const TRACKS_URL = "/data/cta/chicago_track_segments.geojson";
+
+type MapErrorEvent = Parameters<NonNullable<React.ComponentProps<typeof Map>["onError"]>>[0];
 
 /** From 768px the drawer sits over the map's right edge; below it, it is the page under the map. */
 const DRAWER_BESIDE_MAP = "(min-width: 768px)";
@@ -28,13 +32,21 @@ const DRAWER_BESIDE_MAP = "(min-width: 768px)";
 /** Names the canvas, which mapbox-gl makes a labeled region. */
 const MAP_LOCALE = { "Map.Title": "Map of CTA L stations" };
 
-/** The phone's bottom sheet covers this share of the map at its first snap point. */
-const SHEET_PEEK = 0.25;
-
 type TrackProperties = { segment_id: string; corridor: string; is_loop: boolean; lines: string[] };
 
 function drawerBesideMap(): boolean {
   return window.matchMedia(DRAWER_BESIDE_MAP).matches;
+}
+
+/**
+ * The camera's inset from the map's edges when it frames the network: clear of the phone's sheet
+ * on the map page, a small margin on a phone station page's 28vh map, and a 40px margin on wider
+ * screens. The drawer's width, while one sits beside the map, is StationMap's to add.
+ */
+function networkPadding(isPhone: boolean, stationOpen: boolean): Padding {
+  if (!isPhone) return { top: 40, bottom: 40, left: 40, right: 40 };
+  if (stationOpen) return { top: 8, bottom: 8, left: 8, right: 8 };
+  return { top: 24, left: 16, right: 16, bottom: sheetOpenPx(window.innerHeight) + 16 };
 }
 
 /**
@@ -45,15 +57,11 @@ function drawerBesideMap(): boolean {
  */
 function openingSetup(stationOpen: boolean) {
   const isPhone = window.matchMedia(PHONE_QUERY).matches;
-  const padding = !isPhone
-    ? 40
-    : stationOpen
-      ? 8
-      : { top: 24, left: 16, right: 16, bottom: Math.round(window.innerHeight * SHEET_PEEK) + 16 };
   return {
-    initialViewState: { bounds: SYSTEM_BOUNDS, fitBoundsOptions: { padding } },
-    // The phone's sheet covers the map's bottom edge.
-    logoPosition: isPhone ? ("top-left" as const) : ("bottom-left" as const),
+    initialViewState: { bounds: SYSTEM_BOUNDS, fitBoundsOptions: { padding: networkPadding(isPhone, stationOpen) } },
+    // The phone's sheet covers the map's bottom edge, so Mapbox's logo joins its credits at the
+    // top right; the top left is the "Whole network" button's.
+    logoPosition: isPhone ? ("top-right" as const) : ("bottom-left" as const),
   };
 }
 
@@ -90,6 +98,10 @@ function stationAt(event: MapMouseEvent): StationHit | null {
  *
  * The canvas is not a keyboard path to stations: the ledger is. On a phone station page the map
  * is a 28vh locator above the dossier, so one finger scrolls the page and two fingers move the map.
+ *
+ * Closing a station flies the camera back to the whole network (or the lines the filter keeps),
+ * and a "Whole network" button does the same at any time, so the map is never left on three
+ * blocks of one line with no way out. Wider screens also get Mapbox's zoom buttons.
  */
 export default function MapView() {
   const { theme } = useTheme();
@@ -98,6 +110,8 @@ export default function MapView() {
   const containerRef = useRef<HTMLDivElement>(null);
   const [stationMap, setStationMap] = useState<StationMap | null>(null);
   const [opening] = useState(() => openingSetup(selectedSlug !== null));
+  // Without a token there is no map to load; a rejected one (401, 403) says so on its first tile.
+  const [mapFailed, setMapFailed] = useState(!MAPBOX_TOKEN);
 
   const tracks = useTracks();
   const stationData = useMemo(() => stationFeatures(stations, activeLines), [stations, activeLines]);
@@ -126,20 +140,36 @@ export default function MapView() {
     stationMap?.select(selectedId);
   }, [stationMap, selectedId]);
 
+  /** Frames the network, or the filtered lines, inset for the sheet or the open drawer. */
+  const showNetwork = useCallback(
+    (stationOpen: boolean) => {
+      stationMap?.showNetwork(
+        networkBounds(stationData),
+        networkPadding(isPhone, stationOpen),
+        stationOpen && !isPhone && drawerBesideMap(),
+      );
+    },
+    [stationMap, stationData, isPhone],
+  );
+
   // Fly once per selection, including a deep link once the list has loaded; a list refresh that
-  // hands back the same station does not move the camera.
+  // hands back the same station does not move the camera. Closing flies back to the network.
   const flownTo = useRef<string | null>(null);
+  const wasOpen = useRef(drawerOpen);
   useEffect(() => {
     if (!stationMap) return;
     if (!drawerOpen) {
       flownTo.current = null;
       stationMap.releasePadding();
+      if (wasOpen.current) showNetwork(false);
+      wasOpen.current = false;
       return;
     }
+    wasOpen.current = true;
     if (!selected || flownTo.current === selected.id) return;
     flownTo.current = selected.id;
     stationMap.focus([selected.longitude, selected.latitude], drawerBesideMap());
-  }, [stationMap, selected, drawerOpen]);
+  }, [stationMap, selected, drawerOpen, showNetwork]);
 
   // The map's box changes size between breakpoints and when the phone's dossier shrinks it to
   // 28vh; mapbox-gl only follows window resizes, so the box is observed here.
@@ -167,6 +197,11 @@ export default function MapView() {
     [stationMap],
   );
   const handleMouseLeave = useCallback(() => stationMap?.hover(null), [stationMap]);
+  const handleError = useCallback((event: MapErrorEvent) => {
+    // Only an unusable token means no map; a tile that fails to load is not the map failing.
+    const status = (event.error as { status?: number } | undefined)?.status;
+    if (status === 401 || status === 403) setMapFailed(true);
+  }, []);
 
   // On a phone station page one finger scrolls the dossier, not the map above it.
   const locator = isPhone && drawerOpen;
@@ -186,6 +221,7 @@ export default function MapView() {
         onClick={handleClick}
         onMouseMove={handleMouseMove}
         onMouseLeave={handleMouseLeave}
+        onError={handleError}
         minZoom={8}
         maxZoom={18}
         maxPitch={0}
@@ -197,7 +233,27 @@ export default function MapView() {
         logoPosition={opening.logoPosition}
       >
         <AttributionControl key={attributionPosition} position={attributionPosition} />
+        {!isPhone && <NavigationControl position="top-left" showCompass={false} />}
       </Map>
+      {/* The way back to the whole L, in the corner Mapbox's controls leave free; not on a phone
+          station page, where the small map is a locator and the sheet is gone. */}
+      {!locator && (
+        <button
+          type="button"
+          onClick={() => showNetwork(drawerOpen)}
+          className={cn(
+            "absolute left-2.5 z-chrome inline-flex h-8 items-center rounded border border-rule bg-surface-2 px-3 text-13 text-ink hover:border-ink-2 active:translate-y-px",
+            isPhone ? "top-2.5" : "top-20",
+          )}
+        >
+          Whole network
+        </button>
+      )}
+      {mapFailed && (
+        <p role="status" className="absolute inset-x-4 top-16 z-chrome text-13 text-ink-2">
+          The map could not load. Every station is still in the list.
+        </p>
+      )}
     </div>
   );
 }

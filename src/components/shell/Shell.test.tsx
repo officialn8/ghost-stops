@@ -332,10 +332,9 @@ describe("search, line filter, and sort (the shell's own state)", () => {
     return screen.getByRole("complementary", { name: "Stations" });
   }
 
-  /** The ranked rows in the ledger column, top to bottom, by slug. */
+  /** The ranked rows in the ledger column, top to bottom, by slug: the tier groups' ordered lists. */
   function rankedSlugs(): string[] {
-    const ranked = within(ledger()).getByRole("list", { name: "Ranked stations" });
-    return [...ranked.querySelectorAll<HTMLElement>("[data-station-row]")].map((row) => row.dataset.stationRow ?? "");
+    return [...ledger().querySelectorAll<HTMLElement>("ol [data-station-row]")].map((row) => row.dataset.stationRow ?? "");
   }
 
   async function listLoaded() {
@@ -354,11 +353,11 @@ describe("search, line filter, and sort (the shell's own state)", () => {
 
     await userEvent.click(within(ledger()).getByRole("button", { name: "Sort by riders per day" }));
     const riders = within(ledger()).getByRole("button", { name: /^Sort by riders per day/ });
-    expect(riders).toHaveAccessibleName("Sort by riders per day, ascending");
+    expect(riders).toHaveAccessibleName("Sort by riders per day, fewest first");
     expect(rankedSlugs()).toEqual(["halsted-green", "jackson-red", "king-drive"]);
 
     await userEvent.click(riders);
-    expect(riders).toHaveAccessibleName(/descending$/);
+    expect(riders).toHaveAccessibleName(/most first$/);
     expect(rankedSlugs()).toEqual(["king-drive", "jackson-red", "halsted-green"]);
   });
 
@@ -400,7 +399,7 @@ describe("search, line filter, and sort (the shell's own state)", () => {
     const search = within(ledger()).getByRole("searchbox", { name: "Search stations" });
     await userEvent.type(search, "k");
     await userEvent.click(within(ledger()).getByRole("button", { name: "Sort by name" }));
-    await userEvent.click(within(ledger()).getByRole("button", { name: "Sort by name, ascending" }));
+    await userEvent.click(within(ledger()).getByRole("button", { name: "Sort by name, A to Z" }));
 
     navigation.params = { slug: "king-drive" };
     rerender(
@@ -412,7 +411,7 @@ describe("search, line filter, and sort (the shell's own state)", () => {
     expect(screen.getByRole("heading", { name: "King Drive" })).toBeInTheDocument();
     expect(within(ledger()).getByRole("searchbox", { name: "Search stations" })).toHaveValue("k");
     expect(within(ledger()).getByRole("button", { name: /^Sort by name/ })).toHaveAccessibleName(
-      "Sort by name, descending",
+      "Sort by name, Z to A",
     );
     // "k" matches King Drive and Jackson; descending by name puts King Drive first.
     expect(rankedSlugs()).toEqual(["king-drive", "jackson-red"]);
@@ -506,5 +505,37 @@ describe("a station page that fails to load", () => {
     await userEvent.click(within(drawer).getByRole("button", { name: "Try again" }));
     expect(navigation.refresh).toHaveBeenCalled();
     expect(reset).toHaveBeenCalled();
+  });
+});
+
+describe("skip link (R28)", () => {
+  it("is the first Tab stop and hands focus to the station list", async () => {
+    answerList(listPayload());
+    renderShell(
+      <Shell>
+        <SelectionProbe />
+      </Shell>,
+    );
+    await waitFor(() => expect(screen.getAllByRole("button", { name: /King Drive/ }).length).toBeGreaterThan(0));
+
+    await userEvent.tab();
+    const skip = screen.getByRole("link", { name: "Skip to stations" });
+    expect(skip).toHaveFocus();
+
+    await userEvent.click(skip);
+    expect(document.getElementById("stations")).toHaveFocus();
+  });
+
+  it("is left out of a phone's station page, which has no ledger", async () => {
+    asPhone();
+    navigation.params = { slug: "halsted-green" };
+    answerList(listPayload());
+    renderShell(
+      <Shell>
+        <FakeDossier name="Halsted" />
+      </Shell>,
+    );
+    await waitFor(() => expect(fetch).toHaveBeenCalled());
+    expect(screen.queryByRole("link", { name: "Skip to stations" })).not.toBeInTheDocument();
   });
 });

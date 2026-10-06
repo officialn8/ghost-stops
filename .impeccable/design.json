@@ -1,0 +1,545 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-10-06T07:03:54.991Z",
+  "title": "Design System: Ghost Stops",
+  "extensions": {
+    "colorMeta": {
+      "tunnel-black": {
+        "role": "neutral",
+        "displayName": "Tunnel Black",
+        "canonical": "oklch(19.6% 0.006 271.1)",
+        "tonalRamp": [
+          "#0A0B0E",
+          "#242528",
+          "#414245",
+          "#606165",
+          "#818286",
+          "#A3A5A9",
+          "#C8C9CD",
+          "#EDEEF3"
+        ]
+      },
+      "mezzanine-gray": {
+        "role": "neutral",
+        "displayName": "Mezzanine Gray",
+        "canonical": "oklch(23.1% 0.008 274.6)",
+        "tonalRamp": [
+          "#0A0B0F",
+          "#242529",
+          "#414246",
+          "#606166",
+          "#818287",
+          "#A3A5AA",
+          "#C7C9CE",
+          "#EDEEF4"
+        ]
+      },
+      "platform-chalk": {
+        "role": "neutral",
+        "displayName": "Platform Chalk",
+        "canonical": "oklch(95.8% 0.007 97.4)",
+        "tonalRamp": [
+          "#0C0B08",
+          "#262521",
+          "#43423E",
+          "#62615D",
+          "#83827E",
+          "#A6A5A0",
+          "#CAC9C4",
+          "#EFEEEA"
+        ]
+      },
+      "station-tile": {
+        "role": "neutral",
+        "displayName": "Station Tile",
+        "canonical": "oklch(96.4% 0.007 97.4)",
+        "tonalRamp": [
+          "#0C0B08",
+          "#262521",
+          "#43423E",
+          "#62615D",
+          "#83827E",
+          "#A6A5A0",
+          "#CAC9C4",
+          "#EFEEEA"
+        ]
+      },
+      "glazed-tile": {
+        "role": "neutral",
+        "displayName": "Glazed Tile",
+        "canonical": "oklch(98.7% 0.004 106.5)",
+        "tonalRamp": [
+          "#0B0B09",
+          "#252523",
+          "#424240",
+          "#61615F",
+          "#828280",
+          "#A5A5A2",
+          "#C9C9C6",
+          "#EFEFEC"
+        ]
+      },
+      "cta-red": {
+        "role": "line",
+        "displayName": "CTA Red",
+        "canonical": "oklch(52.6% 0.207 21.3)",
+        "tonalRamp": [
+          "#210001",
+          "#4D000B",
+          "#80001A",
+          "#B70029",
+          "#E43848",
+          "#FF7174",
+          "#FFB2AF",
+          "#FFE8E7"
+        ]
+      },
+      "cta-blue": {
+        "role": "line",
+        "displayName": "CTA Blue",
+        "canonical": "oklch(66.9% 0.141 234.6)",
+        "tonalRamp": [
+          "#000D18",
+          "#00293D",
+          "#004866",
+          "#006A93",
+          "#008DC3",
+          "#2BB2F0",
+          "#88D4FF",
+          "#DDF2FF"
+        ]
+      },
+      "cta-brown": {
+        "role": "line",
+        "displayName": "CTA Brown",
+        "canonical": "oklch(38.2% 0.074 50.5)",
+        "tonalRamp": [
+          "#1A0400",
+          "#3F1800",
+          "#61351A",
+          "#835439",
+          "#A77559",
+          "#CC987B",
+          "#F2BC9E",
+          "#FFEADE"
+        ]
+      },
+      "cta-green": {
+        "role": "line",
+        "displayName": "CTA Green",
+        "canonical": "oklch(60.1% 0.176 147.5)",
+        "tonalRamp": [
+          "#001001",
+          "#002F0B",
+          "#00511A",
+          "#00762A",
+          "#079D3C",
+          "#45C25F",
+          "#6EE883",
+          "#C8FFCE"
+        ]
+      },
+      "cta-orange": {
+        "role": "line",
+        "displayName": "CTA Orange",
+        "canonical": "oklch(65.2% 0.221 33.8)",
+        "tonalRamp": [
+          "#200000",
+          "#4A0700",
+          "#7B1600",
+          "#B02500",
+          "#E83500",
+          "#FF7556",
+          "#FFB4A2",
+          "#FFE9E4"
+        ]
+      },
+      "cta-purple": {
+        "role": "line",
+        "displayName": "CTA Purple",
+        "canonical": "oklch(39.6% 0.176 295.4)",
+        "tonalRamp": [
+          "#11002B",
+          "#2F0062",
+          "#4E1D93",
+          "#6C43B8",
+          "#8D66DE",
+          "#AE8DFF",
+          "#CDBEFF",
+          "#EFEBFF"
+        ]
+      },
+      "cta-pink": {
+        "role": "line",
+        "displayName": "CTA Pink",
+        "canonical": "oklch(71.4% 0.131 355.5)",
+        "tonalRamp": [
+          "#1F000C",
+          "#4A0027",
+          "#731845",
+          "#983C64",
+          "#BE5D85",
+          "#E480A8",
+          "#FFAECC",
+          "#FFE7EF"
+        ]
+      },
+      "cta-yellow": {
+        "role": "line",
+        "displayName": "CTA Yellow",
+        "canonical": "oklch(90.5% 0.190 102.3)",
+        "tonalRamp": [
+          "#0E0B00",
+          "#2B2600",
+          "#4B4300",
+          "#6D6300",
+          "#928400",
+          "#B8A700",
+          "#E0CC00",
+          "#FFF288"
+        ]
+      }
+    },
+    "inkSteps": {
+      "note": "The quieter inks are the theme's ink at an opacity, never a separate gray. Dark / light alphas.",
+      "ink-2": {
+        "dark": 0.68,
+        "light": 0.72,
+        "purpose": "Secondary text, captions, section headings, icon buttons at rest, fading station names."
+      },
+      "ink-3": {
+        "dark": 0.52,
+        "light": 0.62,
+        "purpose": "The faintest text that still passes WCAG AA at 13px; ghost names, ranks, placeholders. Never under 13px."
+      },
+      "rule": {
+        "dark": 0.12,
+        "light": 0.12,
+        "purpose": "Every hairline: borders, row dividers, chart gridlines."
+      },
+      "hover-wash": {
+        "dark": 0.06,
+        "light": 0.06,
+        "purpose": "A hovered button or neighbor row; 0.04 on a ledger row."
+      },
+      "pressed-wash": {
+        "dark": 0.08,
+        "light": 0.08,
+        "purpose": "A pressed neighbor row, and the static skeleton blocks."
+      }
+    },
+    "themes": {
+      "dark": {
+        "surface": "tunnel-black",
+        "surface-2": "mezzanine-gray",
+        "ink": "platform-chalk",
+        "shadow": "#000000"
+      },
+      "light": {
+        "surface": "station-tile",
+        "surface-2": "glazed-tile",
+        "ink": "tunnel-black",
+        "shadow": "#141518"
+      }
+    },
+    "typographyMeta": {
+      "display": {
+        "displayName": "Display",
+        "purpose": "One number per station: riders per day on the sign header, counted up once."
+      },
+      "headline": {
+        "displayName": "Headline",
+        "purpose": "The station name on the sign header, in condensed capitals."
+      },
+      "title": {
+        "displayName": "Title",
+        "purpose": "Neighbor names along the line; at 15px semibold, every ledger name; at 700 uppercase tracked 0.06em, the wordmark."
+      },
+      "body": {
+        "displayName": "Body",
+        "purpose": "Sentences, story paragraphs, score-part labels, baseline labels."
+      },
+      "label": {
+        "displayName": "Label",
+        "purpose": "The secondary size in Ink 2: captions, section headings (500), chips, sources."
+      },
+      "caps-label": {
+        "displayName": "Caps label",
+        "purpose": "The ledger's sort heads only: the single tracked uppercase style."
+      },
+      "line-label": {
+        "displayName": "Line label",
+        "purpose": "The line name inside a filter bar."
+      },
+      "numeral": {
+        "displayName": "Numeral",
+        "purpose": "Every number inline, at the surrounding size, tabular."
+      }
+    },
+    "shadows": [
+      {
+        "name": "panel",
+        "value": "-16px 0 40px -24px rgb(var(--shadow) / 0.5)",
+        "purpose": "The drawer's left edge over the map, from 768px. The only shadow in the system; --shadow is 0 0 0 in the dark theme and 20 21 24 in the light."
+      }
+    ],
+    "motion": [
+      {
+        "name": "ease-out",
+        "value": "cubic-bezier(0.16, 1, 0.3, 1)",
+        "purpose": "The drawer's entrance and the number's count."
+      },
+      {
+        "name": "ease-draw",
+        "value": "cubic-bezier(0.33, 1, 0.68, 1)",
+        "purpose": "The 90-day chart's one draw."
+      },
+      {
+        "name": "drawer-enter",
+        "value": "240ms",
+        "purpose": "The drawer slides in 24px from the right; a server-rendered drawer does not animate."
+      },
+      {
+        "name": "row-fade",
+        "value": "120ms, 15ms stagger, at most 20 rows",
+        "purpose": "Ledger rows on screen fade in after a sort or filter change; never on a keystroke."
+      },
+      {
+        "name": "count-once",
+        "value": "600ms",
+        "purpose": "The riders-per-day number counts up from zero once per open."
+      },
+      {
+        "name": "draw-once",
+        "value": "800ms",
+        "purpose": "The chart draws left to right once per open."
+      },
+      {
+        "name": "fly-to",
+        "value": "900ms",
+        "purpose": "The map flies to the selected station, padded for the drawer."
+      },
+      {
+        "name": "ring-scale",
+        "value": "200ms from 50%",
+        "purpose": "The 2px selection ring scales in around the selected mark."
+      },
+      {
+        "name": "color",
+        "value": "150ms",
+        "purpose": "Hover and theme color changes."
+      },
+      {
+        "name": "reduced-motion",
+        "value": "0.01ms",
+        "purpose": "Under prefers-reduced-motion every transition and animation collapses; MotionConfig reducedMotion=\"user\" gates the rest. Nothing loops, nothing exits with animation."
+      }
+    ],
+    "breakpoints": [
+      {
+        "name": "md",
+        "value": "768px",
+        "purpose": "The drawer sits over the map; below it the phone layout."
+      },
+      {
+        "name": "lg",
+        "value": "1100px",
+        "purpose": "The ledger column stays beside an open drawer."
+      },
+      {
+        "name": "xl",
+        "value": "1440px"
+      }
+    ],
+    "dimensions": [
+      {
+        "name": "top-bar",
+        "value": "56px"
+      },
+      {
+        "name": "ledger-column",
+        "value": "360px"
+      },
+      {
+        "name": "ledger-row",
+        "value": "56px"
+      },
+      {
+        "name": "drawer",
+        "value": "440px"
+      },
+      {
+        "name": "neighbor-row",
+        "value": "64px min"
+      },
+      {
+        "name": "phone-map-on-station-page",
+        "value": "28vh"
+      },
+      {
+        "name": "sheet-snaps",
+        "value": "25%, 50%, 92%"
+      },
+      {
+        "name": "chart-plot",
+        "value": "140px"
+      },
+      {
+        "name": "sparkline",
+        "value": "56 x 24px"
+      }
+    ]
+  },
+  "components": [
+    {
+      "name": "Outline Button",
+      "kind": "button",
+      "refersTo": "button-outline",
+      "description": "The only text button: a hairline outline with no fill at rest, 36px tall (32px inside a ledger row), 13px label, optional 14px icon. Hover washes 6% ink; active moves it down 1px.",
+      "html": "<button class=\"ds-btn-outline\"><svg width=\"14\" height=\"14\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.75\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><path d=\"M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8\"/><path d=\"M21 3v5h-5\"/></svg>Try again</button>",
+      "css": ".ds-btn-outline { display: inline-flex; align-items: center; gap: 6px; height: 36px; padding: 0 12px; border: 1px solid rgb(var(--ink, 242 241 236) / var(--rule-alpha, 0.12)); border-radius: 4px; background: transparent; color: rgb(var(--ink, 242 241 236)); font-family: var(--font-archivo, Archivo, system-ui, sans-serif); font-size: 13px; line-height: 20px; cursor: pointer; transition: background-color 150ms; } .ds-btn-outline:hover { background: rgb(var(--ink, 242 241 236) / 0.06); } .ds-btn-outline:active { transform: translateY(1px); } .ds-btn-outline:focus-visible { outline: 2px solid rgb(var(--ink, 242 241 236)); outline-offset: 2px; }"
+    },
+    {
+      "name": "Icon Button",
+      "kind": "button",
+      "refersTo": "button-icon",
+      "description": "A 40px square with an 18px Lucide icon in Ink 2 and no border; hover washes 6% ink and lifts the icon to full ink. The theme switch and the drawer's close.",
+      "html": "<button class=\"ds-btn-icon\" aria-label=\"Close station\" title=\"Close (Esc)\"><svg width=\"18\" height=\"18\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.75\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><path d=\"M18 6 6 18\"/><path d=\"m6 6 12 12\"/></svg></button>",
+      "css": ".ds-btn-icon { display: inline-flex; align-items: center; justify-content: center; width: 40px; height: 40px; border: 0; border-radius: 4px; background: transparent; color: rgb(var(--ink, 242 241 236) / var(--ink-2-alpha, 0.68)); cursor: pointer; transition: color 150ms, background-color 150ms; } .ds-btn-icon:hover { background: rgb(var(--ink, 242 241 236) / 0.06); color: rgb(var(--ink, 242 241 236)); } .ds-btn-icon:active { transform: translateY(1px); } .ds-btn-icon:focus-visible { outline: 2px solid rgb(var(--ink, 242 241 236)); outline-offset: 2px; }"
+    },
+    {
+      "name": "Search Input",
+      "kind": "input",
+      "refersTo": "input-search",
+      "description": "The ledger's search: 36px tall, the second surface as fill, a hairline border, 15px type, placeholder in Ink 3. Focus is the shared 2px ink outline, nothing else changes.",
+      "html": "<input class=\"ds-input-search\" type=\"search\" placeholder=\"Search stations\" aria-label=\"Search stations\" autocomplete=\"off\">",
+      "css": ".ds-input-search { box-sizing: border-box; width: 100%; max-width: 328px; height: 36px; padding: 0 12px; border: 1px solid rgb(var(--ink, 242 241 236) / var(--rule-alpha, 0.12)); border-radius: 4px; background: rgb(var(--surface-2, 28 29 33)); color: rgb(var(--ink, 242 241 236)); font-family: var(--font-archivo, Archivo, system-ui, sans-serif); font-size: 15px; line-height: 24px; } .ds-input-search::placeholder { color: rgb(var(--ink, 242 241 236) / var(--ink-3-alpha, 0.52)); } .ds-input-search:focus-visible { outline: 2px solid rgb(var(--ink, 242 241 236)); outline-offset: 2px; }"
+    },
+    {
+      "name": "Line Filter",
+      "kind": "chip",
+      "refersTo": "line-bar-on",
+      "description": "Eight 24px bars in the official CTA colors with the line name at 11px in the condensed cut. On fills with the color; off empties to a 30% outline and strikes the name, so off is never color alone.",
+      "html": "<div class=\"ds-linefilter\" role=\"group\" aria-label=\"Filter by line\"><button class=\"ds-linefilter-bar is-on\" aria-pressed=\"true\" aria-label=\"Red Line\" style=\"background:#C60C30;border-color:#C60C30;color:#F2F1EC\">Red</button><button class=\"ds-linefilter-bar is-on\" aria-pressed=\"true\" aria-label=\"Blue Line\" style=\"background:#00A1DE;border-color:#00A1DE;color:#141518\">Blue</button><button class=\"ds-linefilter-bar\" aria-pressed=\"false\" aria-label=\"Brown Line\" style=\"border-color:#62361B4D\">Brown</button><button class=\"ds-linefilter-bar is-on\" aria-pressed=\"true\" aria-label=\"Green Line\" style=\"background:#009B3A;border-color:#009B3A;color:#141518\">Green</button><button class=\"ds-linefilter-bar\" aria-pressed=\"false\" aria-label=\"Orange Line\" style=\"border-color:#F9461C4D\">Orange</button><button class=\"ds-linefilter-bar is-on\" aria-pressed=\"true\" aria-label=\"Purple Line\" style=\"background:#522398;border-color:#522398;color:#F2F1EC\">Purple</button><button class=\"ds-linefilter-bar is-on\" aria-pressed=\"true\" aria-label=\"Pink Line\" style=\"background:#E27EA6;border-color:#E27EA6;color:#141518\">Pink</button><button class=\"ds-linefilter-bar is-on\" aria-pressed=\"true\" aria-label=\"Yellow Line\" style=\"background:#F9E300;border-color:#F9E300;color:#141518\">Yellow</button></div>",
+      "css": ".ds-linefilter { display: grid; grid-template-columns: repeat(8, minmax(0, 1fr)); gap: 4px; max-width: 328px; } .ds-linefilter-bar { display: flex; align-items: center; justify-content: center; min-width: 0; height: 24px; padding: 0; border: 1px solid; border-radius: 0; background: transparent; color: rgb(var(--ink, 242 241 236) / var(--ink-2-alpha, 0.68)); font-family: var(--font-archivo, Archivo, system-ui, sans-serif); font-variation-settings: \"wdth\" 75; font-size: 11px; line-height: 16px; text-decoration: line-through; cursor: pointer; } .ds-linefilter-bar.is-on { font-weight: 600; text-decoration: none; } .ds-linefilter-bar:not(.is-on):hover { color: rgb(var(--ink, 242 241 236)); } .ds-linefilter-bar:focus-visible { outline: 2px solid rgb(var(--ink, 242 241 236)); outline-offset: 2px; }"
+    },
+    {
+      "name": "Sort Heads",
+      "kind": "nav",
+      "refersTo": "sort-head",
+      "description": "The ledger's column heads and the one tracked uppercase style: 11px, 0.08em, Ink 2 at rest, full ink with a 12px arrow when active.",
+      "html": "<div class=\"ds-sortheads\"><button class=\"ds-sorthead is-active\" aria-pressed=\"true\" aria-label=\"Sort by ghost score, ascending\">Ghost score<svg width=\"12\" height=\"12\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.75\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><path d=\"m5 12 7-7 7 7\"/><path d=\"M12 19V5\"/></svg></button><span class=\"ds-sorthead-grow\"><button class=\"ds-sorthead\" aria-pressed=\"false\" aria-label=\"Sort by name\">Name</button></span><button class=\"ds-sorthead\" aria-pressed=\"false\" aria-label=\"Sort by riders per day\">Riders/day</button></div>",
+      "css": ".ds-sortheads { display: flex; align-items: center; gap: 16px; height: 32px; max-width: 328px; border-bottom: 1px solid rgb(var(--ink, 242 241 236) / var(--rule-alpha, 0.12)); } .ds-sorthead-grow { flex: 1; min-width: 0; } .ds-sorthead { display: inline-flex; align-items: center; gap: 2px; height: 24px; margin: 0 -4px; padding: 0 4px; border: 0; border-radius: 4px; background: transparent; color: rgb(var(--ink, 242 241 236) / var(--ink-2-alpha, 0.68)); font-family: var(--font-archivo, Archivo, system-ui, sans-serif); font-size: 11px; line-height: 16px; letter-spacing: 0.08em; text-transform: uppercase; cursor: pointer; } .ds-sorthead:hover, .ds-sorthead.is-active { color: rgb(var(--ink, 242 241 236)); } .ds-sorthead:focus-visible { outline: 2px solid rgb(var(--ink, 242 241 236)); outline-offset: 2px; }"
+    },
+    {
+      "name": "Chips and Tag",
+      "kind": "chip",
+      "refersTo": "chip",
+      "description": "Outlined text chips at 13px for data notes and null reasons; the strong chip (full-ink border, 500) is the small-station badge; the 11px tag marks a Transfer or Terminal station.",
+      "html": "<div class=\"ds-chips\"><span class=\"ds-chip\">reopened Jul 2025, year-over-year available from Jul 2026</span><span class=\"ds-chip is-strong\">Small but growing</span><span class=\"ds-tag\">Transfer</span></div>",
+      "css": ".ds-chips { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; max-width: 400px; font-family: var(--font-archivo, Archivo, system-ui, sans-serif); } .ds-chip { display: inline-block; padding: 2px 8px; border: 1px solid rgb(var(--ink, 242 241 236) / var(--ink-2-alpha, 0.68)); border-radius: 4px; color: rgb(var(--ink, 242 241 236)); font-size: 13px; line-height: 20px; } .ds-chip.is-strong { border-color: rgb(var(--ink, 242 241 236)); font-weight: 500; } .ds-tag { display: inline-block; padding: 0 6px; border: 1px solid rgb(var(--ink, 242 241 236) / var(--rule-alpha, 0.12)); border-radius: 4px; color: rgb(var(--ink, 242 241 236) / var(--ink-2-alpha, 0.68)); font-size: 11px; line-height: 16px; }"
+    },
+    {
+      "name": "Ledger Row",
+      "kind": "custom",
+      "refersTo": "ledger-row",
+      "description": "A 56px station row: rank and presence mark, the name in the condensed cut over its line bars, the week's sparkline, riders per day in mono. The name's ink follows the tier; the selected row inverts.",
+      "html": "<ol class=\"ds-ledger\" aria-label=\"Ranked stations\"><li><button class=\"ds-row\" aria-label=\"Halsted, Green Line, rank 1 of 143, ghost, 334 riders per day\"><span class=\"ds-row-rank\"><span class=\"ds-row-num\">1</span><svg width=\"15\" height=\"15\" viewBox=\"0 0 24 24\" fill=\"rgb(var(--surface, 20 21 24))\" stroke=\"rgb(var(--ink, 242 241 236) / var(--ink-3-alpha, 0.52))\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\" data-mark=\"ghost\"><path d=\"M9 10h.01\"/><path d=\"M15 10h.01\"/><path d=\"M12 2a8 8 0 0 0-8 8v12l3-3 2.5 2.5L12 19l2.5 2.5L17 19l3 3V10a8 8 0 0 0-8-8z\"/></svg></span><span class=\"ds-row-main\"><span class=\"ds-row-name is-ghost\">Halsted</span><span class=\"ds-row-bars\"><span class=\"ds-linebar\" style=\"background:#009B3A;width:16px;height:3px\"></span></span></span><svg class=\"ds-spark\" width=\"56\" height=\"24\" viewBox=\"0 0 56 24\" role=\"img\" aria-label=\"Riders per day, Jul 25 to Jul 31, 2026\"><path d=\"M2,18L10.67,14L19.33,15L28,9L36.67,6L45.33,8L54,4\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.25\" stroke-linecap=\"round\" stroke-linejoin=\"round\"/><circle cx=\"54\" cy=\"4\" r=\"1.75\" fill=\"currentColor\"/></svg><span class=\"ds-row-riders\">334</span></button></li><li><button class=\"ds-row is-selected\" aria-current=\"true\" aria-label=\"Clark/Lake, Blue, Brown, Green, Orange, Purple, Pink Lines, rank 143 of 143, healthy, 12,035 riders per day\"><span class=\"ds-row-rank\"><span class=\"ds-row-num\">143</span><svg width=\"10\" height=\"10\" viewBox=\"0 0 10 10\" aria-hidden=\"true\"><circle cx=\"5\" cy=\"5\" r=\"5\" fill=\"currentColor\"/></svg></span><span class=\"ds-row-main\"><span class=\"ds-row-name\">Clark/Lake</span><span class=\"ds-row-bars\"><span class=\"ds-linebar\" style=\"background:#00A1DE;width:16px;height:3px\"></span><span class=\"ds-linebar\" style=\"background:#62361B;width:16px;height:3px\"></span><span class=\"ds-linebar\" style=\"background:#009B3A;width:16px;height:3px\"></span><span class=\"ds-linebar\" style=\"background:#F9461C;width:16px;height:3px\"></span><span class=\"ds-linebar\" style=\"background:#522398;width:16px;height:3px\"></span><span class=\"ds-linebar\" style=\"background:#E27EA6;width:16px;height:3px\"></span></span></span><svg class=\"ds-spark\" width=\"56\" height=\"24\" viewBox=\"0 0 56 24\" role=\"img\" aria-label=\"Riders per day, Jul 25 to Jul 31, 2026\"><path d=\"M2,18L10.67,14L19.33,15L28,9L36.67,6L45.33,8L54,4\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.25\" stroke-linecap=\"round\" stroke-linejoin=\"round\"/><circle cx=\"54\" cy=\"4\" r=\"1.75\" fill=\"currentColor\"/></svg><span class=\"ds-row-riders\">12,035</span></button></li><li><button class=\"ds-row\" aria-label=\"State/Lake, Brown, Green, Orange, Purple, Pink Lines, closed Jan 2026\"><span class=\"ds-row-rank\"><span class=\"ds-row-num\"></span><svg width=\"10\" height=\"10\" viewBox=\"0 0 10 10\" aria-hidden=\"true\"><circle cx=\"5\" cy=\"5\" r=\"4.25\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.5\" opacity=\"0.52\"/><line x1=\"2.45\" y1=\"5\" x2=\"7.55\" y2=\"5\" stroke=\"currentColor\" stroke-width=\"1.5\" opacity=\"0.52\"/></svg></span><span class=\"ds-row-main\"><span class=\"ds-row-name is-ghost\">State/Lake</span><span class=\"ds-row-bars\"><span class=\"ds-linebar\" style=\"background:#62361B;width:16px;height:3px\"></span><span class=\"ds-linebar\" style=\"background:#009B3A;width:16px;height:3px\"></span><span class=\"ds-linebar\" style=\"background:#F9461C;width:16px;height:3px\"></span><span class=\"ds-linebar\" style=\"background:#522398;width:16px;height:3px\"></span><span class=\"ds-linebar\" style=\"background:#E27EA6;width:16px;height:3px\"></span></span></span><span class=\"ds-row-note\">closed Jan 2026</span></button></li></ol>",
+      "css": ".ds-ledger { list-style: none; margin: 0; padding: 0; max-width: 360px; font-family: var(--font-archivo, Archivo, system-ui, sans-serif); } .ds-row { display: flex; align-items: center; gap: 8px; width: 100%; height: 56px; padding: 0 16px; border: 0; border-bottom: 1px solid rgb(var(--ink, 242 241 236) / var(--rule-alpha, 0.12)); border-radius: 0; background: transparent; color: rgb(var(--ink, 242 241 236)); text-align: left; cursor: pointer; } .ds-row:hover { background: rgb(var(--ink, 242 241 236) / 0.04); } .ds-row:focus-visible { outline: 2px solid rgb(var(--ink, 242 241 236)); outline-offset: -4px; } .ds-row.is-selected { background: rgb(var(--ink, 242 241 236)); color: rgb(var(--surface, 20 21 24)); } .ds-row.is-selected:focus-visible { outline-color: rgb(var(--surface, 20 21 24)); } .ds-row-rank { display: flex; align-items: center; justify-content: space-between; width: 48px; flex-shrink: 0; padding-right: 4px; } .ds-row-num { font-family: var(--font-jetbrains-mono, \"JetBrains Mono\", ui-monospace, monospace); font-variant-numeric: tabular-nums; font-size: 13px; line-height: 20px; color: rgb(var(--ink, 242 241 236) / var(--ink-3-alpha, 0.52)); } .ds-row.is-selected .ds-row-num { color: rgb(var(--surface, 20 21 24) / 0.72); } .ds-row-main { display: flex; flex-direction: column; gap: 4px; flex: 1; min-width: 0; } .ds-row-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-variation-settings: \"wdth\" 75; font-weight: 600; font-size: 15px; line-height: 24px; } .ds-row-name.is-ghost { color: rgb(var(--ink, 242 241 236) / var(--ink-3-alpha, 0.52)); } .ds-row.is-selected .ds-row-name { color: rgb(var(--surface, 20 21 24)); } .ds-row-bars { display: flex; align-items: center; gap: 3px; height: 16px; } .ds-linebar { display: block; flex-shrink: 0; } .ds-spark { flex-shrink: 0; overflow: visible; } .ds-row-riders { width: 64px; flex-shrink: 0; text-align: right; font-family: var(--font-jetbrains-mono, \"JetBrains Mono\", ui-monospace, monospace); font-variant-numeric: tabular-nums; font-size: 15px; line-height: 24px; } .ds-row-note { flex-shrink: 0; text-align: right; font-size: 13px; line-height: 20px; color: rgb(var(--ink, 242 241 236) / var(--ink-2-alpha, 0.68)); }"
+    },
+    {
+      "name": "Sign Header",
+      "kind": "custom",
+      "refersTo": "drawer",
+      "description": "The top of a station's dossier, set like the platform sign: the name in 36px condensed capitals, line bars with the line names, the 56px mono number counting once, the tier word with its mark, and the rank among ranked stations.",
+      "html": "<header class=\"ds-sign\"><h1 class=\"ds-sign-name\">Halsted</h1><div class=\"ds-sign-lines\"><span class=\"ds-linebar\" style=\"background:#009B3A;width:32px;height:4px\"></span><span class=\"ds-sign-linename\">Green Line</span></div><div class=\"ds-sign-figure\"><p class=\"ds-sign-number\">334</p><div class=\"ds-sign-status\"><p class=\"ds-sign-tier\"><svg width=\"10\" height=\"10\" viewBox=\"0 0 10 10\" aria-hidden=\"true\"><circle cx=\"5\" cy=\"5\" r=\"4.25\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.5\" opacity=\"0.72\"/></svg>Fading</p><p class=\"ds-sign-rank\"><span class=\"ds-mono ds-ink\">24th</span> of <span class=\"ds-mono\">143</span> ranked</p></div></div><p class=\"ds-sign-note\">Riders per day over the last 12 months.</p><p class=\"ds-sign-note\">Tiers compare each station with the other ranked stations.</p></header>",
+      "css": ".ds-sign { max-width: 400px; font-family: var(--font-archivo, Archivo, system-ui, sans-serif); color: rgb(var(--ink, 242 241 236)); } .ds-sign p, .ds-sign h1 { margin: 0; } .ds-sign-name { font-variation-settings: \"wdth\" 75; font-weight: 700; font-size: 36px; line-height: 38px; text-transform: uppercase; overflow-wrap: anywhere; } .ds-sign-lines { display: flex; align-items: center; gap: 10px; margin-top: 12px; } .ds-linebar { display: block; flex-shrink: 0; } .ds-sign-linename { font-size: 13px; line-height: 20px; color: rgb(var(--ink, 242 241 236) / var(--ink-2-alpha, 0.68)); } .ds-sign-figure { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 12px 24px; margin-top: 24px; } .ds-sign-number { font-family: var(--font-jetbrains-mono, \"JetBrains Mono\", ui-monospace, monospace); font-variant-numeric: tabular-nums; font-size: 56px; line-height: 56px; letter-spacing: -0.025em; } .ds-sign-status { padding-bottom: 6px; } .ds-sign-tier { display: flex; align-items: center; gap: 8px; font-weight: 500; font-size: 18px; line-height: 24px; } .ds-sign-tier svg { width: 12px; height: 12px; } .ds-sign-rank { font-size: 13px; line-height: 20px; color: rgb(var(--ink, 242 241 236) / var(--ink-2-alpha, 0.68)); } .ds-mono { font-family: var(--font-jetbrains-mono, \"JetBrains Mono\", ui-monospace, monospace); font-variant-numeric: tabular-nums; } .ds-ink { color: rgb(var(--ink, 242 241 236)); } .ds-sign-note { margin-top: 4px; font-size: 13px; line-height: 20px; color: rgb(var(--ink, 242 241 236) / var(--ink-2-alpha, 0.68)); } .ds-sign-note + .ds-sign-note { margin-top: 0; }"
+    },
+    {
+      "name": "Presence Marks",
+      "kind": "custom",
+      "refersTo": "ledger-row",
+      "description": "The one mark vocabulary shared by the ledger, the dossier, and the map, 10px at a 1.5px stroke. Ghostliness is ink and shape, never hue, and the tier word is always written beside the mark.",
+      "html": "<ul class=\"ds-marks\"><li class=\"ds-mark\"><span class=\"ds-mark-glyph\"><svg width=\"10\" height=\"10\" viewBox=\"0 0 10 10\" aria-hidden=\"true\"><circle cx=\"5\" cy=\"5\" r=\"5\" fill=\"currentColor\"/></svg></span><span class=\"ds-mark-word\">Healthy</span></li><li class=\"ds-mark\"><span class=\"ds-mark-glyph\"><svg width=\"10\" height=\"10\" viewBox=\"0 0 10 10\" aria-hidden=\"true\"><circle cx=\"5\" cy=\"5\" r=\"4.25\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.5\"/></svg></span><span class=\"ds-mark-word\">Quiet</span></li><li class=\"ds-mark\"><span class=\"ds-mark-glyph\"><svg width=\"10\" height=\"10\" viewBox=\"0 0 10 10\" aria-hidden=\"true\"><circle cx=\"5\" cy=\"5\" r=\"4.25\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.5\" opacity=\"0.72\"/></svg></span><span class=\"ds-mark-word is-dim\">Fading</span></li><li class=\"ds-mark\"><span class=\"ds-mark-glyph\"><svg width=\"15\" height=\"15\" viewBox=\"0 0 24 24\" fill=\"rgb(var(--surface, 20 21 24))\" stroke=\"rgb(var(--ink, 242 241 236) / var(--ink-3-alpha, 0.52))\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\" data-mark=\"ghost\"><path d=\"M9 10h.01\"/><path d=\"M15 10h.01\"/><path d=\"M12 2a8 8 0 0 0-8 8v12l3-3 2.5 2.5L12 19l2.5 2.5L17 19l3 3V10a8 8 0 0 0-8-8z\"/></svg></span><span class=\"ds-mark-word is-faint\">Ghost</span></li><li class=\"ds-mark\"><span class=\"ds-mark-glyph\"><svg width=\"10\" height=\"10\" viewBox=\"0 0 10 10\" aria-hidden=\"true\"><circle cx=\"5\" cy=\"5\" r=\"4.25\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.5\" opacity=\"0.52\"/><line x1=\"2.45\" y1=\"5\" x2=\"7.55\" y2=\"5\" stroke=\"currentColor\" stroke-width=\"1.5\" opacity=\"0.52\"/></svg></span><span class=\"ds-mark-word is-faint\">Closed</span></li><li class=\"ds-mark\"><span class=\"ds-mark-glyph\"><svg width=\"10\" height=\"10\" viewBox=\"0 0 10 10\" aria-hidden=\"true\"><circle cx=\"5\" cy=\"5\" r=\"4.25\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.5\" stroke-dasharray=\"1 2\" opacity=\"0.44\"/></svg></span><span class=\"ds-mark-word is-faint\">No recent data</span></li></ul>",
+      "css": ".ds-marks { display: flex; flex-wrap: wrap; gap: 12px 24px; margin: 0; padding: 0; list-style: none; font-family: var(--font-archivo, Archivo, system-ui, sans-serif); color: rgb(var(--ink, 242 241 236)); } .ds-mark { display: flex; align-items: center; gap: 8px; } .ds-mark-glyph { display: inline-flex; align-items: center; justify-content: center; width: 16px; height: 16px; } .ds-mark-word { font-size: 13px; line-height: 20px; } .ds-mark-word.is-dim { color: rgb(var(--ink, 242 241 236) / var(--ink-2-alpha, 0.68)); } .ds-mark-word.is-faint { color: rgb(var(--ink, 242 241 236) / var(--ink-3-alpha, 0.52)); }"
+    },
+    {
+      "name": "Top Bar",
+      "kind": "nav",
+      "refersTo": "top-bar",
+      "description": "The 56px platform sign across the top: the ghost glyph and wordmark as one link home, 'Chicago L' in Ink 2, the data-through date as a dated sentence with the date in mono, and the theme switch. No status dots.",
+      "html": "<header class=\"ds-topbar\"><a class=\"ds-topbar-home\" href=\"#\" aria-label=\"Ghost Stops: back to the map\"><svg width=\"20\" height=\"20\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.75\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\" data-mark=\"ghost\"><path d=\"M9 10h.01\"/><path d=\"M15 10h.01\"/><path d=\"M12 2a8 8 0 0 0-8 8v12l3-3 2.5 2.5L12 19l2.5 2.5L17 19l3 3V10a8 8 0 0 0-8-8z\"/></svg><span class=\"ds-topbar-wordmark\">Ghost Stops</span><span class=\"ds-topbar-sub\">Chicago L</span></a><p class=\"ds-topbar-through\">Data through <time class=\"ds-mono ds-ink\" datetime=\"2026-07-31\">2026-07-31</time></p><button class=\"ds-btn-icon\" aria-label=\"Switch to light theme\"><svg width=\"18\" height=\"18\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.75\" stroke-linecap=\"round\" stroke-linejoin=\"round\" aria-hidden=\"true\"><circle cx=\"12\" cy=\"12\" r=\"4\"/><path d=\"M12 2v2\"/><path d=\"M12 20v2\"/><path d=\"m4.93 4.93 1.41 1.41\"/><path d=\"m17.66 17.66 1.41 1.41\"/><path d=\"M2 12h2\"/><path d=\"M20 12h2\"/><path d=\"m6.34 17.66-1.41 1.41\"/><path d=\"m19.07 4.93-1.41 1.41\"/></svg></button></header>",
+      "css": ".ds-topbar { display: flex; align-items: center; gap: 16px; height: 56px; padding: 0 20px; border-bottom: 1px solid rgb(var(--ink, 242 241 236) / var(--rule-alpha, 0.12)); background: rgb(var(--surface, 20 21 24)); color: rgb(var(--ink, 242 241 236)); font-family: var(--font-archivo, Archivo, system-ui, sans-serif); white-space: nowrap; } .ds-topbar p { margin: 0; } .ds-topbar-home { display: flex; align-items: center; gap: 8px; flex-shrink: 0; margin: 0 -4px; padding: 4px; border-radius: 4px; color: inherit; text-decoration: none; } .ds-topbar-home:focus-visible { outline: 2px solid rgb(var(--ink, 242 241 236)); outline-offset: 2px; } .ds-topbar-wordmark { font-variation-settings: \"wdth\" 75; font-weight: 700; font-size: 18px; line-height: 24px; letter-spacing: 0.06em; text-transform: uppercase; } .ds-topbar-sub { font-size: 13px; line-height: 20px; color: rgb(var(--ink, 242 241 236) / var(--ink-2-alpha, 0.68)); } .ds-topbar-through { margin-left: auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; font-size: 13px; line-height: 20px; color: rgb(var(--ink, 242 241 236) / var(--ink-2-alpha, 0.68)); } .ds-mono { font-family: var(--font-jetbrains-mono, \"JetBrains Mono\", ui-monospace, monospace); font-variant-numeric: tabular-nums; } .ds-ink { color: rgb(var(--ink, 242 241 236)); } .ds-btn-icon { display: inline-flex; align-items: center; justify-content: center; width: 40px; height: 40px; margin-right: -8px; border: 0; border-radius: 4px; background: transparent; color: rgb(var(--ink, 242 241 236) / var(--ink-2-alpha, 0.68)); cursor: pointer; transition: color 150ms, background-color 150ms; } .ds-btn-icon:hover { background: rgb(var(--ink, 242 241 236) / 0.06); color: rgb(var(--ink, 242 241 236)); } .ds-btn-icon:focus-visible { outline: 2px solid rgb(var(--ink, 242 241 236)); outline-offset: 2px; }"
+    }
+  ],
+  "narrative": {
+    "northStar": "The Platform Sign",
+    "overview": "Ghost Stops is set like a CTA platform sign that happens to be interactive. The field is black, the type is white, and the only color on it is the bar that says which line runs here. Station names are set in Archivo's condensed cut, in capitals, the way they are on the sign; every number is set in a monospaced face so columns of riders line up like a timetable. The light theme is the same sign printed on tile: Tunnel Black becomes the ink, Station Tile the field, and nothing else changes.\n\nThe mood is quiet and evidentiary. Chrome recedes to hairlines and secondary ink so the content carries the page, and every figure stands next to its date, its method, and its source. The ghost is a wayfinding glyph, not a costume: a station fades off the network by losing ink, and the word for its tier is always written beside it. Hue belongs to the lines, ghostliness belongs to ink, and selection belongs to inversion.\n\nThe one confirmed anti-reference is the retired SaaS dashboard skin: glass panels, gradient fills, five disagreeing score color scales, traffic-light badges, status dots, and a \"Live\" pill. None of it returns.",
+    "keyCharacteristics": [
+      "Two neutrals per theme and the eight official CTA line colors; no other color exists.",
+      "Ghostliness is ink presence and mark shape (solid, hollow, 72% hollow, ghost glyph), never a hue.",
+      "Selection and focus invert ink and surface; there is no accent color.",
+      "Archivo for words, with the condensed width for station names; JetBrains Mono, tabular, for every number.",
+      "Flat surfaces, hairline rules, square panels, 4px controls; one structural shadow on the drawer.",
+      "Motion is enter, count-once, draw-once, and fly-to, each gated by the reader's reduced-motion preference; nothing loops."
+    ],
+    "rules": [
+      {
+        "name": "The Line-Only Hue Rule",
+        "body": "A hue appears only where a CTA line runs: tracks, line bars, filter bars, the chart stroke. Chrome, states, errors, and warnings are ink on a surface with an icon, never red or amber.",
+        "section": "colors"
+      },
+      {
+        "name": "The Ink Presence Rule",
+        "body": "Ghostliness is ink and shape, never a hue: healthy is a solid dot at full ink, quiet a hollow ring at full ink, fading a hollow ring at 72%, ghost a small ghost glyph at Ink 3. The tier word is always written beside the mark.",
+        "section": "colors"
+      },
+      {
+        "name": "The Inversion Rule",
+        "body": "The one interaction accent is inversion. Selected rows, selected map marks, and text selection swap ink and surface; nothing is ever highlighted with a color.",
+        "section": "colors"
+      },
+      {
+        "name": "The Mono Numbers Rule",
+        "body": "Every number on screen is set in JetBrains Mono with tabular figures, whatever its size or context, including dates (2026-07-31) and percentages inside a sentence.",
+        "section": "typography"
+      },
+      {
+        "name": "The One Caps Rule",
+        "body": "Uppercase is the station name on the sign, the wordmark, and the 11px sort heads. Nowhere else.",
+        "section": "typography"
+      },
+      {
+        "name": "The Sentence Case Rule",
+        "body": "Headings are sentence case and type only: no icons, no discs, no rules through them. \"Why it's fading\", \"Along the Green Line\", \"Sources\".",
+        "section": "typography"
+      },
+      {
+        "name": "The One Shadow Rule",
+        "body": "The drawer's edge is the only shadow. Anything else that needs separation gets a hairline or the second surface.",
+        "section": "elevation"
+      }
+    ],
+    "dos": [
+      "Do set every number in JetBrains Mono with tabular figures, including dates and percentages inside sentences.",
+      "Do write the tier word beside every presence mark; the mark is decorative and the word is the meaning.",
+      "Do use inversion (ink fill, surface text) for the selected row, the selected map mark, and text selection.",
+      "Do separate sections with a hairline at 12% ink and a 13px sentence-case heading in Ink 2; group with rules and spacing, not boxes.",
+      "Do state freshness as a dated sentence (\"Data through 2026-07-31\") and explain CTA's lag separately from a failed refresh.",
+      "Do keep text at 11px or larger and Ink 3 at 13px or larger, and check both themes against WCAG AA.",
+      "Do make every row that opens something a real button or link with the shared 2px focus ring.",
+      "Do take line colors from the one table and set text on a line color in whichever theme ink contrasts more."
+    ],
+    "donts": [
+      "Don't introduce a hue for anything other than a CTA line: no accent color, no red errors, no amber warnings, no score color scales.",
+      "Don't express ghostliness or a score as a color, a gradient, a gauge, or a progress track.",
+      "Don't add shadows, blur, glass, gradients, noise, or cards; the drawer's edge is the only shadow.",
+      "Don't animate anything on a loop, animate an exit, or float the ghost.",
+      "Don't use a status dot, a \"Live\" badge, or a colored pill for freshness.",
+      "Don't call a healthy station a ghost, or use decline verbs on a growing number.",
+      "Don't add a third typeface, a serif, or a second uppercase tracked style.",
+      "Don't round a panel, a bar, or a row; only controls take the 4px radius and only dots are round.",
+      "Don't write an em dash in rendered text."
+    ]
+  }
+}

@@ -1,12 +1,23 @@
-import { act, render, waitFor } from "@testing-library/react";
+import { act, render, screen, waitFor } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import type { FeatureCollection, LineString, Point } from "geojson";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ALL_LINES_ON } from "@/components/shell/model";
+import { CTA_LINE_ORDER } from "@/lib/utils";
 import { ShellContext, type ShellModel } from "@/components/shell/ShellContext";
 import { ThemeProvider } from "@/components/theme";
 import type { StationListItem } from "@/types/station";
 import { FakeMap } from "./fakeMap";
-import { DIMMED, LAYER, MAP_PALETTE, MAP_STYLE, SOURCE, trackLayerId, type StationFeatureProperties } from "./layers";
+import {
+  DIMMED,
+  LAYER,
+  MAP_PALETTE,
+  MAP_STYLE,
+  SOURCE,
+  SYSTEM_BOUNDS,
+  trackLayerId,
+  type StationFeatureProperties,
+} from "./layers";
 
 // mapbox-gl needs WebGL, which jsdom lacks: the Map component is replaced by one that records its
 // props, and the map instance it would hand to onLoad is the FakeMap test double.
@@ -27,6 +38,8 @@ vi.mock("react-map-gl/mapbox", async () => {
     },
     AttributionControl: ({ position }: { position: string }) =>
       createElement("div", { "data-testid": "attribution", "data-position": position }),
+    NavigationControl: ({ position }: { position: string }) =>
+      createElement("div", { "data-testid": "navigation", "data-position": position }),
   };
 });
 
@@ -272,7 +285,9 @@ describe("MapView selection and camera", () => {
     expect(map.flights[0].padding.right).toBe(0);
     // One finger scrolls the dossier; the map still takes taps and two-finger gestures.
     expect(props().dragPan).toBe(false);
-    expect(props().logoPosition).toBe("top-left");
+    // The top left is the "Whole network" button's; Mapbox's logo joins its credits top right.
+    expect(props().logoPosition).toBe("top-right");
+    expect(screen.queryByTestId("navigation")).toBeNull();
   });
 
   it("flies to a deep-linked station once the list loads, and only once", () => {
@@ -288,13 +303,46 @@ describe("MapView selection and camera", () => {
     expect(map.flights).toHaveLength(1);
   });
 
-  it("clears the selection and the drawer padding on close without moving the view", () => {
+  it("clears the selection on close, drops the padding, and flies back to the whole network", () => {
     const { map, rerender } = renderLoaded(model({ selectedSlug: "halsted-green", selected: HALSTED }));
 
     rerender(ui(model()));
 
     expect(map.stateOf(SOURCE.stations, HALSTED.id)).toEqual({ selected: false });
     expect(map.jumps.at(-1)).toEqual({ center: map.centerAtCanvasMiddle, padding: { top: 0, bottom: 0, left: 0, right: 0 } });
+    expect(map.fits.at(-1)).toEqual({ bounds: SYSTEM_BOUNDS, padding: { top: 40, bottom: 40, left: 40, right: 40 } });
+    expect(map.flights.at(-1)).toMatchObject({ zoom: 10, duration: 900, padding: { top: 0, bottom: 0, left: 0, right: 0 } });
+  });
+
+  it("leaves the opening view alone, and frames the network again from the button", async () => {
+    const { map } = renderLoaded(model());
+    expect(map.flights).toHaveLength(0);
+    expect(map.fits).toHaveLength(0);
+    expect(screen.getByTestId("navigation")).toHaveAttribute("data-position", "top-left");
+
+    await userEvent.click(screen.getByRole("button", { name: "Whole network" }));
+    expect(map.fits.at(-1)?.bounds).toEqual(SYSTEM_BOUNDS);
+    expect(map.flights).toHaveLength(1);
+  });
+
+  it("frames the lines the filter keeps, inset for an open drawer", async () => {
+    const monroe = station("monroe-red", { lines: ["Red"], latitude: 41.9, longitude: -87.7 });
+    const redOnly = Object.fromEntries(CTA_LINE_ORDER.map((line) => [line, line === "Red"])) as typeof ALL_LINES_ON;
+    const { map } = renderLoaded(
+      model({ stations: [HALSTED, STATE_LAKE, monroe], activeLines: redOnly, selectedSlug: "monroe-red", selected: monroe }),
+    );
+
+    await userEvent.click(screen.getByRole("button", { name: "Whole network" }));
+    const fit = map.fits.at(-1);
+    expect(fit?.bounds[0][0]).toBeCloseTo(-87.705, 5);
+    expect(fit?.bounds[1][0]).toBeCloseTo(-87.695, 5);
+    expect(fit?.padding).toEqual({ top: 40, bottom: 40, left: 40, right: 480 });
+  });
+
+  it("hides the button on a phone station page, where the small map is a locator", () => {
+    setViewport(375);
+    renderLoaded(model({ selectedSlug: "halsted-green", selected: HALSTED }));
+    expect(screen.queryByRole("button", { name: "Whole network" })).toBeNull();
   });
 
   it("restores the selected station's feature state after the theme swaps the style", async () => {

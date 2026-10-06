@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import dynamic from "next/dynamic";
 import { useParams, useRouter } from "next/navigation";
 import { MotionConfig } from "motion/react";
-import { Ledger } from "@/components/ledger/Ledger";
+import { LEDGER_LIST_ID, Ledger } from "@/components/ledger/Ledger";
 import { useIsPhone } from "@/hooks/useMediaQuery";
 import { cn, type CTALine } from "@/lib/utils";
 import type { StationListItem } from "@/types/station";
@@ -26,6 +26,14 @@ const NO_STATIONS: readonly StationListItem[] = [];
 
 function isShown(element: HTMLElement): boolean {
   return element.getClientRects().length > 0;
+}
+
+/** The skip link's click: focus the list itself, so the next Tab lands on a station row. */
+function skipToStations(event: React.MouseEvent<HTMLAnchorElement>) {
+  const list = document.getElementById(LEDGER_LIST_ID);
+  if (!list) return;
+  event.preventDefault();
+  list.focus();
 }
 
 /**
@@ -121,7 +129,18 @@ export function Shell({ children }: { children: React.ReactNode }) {
   return (
     <ShellContext.Provider value={model}>
       <MotionConfig reducedMotion="user">
-        <div className="flex h-dvh flex-col overflow-hidden bg-surface text-ink">
+        <div className="relative flex h-dvh flex-col overflow-hidden bg-surface text-ink">
+          {/* The first Tab stop: past the bar and the ledger's head, straight to the rows (R28). It
+              inverts when it appears, like a selection; it is left out where no ledger is mounted. */}
+          {!(isPhone && isOpen) && (
+            <a
+              href={`#${LEDGER_LIST_ID}`}
+              onClick={skipToStations}
+              className="sr-only focus:not-sr-only focus:absolute focus:left-4 focus:top-3 focus:z-banner focus:rounded focus:bg-ink focus:px-3 focus:py-2 focus:text-13 focus:text-surface"
+            >
+              Skip to stations
+            </a>
+          )}
           <TopBar />
           {list.status === "ready" && list.stale && <HealthBanner lastSuccessfulFetch={list.data.lastSuccessfulFetch} />}
           <div className="relative flex min-h-0 flex-1">

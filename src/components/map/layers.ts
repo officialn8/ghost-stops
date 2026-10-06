@@ -52,8 +52,10 @@ export const MAP_STYLE: Readonly<Record<Theme, string>> = {
   light: "mapbox://styles/mapbox/light-v11",
 };
 
+export type Bounds = [[number, number], [number, number]];
+
 /** Every station on the network, for the opening view: O'Hare to the lake, 95th to Linden. */
-export const SYSTEM_BOUNDS: [[number, number], [number, number]] = [
+export const SYSTEM_BOUNDS: Bounds = [
   [-87.905, 41.722],
   [-87.605, 42.074],
 ];
@@ -136,6 +138,47 @@ export function stationFeatures(
       }),
   };
 }
+
+/** The narrowest box networkBounds frames, in degrees: about a kilometer. */
+const MIN_BOUNDS_SPAN = 0.01;
+
+/**
+ * What "the whole network" means for the camera: every station, or, while the line filter leaves
+ * some lines out, the box around the stations it keeps, so the map frames the lines the reader
+ * chose. Falls back to the system bounds when nothing is drawn.
+ */
+export function networkBounds(stations: FeatureCollection<Point, StationFeatureProperties>): Bounds {
+  const shown = stations.features.filter((feature) => !feature.properties.dimmed);
+  if (shown.length === 0 || shown.length === stations.features.length) return SYSTEM_BOUNDS;
+  let west = Number.POSITIVE_INFINITY;
+  let south = Number.POSITIVE_INFINITY;
+  let east = Number.NEGATIVE_INFINITY;
+  let north = Number.NEGATIVE_INFINITY;
+  for (const feature of shown) {
+    const [lng, lat] = feature.geometry.coordinates;
+    west = Math.min(west, lng);
+    east = Math.max(east, lng);
+    south = Math.min(south, lat);
+    north = Math.max(north, lat);
+  }
+  // One station (or one stop on one line) would be a point, which the camera would zoom into the
+  // pavement to frame; give it a box a neighborhood wide.
+  if (east - west < MIN_BOUNDS_SPAN) {
+    const mid = (west + east) / 2;
+    west = mid - MIN_BOUNDS_SPAN / 2;
+    east = mid + MIN_BOUNDS_SPAN / 2;
+  }
+  if (north - south < MIN_BOUNDS_SPAN) {
+    const mid = (south + north) / 2;
+    south = mid - MIN_BOUNDS_SPAN / 2;
+    north = mid + MIN_BOUNDS_SPAN / 2;
+  }
+  return [
+    [west, south],
+    [east, north],
+  ];
+}
+
 
 /** Nothing to draw yet: the sources start with this until the station list and tracks load. */
 export const EMPTY_COLLECTION: FeatureCollection = { type: "FeatureCollection", features: [] };

@@ -23,3 +23,15 @@ export function passesLineFilter(lines: readonly string[], active: ActiveLines):
 export function isExcluded(station: Pick<StationListItem, "rank">): boolean {
   return station.rank === null;
 }
+
+/**
+ * The share of the viewport the phone's sheet opens at: the ledger's head and its first rows over
+ * the map, so the first screen shows stations. Pulling the sheet down to its lowest snap, the
+ * head alone, reveals the whole network.
+ */
+export const SHEET_OPEN_SNAP = 0.5;
+
+/** How much of the viewport the open sheet covers, in CSS px, for the map's camera to clear. */
+export function sheetOpenPx(viewportHeight: number): number {
+  return Math.round(viewportHeight * SHEET_OPEN_SNAP);
+}

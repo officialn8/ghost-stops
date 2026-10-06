@@ -48,17 +48,22 @@ export interface LedgerRowProps {
   exclusion: Exclusion | null;
   outsideFilter: boolean;
   selected: boolean;
+  /** 0 for the list's one Tab stop, -1 for every other row; the arrow keys move between them (R28). */
+  tabIndex: 0 | -1;
   onOpen: (slug: string) => void;
+  /** The row took focus, by Tab, an arrow key, a click, or the drawer closing: it becomes the Tab stop. */
+  onFocus: (slug: string) => void;
 }
 
 /**
  * One station in the ledger: a 56px button with the rank and presence mark, the
  * name over its line bars, the week's sparkline, and the 12-month riders per day (KTD18), the
- * row's most prominent number. Presence is the name's own ink level and the mark's shape (R23);
+ * row's most prominent number. The rows share one Tab stop; the tier is written in the group
+ * heading above them, so the row itself carries only the mark. Presence is the name's own ink level and the mark's shape (R23);
  * numbers stay at full ink. A station outside the ranking shows why in place of the numbers, and
  * its row opens the closure dossier like any other (R24). The selected row inverts.
  */
-function LedgerRowView({ station, exclusion, outsideFilter, selected, onOpen }: LedgerRowProps) {
+function LedgerRowView({ station, exclusion, outsideFilter, selected, tabIndex, onOpen, onFocus }: LedgerRowProps) {
   const nameInk = selected ? "text-surface" : exclusion ? "text-ink-3" : NAME_INK[station.tier ?? "healthy"];
   const quiet = selected ? "text-surface/[.72]" : "text-ink-2";
 
@@ -67,6 +72,8 @@ function LedgerRowView({ station, exclusion, outsideFilter, selected, onOpen }: 
       <button
         type="button"
         onClick={() => onOpen(station.slug)}
+        onFocus={() => onFocus(station.slug)}
+        tabIndex={tabIndex}
         aria-current={selected ? "true" : undefined}
         aria-label={rowLabel(station, exclusion, outsideFilter)}
         data-station-row={station.slug}

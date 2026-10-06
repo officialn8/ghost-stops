@@ -5,6 +5,7 @@ import type { ActiveLines } from "@/components/shell/ShellContext";
 import {
   EMPTY_COLLECTION,
   RING_LAYERS,
+  type Bounds,
   SOURCE,
   SUBDUED_LABEL_OPACITY,
   TRACK_RENDER_ORDER,
@@ -27,6 +28,9 @@ export interface Padding {
   left: number;
   right: number;
 }
+
+/** A point as mapbox-gl accepts one: a [lng, lat] pair or an object. */
+export type LngLatLike = [number, number] | { lng: number; lat: number } | { lon: number; lat: number };
 
 /**
  * The slice of mapbox-gl's Map that the station map drives. The real map satisfies it, and so
@@ -54,7 +58,11 @@ export interface MapLike {
   getZoom(): number;
   getPadding(): Partial<Padding>;
   setPadding(padding: Padding): unknown;
-  flyTo(options: { center: [number, number]; zoom: number; duration: number; padding: Padding }): unknown;
+  flyTo(options: { center: LngLatLike; zoom: number; duration: number; padding: Padding }): unknown;
+  cameraForBounds(
+    bounds: Bounds,
+    options: { padding: Padding },
+  ): { center?: LngLatLike; zoom?: number } | null | undefined | void;
   jumpTo(options: { center: { lng: number; lat: number }; padding: Padding }): unknown;
   unproject(point: [number, number]): { lng: number; lat: number };
   touchZoomRotate?: { disableRotation(): unknown };
@@ -222,6 +230,22 @@ export class StationMap {
       duration: FLY_DURATION_MS,
       padding: { ...NO_PADDING, right },
     });
+  }
+
+  /**
+   * Flies back to the whole network, or the part of it the line filter keeps, inset by `padding`
+   * (plus the drawer's width on the right while one sits beside the map) so nothing lands under
+   * the phone's sheet or the drawer. The camera is computed for the inset rather than flown with
+   * it, so no padding lingers on the map afterwards. Never `essential`: a reader who asked for
+   * less motion gets a jump (KTD16).
+   */
+  showNetwork(bounds: Bounds, padding: Padding, drawerBesideMap = false): void {
+    const { map } = this;
+    map.resize();
+    const right = padding.right + (drawerBesideMap ? drawerPadding(map.getContainer().clientWidth, true) : 0);
+    const camera = map.cameraForBounds(bounds, { padding: { ...padding, right } });
+    if (!camera || camera.center === undefined || camera.zoom === undefined) return;
+    map.flyTo({ center: camera.center, zoom: camera.zoom, duration: FLY_DURATION_MS, padding: NO_PADDING });
   }
 
   /** The drawer closed: drop the camera padding without moving what the reader sees. */
