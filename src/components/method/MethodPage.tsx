@@ -92,8 +92,8 @@ export function MethodPage({ list }: { list: StationListResponse | null }) {
       <main className="mx-auto w-full max-w-[640px] px-4 pb-16 pt-8">
         <h1 className="text-24 font-semibold">How the Ghost score works</h1>
         <p className="mt-2 text-15 text-ink-2">
-          Every figure in the ledger and on a station&apos;s sign, explained from one real row, then the score, the
-          data behind it, and how to get the data yourself.
+          This page explains every figure in the ledger and on a station&apos;s sign from one real row, then the score,
+          the data behind it, and how to get the data yourself.
         </p>
         <nav aria-label="On this page" className="mt-4 flex flex-wrap gap-x-4 gap-y-1 text-13">
           {CONTENTS.map(({ id, label }) => (
@@ -140,8 +140,8 @@ export function MethodPage({ list }: { list: StationListResponse | null }) {
             <KeyRow>
               <Term>Tier and rank</Term>
               <Meaning>
-                The tier word with its mark, and the rank among the ranked stations. The score itself waits in the
-                &ldquo;why&rdquo; card below the sign, beside the four parts that produced it.
+                The tier word with its mark, and the rank among the ranked stations. The score appears lower on the
+                page, in the &ldquo;why&rdquo; card, beside the four parts that produced it.
               </Meaning>
             </KeyRow>
           </dl>
@@ -150,7 +150,7 @@ export function MethodPage({ list }: { list: StationListResponse | null }) {
         <Section id="parts" title="The four parts of the score" className="mt-16 scroll-mt-4">
           <p className="text-15">
             Each part becomes a percentile among the ranked stations, so a higher number always means emptier, and each
-            writes one sentence on the station&apos;s card.
+            puts one sentence on the station&apos;s card.
           </p>
           <dl className="mt-3">
             {PARTS.map((p) => (
@@ -170,14 +170,14 @@ export function MethodPage({ list }: { list: StationListResponse | null }) {
             ))}
           </dl>
           <p className="mt-4 text-15">
-            The weighted sum is ranked again, which is why the score is itself a percentile: <Mono>100</Mono> for the
-            emptiest station for its context and <Mono>0</Mono> for the busiest, whatever the season or the year. A
+            The site ranks the weighted sums again, which is why the score is itself a percentile: <Mono>100</Mono> for
+            the emptiest station for its context and <Mono>0</Mono> for the busiest, whatever the season or the year. A
             part with no value counts as <Mono>50</Mono>.
           </p>
           <p className="mt-4 text-15">
-            A part is set aside, and the card says why, when its window overlaps a closure or reaches back before the
-            station opened. The change from last year is also set aside when a station next door closed or reopened
-            between the two windows, because the riders it moved make the years incomparable.
+            The site sets a part aside, and the card says why, when its window overlaps a closure or reaches back
+            before the station opened. It also sets the change from last year aside when a station next door closed or
+            reopened between the two windows, because the riders it moved make the years incomparable.
           </p>
         </Section>
 
@@ -258,8 +258,8 @@ export function MethodPage({ list }: { list: StationListResponse | null }) {
           </p>
           <p className="mt-4 text-15">
             CTA publishes the entries about two months after the fact, in monthly batches on no announced schedule.
-            This site checks every morning, refetches the last 60 days so CTA&apos;s revisions are absorbed, and once a
-            week compares every month it holds against CTA&apos;s.
+            This site checks every morning, refetches the last 60 days to pick up CTA&apos;s revisions, and once a week
+            compares every month it holds against CTA&apos;s.
             {list?.dataThrough && (
               <>
                 {" "}
@@ -275,7 +275,7 @@ export function MethodPage({ list }: { list: StationListResponse | null }) {
 
         <Section id="api" title="The API" className="mt-12 scroll-mt-4">
           <p className="text-15">
-            The same numbers the pages show, as JSON, with no key. Dates are calendar strings, and both routes carry
+            The same numbers the pages show, as JSON, with no key. Dates are calendar strings, and every route carries
             the data-through date.
           </p>
           <dl className="mt-2">
