@@ -85,6 +85,9 @@ export const RING_START_SCALE = 0.5;
 
 const NO_PADDING: Padding = { top: 0, bottom: 0, left: 0, right: 0 };
 
+/** Mapbox's water fill in both base styles. */
+const WATER_LAYER = "water";
+
 export interface StationMapOptions {
   palette: MapPalette;
   /** Device pixels per CSS pixel for the mark images. */
@@ -150,6 +153,7 @@ export class StationMap {
     const { hide, subdue } = baseStyleAdjustments(map.getStyle()?.layers ?? []);
     for (const id of hide) map.setLayoutProperty(id, "visibility", "none");
     for (const id of subdue) map.setPaintProperty(id, "text-opacity", SUBDUED_LABEL_OPACITY);
+    if (this.palette.water && map.getLayer(WATER_LAYER)) map.setPaintProperty(WATER_LAYER, "fill-color", this.palette.water);
 
     for (const [id, image] of Object.entries(markImages(this.palette, this.pixelRatio))) {
       if (!map.hasImage(id)) map.addImage(id, image, { pixelRatio: this.pixelRatio });

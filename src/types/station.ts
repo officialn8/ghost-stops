@@ -62,6 +62,8 @@ export interface StationListItem {
   /** 1 is the most ghost-like; null outside the ranking. */
   rank: number | null;
   rankedCount: number | null;
+  /** The Ghost score, 0 to 100, 100 the most ghost-like; null outside the ranking. */
+  score: number | null;
   /** The ledger's riders-per-day number, the one the residual compares (R25, KTD18). */
   avg12m: number | null;
   avg30d: number | null;

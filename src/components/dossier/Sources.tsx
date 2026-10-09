@@ -1,14 +1,13 @@
 "use client";
 
+import Link from "next/link";
 import { ChevronRight, ExternalLink, TriangleAlert } from "lucide-react";
 import { useShell } from "@/components/shell/ShellContext";
 import { formatChicagoDay } from "@/lib/format";
+import { CTA_RIDERSHIP_URL } from "@/lib/site";
 import type { DataSourceInfo } from "@/types/narrative";
 import type { StationDetailResponse } from "@/types/station";
 import { linkClass, Section } from "./parts";
-
-const CTA_RIDERSHIP_URL =
-  "https://data.cityofchicago.org/Transportation/CTA-Ridership-L-Station-Entries-Daily-Totals/5neh-572f";
 
 const CADENCE: Readonly<Record<NonNullable<DataSourceInfo["refreshCadence"]>, string>> = {
   daily: "updated daily",
@@ -46,6 +45,11 @@ export function Sources({ detail }: { detail: StationDetailResponse }) {
           </>
         )}
         .
+      </p>
+      <p className="mt-2 text-13 text-ink-2">
+        <Link href="/method" className={linkClass}>
+          How the Ghost score works
+        </Link>
       </p>
       {stale && (
         <p className="mt-3 flex items-start gap-2 text-15">

@@ -53,6 +53,7 @@ function station(overrides: Partial<StationListItem> & Pick<StationListItem, "id
     tier: "healthy",
     rank: 100,
     rankedCount: 143,
+    score: 20,
     avg12m: 2000,
     avg30d: 2100,
     dataStatus: "available",
@@ -408,10 +409,17 @@ describe("drawerPadding", () => {
 });
 
 describe("baseStyleAdjustments", () => {
-  it("hides POI, transit, and road labels and Mapbox's rail lines, and quiets neighborhood names", () => {
+  it("hides POI, transit, road, and city labels and Mapbox's rail lines, and quiets suburb and neighborhood names", () => {
     const { hide, subdue } = baseStyleAdjustments(BASE_STYLE_LAYERS);
-    expect(hide.sort()).toEqual(["airport-label", "poi-label", "road-label-simple", "road-rail", "transit-label"]);
-    expect(subdue).toEqual(["settlement-subdivision-label"]);
+    expect(hide.sort()).toEqual([
+      "airport-label",
+      "poi-label",
+      "road-label-simple",
+      "road-rail",
+      "settlement-major-label",
+      "transit-label",
+    ]);
+    expect(subdue).toEqual(["settlement-subdivision-label", "settlement-minor-label"]);
   });
 
   it("leaves the station map's own layers alone", () => {
@@ -465,6 +473,7 @@ describe("networkBounds", () => {
     tier: "quiet",
     rank: 1,
     rankedCount: 3,
+    score: 60,
     avg12m: 1000,
     avg30d: 1000,
     dataStatus: "available",

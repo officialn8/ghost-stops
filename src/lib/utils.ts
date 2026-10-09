@@ -1,9 +1,19 @@
 import { type ClassValue, clsx } from "clsx"
-import { twMerge } from "tailwind-merge"
+import { extendTailwindMerge } from "tailwind-merge"
 import type { DataStatus, ScoreTierName, StationStatus } from "@/types/station"
 
 // Defined with the API shapes in src/types/station.ts; re-exported for existing importers.
 export type { DataStatus, ScoreTierName }
+
+/**
+ * tailwind-merge drops a utility when a later one conflicts with it, but it knows Tailwind's
+ * default theme, not this project's: `text-13` reads to it as a text color, so `cn("text-13
+ * text-ink-2")` used to keep only the color and the ledger's heads and ranks rendered at the
+ * 15px body size. The type scale is registered as font sizes so a size and a color never collide.
+ */
+const twMerge = extendTailwindMerge({
+  extend: { classGroups: { "font-size": [{ text: ["11", "13", "15", "18", "24", "36", "56"] }] } },
+})
 
 export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs))

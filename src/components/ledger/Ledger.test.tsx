@@ -119,11 +119,14 @@ describe("rows", () => {
   it("names each row by station first, with its lines, rank, tier, and 12-month riders per day", () => {
     render(<Harness list={ready()} openStation={openStation} />);
 
-    expect(row("halsted-green")).toHaveAccessibleName("Halsted, Green Line, rank 2 of 6, ghost, 248 riders per day");
+    expect(row("halsted-green")).toHaveAccessibleName("Halsted, Green Line, rank 2 of 6, ghost, score 97, 248 riders per day");
     expect(row("clark-lake")).toHaveAccessibleName(
-      "Clark/Lake, Blue, Brown, Green, Orange, Purple, Pink Lines, rank 6 of 6, healthy, 12,035 riders per day",
+      "Clark/Lake, Blue, Brown, Green, Orange, Purple, Pink Lines, rank 6 of 6, healthy, score 2, 12,035 riders per day",
     );
     expect(within(row("clark-lake")).getByText("12,035")).toBeInTheDocument();
+    // The score sits beside the rank, so the sort reads at a glance.
+    expect(within(row("halsted-green")).getByText("97")).toBeInTheDocument();
+    expect(within(row("state-lake")).queryByText(/^\d+$/)).toBeNull();
   });
 
   it("shows a closed station's closure month and a no-data station's status in place of riders", () => {
@@ -387,6 +390,20 @@ describe("tier groups", () => {
     expect(screen.getByRole("list", { name: "Ranked stations" })).toBeInTheDocument();
   });
 
+  it("writes the tier word in the row under the riders and name sorts, where no heading carries it", async () => {
+    render(<Harness list={ready()} openStation={openStation} />);
+    const user = userEvent.setup();
+    expect(within(row("monroe-red")).queryByText("Fading")).toBeNull();
+
+    await user.click(screen.getByRole("button", { name: /^Sort by riders/ }));
+    expect(within(row("monroe-red")).getByText("Fading")).toBeInTheDocument();
+    expect(within(row("clark-lake")).getByText("Healthy")).toBeInTheDocument();
+    expect(within(row("state-lake")).queryByText(/^(Ghost|Fading|Quiet|Healthy)$/)).toBeNull();
+
+    await user.click(screen.getByRole("button", { name: /^Sort by rank/ }));
+    expect(within(row("monroe-red")).queryByText("Fading")).toBeNull();
+  });
+
   it("counts only the rows a search leaves in each tier", async () => {
     render(<Harness list={ready()} openStation={openStation} />);
     await userEvent.type(screen.getByRole("searchbox", { name: "Search stations" }), "halsted");
@@ -399,7 +416,7 @@ describe("the lede and the foot", () => {
 
   it("says what the list is, then counts the matches while it is narrowed", async () => {
     render(<Harness list={ready()} openStation={openStation} />);
-    expect(lede()).toBe("8 stations, ranked by Ghost score");
+    expect(lede()).toBe("8 stations, 6 ranked by Ghost score");
 
     await userEvent.click(lineToggle("Red"));
     expect(lede()).toBe("7 of 8 stations match");

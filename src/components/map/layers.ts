@@ -35,6 +35,12 @@ export interface MapPalette {
    * draws them (GHOST_INK). The 44% ring ink would fall below 3:1 on the light surface.
    */
   ghostInk: number;
+  /**
+   * The lake and rivers. Mapbox's light style paints water pale blue, the one hue on the page that
+   * is not a CTA line; the light theme repaints it as ink at 6% over Station Tile. The dark style's
+   * near-black water needs nothing.
+   */
+  water?: string;
 }
 
 /**
@@ -43,7 +49,7 @@ export interface MapPalette {
  */
 export const MAP_PALETTE: Readonly<Record<Theme, MapPalette>> = {
   dark: { ink: "#F2F1EC", surface: "#141518", ghostInk: 0.52 },
-  light: { ink: "#141518", surface: "#F4F3EE", ghostInk: 0.62 },
+  light: { ink: "#141518", surface: "#F4F3EE", ghostInk: 0.62, water: "#E7E6E1" },
 };
 
 /** Mapbox's monochrome base styles; their POI, transit, and road labels are hidden on load. */
@@ -496,10 +502,12 @@ export interface BaseLayer {
 const HIDDEN_SYMBOLS = /poi|transit|airport|road|ferry|rail|shield|exit|aerialway|path|golf|building|housenum/;
 const HIDDEN_COMPONENTS = new Set(["point-of-interest-labels", "transit", "road-network", "walking-cycling", "buildings"]);
 const HIDDEN_LINES = /rail|transit|aerialway|ferry/;
-const SUBDUED_SYMBOLS = /settlement-subdivision|neighborhood/;
+/** Suburb and neighborhood names stay as faint context; the city's own name is noise on a map of only it. */
+const SUBDUED_SYMBOLS = /settlement-subdivision|settlement-minor|neighborhood/;
+const HIDDEN_PLACE_SYMBOLS = /settlement-major/;
 const OWN_LAYER = /^(track|station)-/;
 
-/** Neighborhood names stay as context, quieter than the station names. */
+/** Suburb and neighborhood names stay as context, quieter than the station names. */
 export const SUBDUED_LABEL_OPACITY = 0.6;
 
 function featureComponent(layer: BaseLayer): string | null {
@@ -520,7 +528,11 @@ export function baseStyleAdjustments(layers: readonly BaseLayer[]): { hide: stri
     if (OWN_LAYER.test(layer.id)) continue;
     const component = featureComponent(layer);
     if (layer.type === "symbol") {
-      if (HIDDEN_SYMBOLS.test(layer.id) || (component !== null && HIDDEN_COMPONENTS.has(component))) {
+      if (
+        HIDDEN_SYMBOLS.test(layer.id) ||
+        HIDDEN_PLACE_SYMBOLS.test(layer.id) ||
+        (component !== null && HIDDEN_COMPONENTS.has(component))
+      ) {
         hide.push(layer.id);
       } else if (SUBDUED_SYMBOLS.test(layer.id)) {
         subdue.push(layer.id);

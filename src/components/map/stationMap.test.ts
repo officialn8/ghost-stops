@@ -48,13 +48,21 @@ describe("StationMap install", () => {
     expect(map.rotationDisabled).toBe(true);
   });
 
-  it("hides the base style's POI, transit, and road labels and quiets neighborhood names", () => {
+  it("hides the base style's POI, transit, road, and city labels, and quiets suburb and neighborhood names", () => {
     const { map } = setup();
-    for (const id of ["poi-label", "transit-label", "road-label-simple", "road-rail", "airport-label"]) {
+    for (const id of ["poi-label", "transit-label", "road-label-simple", "road-rail", "airport-label", "settlement-major-label"]) {
       expect(map.layout.get(id)).toEqual({ visibility: "none" });
     }
-    expect(map.paint.get("settlement-subdivision-label")).toEqual({ "text-opacity": SUBDUED_LABEL_OPACITY });
-    expect(map.layout.get("settlement-major-label")).toBeUndefined();
+    for (const id of ["settlement-subdivision-label", "settlement-minor-label"]) {
+      expect(map.paint.get(id)).toEqual({ "text-opacity": SUBDUED_LABEL_OPACITY });
+    }
+    expect(map.paint.get("water")).toBeUndefined();
+  });
+
+  it("repaints the light style's water without a hue, and leaves the dark style's alone", () => {
+    const map = new FakeMap();
+    new StationMap(map, { palette: MAP_PALETTE.light, prefersReducedMotion: () => true });
+    expect(map.paint.get("water")).toEqual({ "fill-color": "#E7E6E1" });
   });
 
   it("feeds data that arrives later through the sources, not by re-adding them", () => {

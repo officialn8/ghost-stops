@@ -2,6 +2,7 @@ import { readFileSync } from "node:fs";
 import { describe, it, expect } from "vitest";
 // Imported through the `@/` alias on purpose: this test also proves the alias resolves under Vitest.
 import {
+    cn,
     contrastRatio,
     CTA_LINE_ORDER,
     ctaLineColors,
@@ -101,5 +102,15 @@ describe("toUiDataStatus", () => {
         expect(toUiDataStatus("zero")).toBe("zero");
         expect(toUiDataStatus("missing")).toBe("missing");
         expect(toUiDataStatus(undefined)).toBe("missing");
+    });
+});
+
+describe("cn", () => {
+    it("keeps a type-scale size beside a color, and still resolves real conflicts", () => {
+        expect(cn("text-13 text-ink-2")).toBe("text-13 text-ink-2");
+        expect(cn("px-1 text-11 uppercase tracking-[0.08em]", "text-ink")).toBe("px-1 text-11 uppercase tracking-[0.08em] text-ink");
+        expect(cn("font-mono tabular text-13", "text-ink-3")).toBe("font-mono tabular text-13 text-ink-3");
+        expect(cn("text-13 text-15")).toBe("text-15");
+        expect(cn("text-ink-2 text-ink")).toBe("text-ink");
     });
 });

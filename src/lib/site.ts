@@ -10,3 +10,7 @@ export const SITE_URL = new URL(
 );
 
 export const SITE_NAME = "Ghost Stops";
+
+/** CTA's daily station entries on the Chicago Data Portal: the ridership behind every number. */
+export const CTA_RIDERSHIP_URL =
+  "https://data.cityofchicago.org/Transportation/CTA-Ridership-L-Station-Entries-Daily-Totals/5neh-572f";

@@ -52,6 +52,7 @@ function station(
     tier: rank === null ? null : "ghost",
     rank,
     rankedCount: 140,
+    score: rank === null ? null : 95,
     avg12m: 248,
     avg30d: 240,
     dataStatus: "available",

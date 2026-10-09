@@ -1,21 +1,14 @@
-"use client";
-
 import Link from "next/link";
 import { Ghost } from "lucide-react";
 import { ThemeToggle } from "@/components/theme";
-import { useShell } from "./ShellContext";
 
 /**
- * The platform sign across the top: the ghost and the wordmark (a link to the map, which closes
- * any open station), the data-through date as plain text, and the theme switch. No status dots:
- * freshness is a dated sentence (R13), and CTA's lag is explained in the ledger's foot, not here.
+ * The method page's bar, the shell's top bar without the shell: the ghost and wordmark as the way
+ * back to the map, the data-through date as a dated sentence, and the theme switch.
  */
-export function TopBar() {
-  const { list } = useShell();
-  const dataThrough = list.status === "ready" ? list.data.dataThrough : null;
-
+export function MethodBar({ dataThrough }: { dataThrough: string | null }) {
   return (
-    <header className="z-chrome flex h-14 shrink-0 items-center gap-2 whitespace-nowrap border-b border-rule bg-surface px-4 md:gap-4 md:px-5">
+    <header className="flex h-14 shrink-0 items-center gap-2 whitespace-nowrap border-b border-rule bg-surface px-4 md:gap-4 md:px-5">
       <Link
         href="/"
         className="-mx-1 flex shrink-0 items-center gap-1.5 rounded px-1 py-1 md:gap-2"
@@ -28,7 +21,10 @@ export function TopBar() {
       <p className="ml-auto min-w-0 truncate text-13 text-ink-2">
         {dataThrough && (
           <>
-            Data through <time className="font-mono tabular text-ink" dateTime={dataThrough}>{dataThrough}</time>
+            Data through{" "}
+            <time className="font-mono tabular text-ink" dateTime={dataThrough}>
+              {dataThrough}
+            </time>
           </>
         )}
       </p>

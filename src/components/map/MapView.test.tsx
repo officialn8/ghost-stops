@@ -23,6 +23,7 @@ import {
 // props, and the map instance it would hand to onLoad is the FakeMap test double.
 type MapProps = Record<string, unknown> & {
   onLoad: (event: { type: string; target: FakeMap }) => void;
+  onIdle?: () => void;
   onClick: (event: unknown) => void;
   onMouseMove: (event: unknown) => void;
   onMouseLeave: () => void;
@@ -43,6 +44,8 @@ vi.mock("react-map-gl/mapbox", async () => {
   };
 });
 
+// The token is read when the module loads; without one the map reports itself as failed.
+process.env.NEXT_PUBLIC_MAPBOX_TOKEN ??= "pk.test";
 const { default: MapView } = await import("./MapView");
 
 function props(): MapProps {
@@ -64,6 +67,7 @@ function station(slug: string, overrides: Partial<StationListItem> = {}): Statio
     tier: "ghost",
     rank: 1,
     rankedCount: 143,
+    score: 98,
     avg12m: 700,
     avg30d: 740,
     dataStatus: "available",
@@ -81,6 +85,7 @@ const STATE_LAKE = station("state-lake", {
   closedAt: "2026-01-12",
   tier: null,
   rank: null,
+  score: null,
   latitude: 41.88574,
   longitude: -87.62781,
 });
@@ -337,6 +342,14 @@ describe("MapView selection and camera", () => {
     expect(fit?.bounds[0][0]).toBeCloseTo(-87.705, 5);
     expect(fit?.bounds[1][0]).toBeCloseTo(-87.695, 5);
     expect(fit?.padding).toEqual({ top: 40, bottom: 40, left: 40, right: 480 });
+  });
+
+  it("says the map is loading until it first goes idle", () => {
+    renderLoaded(model());
+    expect(screen.getByText("Loading the map")).toBeInTheDocument();
+    act(() => props().onIdle?.());
+    expect(screen.queryByText("Loading the map")).toBeNull();
+    expect(props().onIdle).toBeUndefined();
   });
 
   it("hides the button on a phone station page, where the small map is a locator", () => {

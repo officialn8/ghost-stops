@@ -112,6 +112,9 @@ export default function MapView() {
   const [opening] = useState(() => openingSetup(selectedSlug !== null));
   // Without a token there is no map to load; a rejected one (401, 403) says so on its first tile.
   const [mapFailed, setMapFailed] = useState(!MAPBOX_TOKEN);
+  // The style loads well before its tiles; the map has drawn once it first goes idle.
+  const [mapDrawn, setMapDrawn] = useState(false);
+  const handleIdle = useCallback(() => setMapDrawn(true), []);
 
   const tracks = useTracks();
   const stationData = useMemo(() => stationFeatures(stations, activeLines), [stations, activeLines]);
@@ -222,6 +225,7 @@ export default function MapView() {
         onMouseMove={handleMouseMove}
         onMouseLeave={handleMouseLeave}
         onError={handleError}
+        onIdle={mapDrawn ? undefined : handleIdle}
         minZoom={8}
         maxZoom={18}
         maxPitch={0}
@@ -249,10 +253,23 @@ export default function MapView() {
           Whole network
         </button>
       )}
-      {mapFailed && (
+      {mapFailed ? (
         <p role="status" className="absolute inset-x-4 top-16 z-chrome text-13 text-ink-2">
           The map could not load. Every station is still in the list.
         </p>
+      ) : (
+        !mapDrawn && (
+          <p
+            role="status"
+            className={cn(
+              "pointer-events-none absolute inset-x-4 z-chrome -translate-y-1/2 text-center text-13 text-ink-2",
+              // The phone's sheet covers the lower half of the map, so the sentence sits in the upper part.
+              isPhone ? "top-1/4" : "top-1/2",
+            )}
+          >
+            Loading the map
+          </p>
+        )
       )}
     </div>
   );

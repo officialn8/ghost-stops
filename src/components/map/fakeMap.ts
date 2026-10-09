@@ -25,6 +25,7 @@ export const BASE_STYLE_LAYERS: BaseLayer[] = [
   { id: "airport-label", type: "symbol", metadata: { "mapbox:featureComponent": "transit" } },
   { id: "waterway-label", type: "symbol", metadata: { "mapbox:featureComponent": "natural-features" } },
   { id: "settlement-subdivision-label", type: "symbol", metadata: { "mapbox:featureComponent": "place-labels" } },
+  { id: "settlement-minor-label", type: "symbol", metadata: { "mapbox:featureComponent": "place-labels" } },
   { id: "settlement-major-label", type: "symbol", metadata: { "mapbox:featureComponent": "place-labels" } },
 ];
 

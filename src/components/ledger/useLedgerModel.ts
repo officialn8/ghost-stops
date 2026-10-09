@@ -46,6 +46,8 @@ export interface LedgerModel {
   matchCount: number;
   /** Every station with a page. */
   total: number;
+  /** How many of them are ranked: open, with recent riders. */
+  rankedTotal: number;
   /** Whether a search or a line filter is in effect. */
   narrowed: boolean;
   /** The first matching row in display order: what Enter in the search field opens. */
@@ -155,11 +157,13 @@ export function deriveLedger({ stations, query, activeLines, sort, selectedSlug 
   const ranked: LedgerRowModel[] = [];
   const excluded: Record<Exclusion, LedgerRowModel[]> = { closed: [], "no-data": [] };
   let total = 0;
+  let rankedTotal = 0;
   let matchCount = 0;
 
   for (const station of stations) {
     if (!station.slug) continue;
     total += 1;
+    if (!isExcluded(station)) rankedTotal += 1;
     const matches =
       matchesQuery(station.displayName, needle) && (!linesNarrowed || passesLineFilter(station.lines, activeLines));
     if (matches) matchCount += 1;
@@ -187,6 +191,7 @@ export function deriveLedger({ stations, query, activeLines, sort, selectedSlug 
     sections,
     matchCount,
     total,
+    rankedTotal,
     narrowed,
     firstMatchSlug: firstMatch?.station.slug ?? null,
     announcement: announce(narrowed, matchCount, total),
