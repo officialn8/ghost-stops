@@ -7,6 +7,7 @@ colors:
   platform-chalk: "#F2F1EC"
   station-tile: "#F4F3EE"
   glazed-tile: "#FBFBF8"
+  lake-light: "#E7E6E1"
   cta-red: "#C60C30"
   cta-blue: "#00A1DE"
   cta-brown: "#62361B"
@@ -151,6 +152,12 @@ components:
     rounded: "{rounded.none}"
     padding: "12px 8px"
     height: "64px"
+  method-key-row:
+    backgroundColor: "transparent"
+    textColor: "{colors.platform-chalk}"
+    typography: "{typography.body}"
+    rounded: "{rounded.none}"
+    padding: "12px 0"
   section-heading:
     textColor: "rgb(242 241 236 / 0.68)"
     typography: "{typography.label}"
@@ -206,6 +213,7 @@ There is no brand accent. The interaction accent is inversion: a selected ledger
 - **Platform Chalk** (#F2F1EC): the dark theme's ink, the white of the type on the sign. Full ink is for names, primary numbers, and body text.
 - **Station Tile** (#F4F3EE): the light theme's surface, a warm tile white.
 - **Glazed Tile** (#FBFBF8): the light theme's second surface.
+- **Lake** (#E7E6E1): the light theme's water on the map, ink at 6% over Station Tile, so Lake Michigan carries no hue. The dark map's near-black water needs nothing.
 
 The quieter inks are the theme's ink at an opacity, never a separate gray, so they sit correctly on either surface:
 
@@ -234,7 +242,7 @@ The quieter inks are the theme's ink at an opacity, never a separate gray, so th
 
 - **Display** (JetBrains Mono 400, 56px/56px, tracking -0.025em, tabular): one number per station, riders per day on the sign header. It counts up once when the dossier opens.
 - **Headline** (Archivo wdth 75, 700, 36px/38px, uppercase): the station name on the sign header, the only text set in capitals at size.
-- **Title** (Archivo wdth 75, 600, 18px/24px): neighbor names along the line. At 15px/24px semibold it is every station name in the ledger. The wordmark is this cut at 700, uppercase, tracked 0.06em (15px on a phone, 18px from 768px).
+- **Title** (Archivo wdth 75, 600, 18px/24px): neighbor names along the line. At 15px/24px semibold it is every station name in the ledger. The wordmark is this cut at 700, uppercase, tracked 0.06em (15px on a phone, 18px from 768px). The method page's title is the plain width at 24px/28px, 600.
 - **Body** (Archivo 400, 15px/24px): sentences, story paragraphs, score-part labels, baseline labels. Bold runs in a story are 600; a bold figure switches to the mono face at 500.
 - **Label** (Archivo 400, 13px/20px): the workhorse secondary size in Ink 2: captions, section headings (at 500), chips, tier ranges, sources, the data-through sentence.
 - **Caps label** (Archivo 400, 11px/16px, uppercase, tracked 0.08em): the ledger's sort heads only. This is the single tracked uppercase style in the system.
@@ -257,13 +265,13 @@ The shell is one persistent frame: a 56px top bar (wordmark, data-through date, 
 
 - **1100px and up:** a 360px ledger column flush to the left edge, the map filling the rest, and the 440px drawer laid over the map's right edge. The map camera pads 440px on the right so a selected station stays clear of the drawer.
 - **768 to 1100px:** the same, but the drawer replaces the ledger column while a station is open.
-- **Under 768px:** the map is full-bleed under a bottom sheet holding the ledger. The sheet opens at half the viewport, so the first screen shows the ledger's head and its first rows; its lowest snap is the head alone, measured, and its top snap 92%, with a 40 by 4px handle at 25% ink. A station page shrinks the same map to 28vh and the dossier scrolls below it as a page, with "Back to map" where the close button would be.
+- **Under 768px:** the map is full-bleed under a bottom sheet holding the ledger. The sheet opens at 55% of the viewport, so the first screen shows the ledger's head, the first tier's heading, and four station rows; its lowest snap is the head alone, measured, and its top snap 92%, with a 40 by 4px handle at 25% ink. A station page shrinks the same map to 28vh and the dossier scrolls below it as a page, with "Back to map" where the close button would be.
 
 Breakpoints are 768 (md), 1100 (lg), and 1440 (xl). Z-order, bottom to top: map 0, chrome 10, drawer 20, sheet 30, banner 40; nothing else sets a z-index.
 
-**Density and rhythm.** Spacing runs on 4px steps; 12px and 16px are the common gaps, 20px is the dossier gutter, and 32px separates dossier sections. The ledger row is 56px tall (rank and mark in a 48px column, the name over its line bars, a 56 by 24px sparkline, riders right-aligned in a 64px column), with a hairline under every row. The dossier is one column at the drawer's width, with 20px gutters and 64px of bottom padding, ordered the same everywhere: sign header, baselines, why, last 90 days, along the line, sources. Each section opens with a hairline, 16px, a 13px heading in Ink 2, 12px, then content. Tables are definition lists with a hairline between rows and 10 to 12px of vertical padding; the number sits in a fixed right column so figures align down the page.
+**Density and rhythm.** Spacing runs on 4px steps; 12px and 16px are the common gaps, 20px is the dossier gutter, and 32px separates dossier sections. The ledger row is 56px tall (rank, score, and mark in a 64px column, the name over its line bars, a 56 by 24px sparkline, riders right-aligned in a 64px column), with a hairline under every row. The dossier is one column at the drawer's width, with 20px gutters and 64px of bottom padding, ordered the same everywhere: sign header, baselines, why, last 90 days, along the line, sources. Each section opens with a hairline, 16px, a 13px heading in Ink 2, 12px, then content. Tables are definition lists with a hairline between rows and 10 to 12px of vertical padding; the number sits in a fixed right column so figures align down the page.
 
-**The map.** Mapbox's monochrome base (dark-v11 or light-v11) with its POI, transit, and road labels hidden. Tracks are a surface-colored casing at 85% under each line's core stroke (1.8px at zoom 10 to 3.8px at zoom 14, Loop tracks slightly thinner), offset so parallel lines sit side by side, Red drawn last. Stations are circle layers with a radius from 2px at zoom 9 to 7px at zoom 17 over a transparent hit circle of 8 to 16px. Names are DIN Pro Medium at 12 to 14px with a 1.5px surface halo from zoom 12.5, the ghostliest kept first when they collide; the hovered or selected name shows at any zoom. A line filtered out keeps its tracks at 20%, its marks at 30%, and its labels at 40%; nothing is removed. Closing a station flies the camera back to the whole network, or to the box around the lines a filter keeps, and a "Whole network" button at the map's top-left does the same at any time.
+**The map.** Mapbox's monochrome base (dark-v11 or light-v11) with its POI, transit, and road labels hidden. Tracks are a surface-colored casing at 85% under each line's core stroke (1.8px at zoom 10 to 3.8px at zoom 14, Loop tracks slightly thinner), offset so parallel lines sit side by side, Red drawn last. Stations are circle layers with a radius from 2px at zoom 9 to 7px at zoom 17 over a transparent hit circle of 8 to 16px. Names are DIN Pro Medium at 12 to 14px with a 1.5px surface halo from zoom 12.5, the ghostliest kept first when they collide; the hovered or selected name shows at any zoom. Of the base style's own labels, suburb and neighborhood names stay at 60% and the city's own name is hidden: "Chicago" would sit on the Loop cluster. A line filtered out keeps its tracks at 20%, its marks at 30%, and its labels at 40%; nothing is removed. Closing a station flies the camera back to the whole network, or to the box around the lines a filter keeps, and a "Whole network" button at the map's top-left does the same at any time.
 
 ## Elevation & Depth
 
@@ -297,15 +305,15 @@ Printed and precise: hairline rules, outlined chips, flat fills, inversion for s
 
 ### Line filter bars
 
-- **Style:** eight 24px-tall bars in a grid (one row of eight in the column, two rows of four in the sheet, 4px gaps), square corners, the line name at 11px in the condensed cut.
+- **Style:** eight 24px-tall bars in one row of eight everywhere (4px gaps; about 43px each on a phone), square corners, the line name at 11px in the condensed cut.
 - **On:** filled with the line color, a 1px border of the same color, the name in the contrasting theme ink (Tunnel Black on Yellow, Pink, Blue, Green, and Orange), semibold.
 - **Off:** the fill empties to a 30% outline of the line color and the name is struck through in Ink 2, so off is never color alone. All off reads as all on.
 
 ### Ledger head and group headings
 
-- **Lede:** one 13px line in Ink 2 above the search field, set like a sign: "144 stations, ranked by Ghost score", the count in mono. While a search or filter narrows the list it reads "27 of 144 stations match". Never a second sentence.
-- **Group headings:** under the rank sort the ranked rows sit in four tier groups, and the closed and no-data rows in their sections, each under a 13px Ink 2 heading on a hairline: the group's 10px mark, its word, and its count in mono ("Ghost, 15 stations"). The heading is the legend; the row carries only the mark.
-- **Foot:** a 13px Ink 2 line under the rows stating CTA's lag and the data-through date in mono.
+- **Lede:** one 13px line in Ink 2 above the search field, set like a sign: "144 stations, 143 ranked by Ghost score", both counts in mono. While a search or filter narrows the list it reads "27 of 144 stations match". Never a second sentence.
+- **Group headings:** under the rank sort the ranked rows sit in four tier groups, and the closed and no-data rows in their sections, each under a 13px Ink 2 heading on a hairline: the group's 10px mark, its word, and its count in mono ("Ghost, 15 stations"). The heading is the legend and sticks to the top of the list while its rows scroll; the row carries only the mark. Under the riders and name sorts, where there are no tier groups, the tier word sits in the row's second line after the line bars, 13px Ink 2.
+- **Foot:** two 13px Ink 2 lines under the rows: CTA's lag with the data-through date in mono, then the score's one-line definition with a text link, "How it works", to the method page.
 - **Skip link:** "Skip to stations" is the page's first Tab stop, visible only on focus as an inverted 4px-radius pill at the top left. It focuses the list, whose rows share one Tab stop with the arrow keys, Home, and End between them; the eight line bars do the same; "/" focuses the search.
 
 ### Sort heads
@@ -327,7 +335,7 @@ Printed and precise: hairline rules, outlined chips, flat fills, inversion for s
 ### Ledger row
 
 - **Shape:** 56px tall, full width, 16px side padding, hairline bottom border, square.
-- **Content:** rank (13px mono, Ink 3) and presence mark in a 48px column; the name (15px semibold, condensed) over 16 by 3px line bars; a 56 by 24px sparkline in the current text color with a dot on the last day; riders per day (15px mono) right-aligned in a 64px column. A closed or no-data station shows "closed Jan 2026" or "no recent data" in Ink 2 in place of the numbers.
+- **Content:** a 64px column of three fixed cells, the rank and the Ghost score each right-aligned in 3ch of 13px mono in Ink 3 and the presence mark after them; the name (15px semibold, condensed) over 16 by 3px line bars; a 56 by 24px sparkline in the current text color with a dot on the last day; riders per day (15px mono) right-aligned in a 64px column. The score sits beside the rank, small, so the sort is legible without outranking the riders figure. A closed or no-data station shows "closed Jan 2026" or "no recent data" in Ink 2 in place of the numbers.
 - **Presence:** the name's ink follows the tier (ghost and excluded names in Ink 3, fading in Ink 2, quiet and healthy in full ink); numbers stay at full ink.
 - **Hover:** a 4% ink wash. **Selected:** inverted, a full-ink fill with surface-colored text and a surface-colored focus ring; the sparkline inverts with it.
 
@@ -343,7 +351,7 @@ Printed and precise: hairline rules, outlined chips, flat fills, inversion for s
 
 - **Top bar:** 56px, hairline bottom border, the ghost glyph (20px) and wordmark as one link home, "Chicago L" in 13px Ink 2 from 768px, "Data through 2026-07-31" with the date in mono, and the theme switch. No status dots; freshness is a dated sentence. A refresh older than ten days adds a 13px banner on the second surface with a triangle icon, under the bar.
 - **Drawer:** 440px wide from 768px, the surface color, a hairline left border, the panel-edge shadow, its own scroll; it slides in 24px from the right over 240ms. A sticky 56px control row holds the close button on the right or, on a phone, "Back to map" on the left. Escape closes.
-- **Bottom sheet (phone):** the surface color with a hairline top border, 92vh tall, opening at 50% with the head's height as its lowest snap and 92% as its top; always open on the map page, unmounted on a station page.
+- **Bottom sheet (phone):** the surface color with a hairline top border, 92vh tall, opening at 55% with the head's measured height as its lowest snap and 92% as its top; always open on the map page, unmounted on a station page.
 - **Map controls:** a "Whole network" outline button (32px, second-surface fill, hairline border, 13px) at the map's top-left, beneath Mapbox's zoom buttons from 768px; both in the token styles the stylesheet defines for Mapbox's controls. Hidden on a phone station page, where the small map is a locator.
 
 ### Presence marks (signature)
@@ -357,9 +365,13 @@ The one vocabulary shared by the ledger, the dossier, and the map: 10px marks at
 
 ### Loading, empty, and error states
 
-- **Skeletons:** static blocks at 8% ink, 4px radius, laid out in the shape of the content they replace (nine ledger rows; the dossier section by section). No shimmer.
+- **Skeletons:** static blocks at 8% ink, 4px radius, laid out in the shape of the content they replace (nine ledger rows; the dossier section by section). No shimmer. The map says "Loading the map" in 13px Ink 2 at its center until its tiles first draw.
 - **Empty:** "No stations match "xyz". Not even a ghost." as a 13px row in Ink 2 with a "Clear search" outline button; "This stop doesn't exist. Not even as a ghost." on an unknown station, with a search field.
 - **Error:** a 15px sentence, a 13px explanation in Ink 2, and a "Try again" outline button with a rotate icon; the way back to the map stays.
+
+### The method page (a reading surface)
+
+`/method` is the one page outside the shell, in the same world. It reuses the top bar's anatomy without the shell (wordmark link, "Chicago L", the data-through date, the theme switch) over one centered 68ch reading column with 16px gutters: a 24px semibold sentence-case title, a 15px Ink 2 lede, then dossier sections. Its first section is the page's one wide moment: from 768px it steps out of the column to a centered spread up to 960px wide (40px from the viewport's edges), the real ledger row at 360px on the left, sticky while the key on the right is read, the key a definition list in the row's reading order, each term 15px at 500 in a 7rem column (9rem from 1100px), each meaning 15px Ink 2 with the station's own value in mono. On a phone the row sits above its key at full width. The score's four parts, the tiers, and the exclusions use the same list, with the presence marks as their only glyphs; the API routes are set in 15px mono. External links carry the 12px external-link icon; no other icons.
 
 ### Motion
 
