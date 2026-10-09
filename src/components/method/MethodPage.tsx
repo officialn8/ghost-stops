@@ -1,24 +1,43 @@
 import Link from "next/link";
 import { ExternalLink } from "lucide-react";
+import { CountOnce } from "@/components/dossier/CountOnce";
 import { linkClass, Section } from "@/components/dossier/parts";
 import type { LedgerStation } from "@/components/ledger/useLedgerModel";
-import { LineBars } from "@/components/marks/LineBars";
 import { PresenceMark, TIER_LABEL } from "@/components/marks/PresenceMark";
-import { formatCalendarDate, formatRiders, linesLabel } from "@/lib/format";
 import { CTA_RIDERSHIP_URL } from "@/lib/site";
 import { ordinal } from "@/lib/stations/metadata";
 import type { ScoreTierName, StationListItem, StationListResponse } from "@/types/station";
-import { AnnotatedRow } from "./AnnotatedRow";
+import { KeyLine, KeyRow, Meaning, Mono, Term } from "./key";
 import { MethodBar } from "./MethodBar";
+import { RowKey } from "./RowKey";
 
 /**
  * The method page: the ledger's figures explained from one live row, then how the score is
  * built, which stations are ranked, where the data comes from, and how to fetch it. A reading
- * page in the shell's world, without the shell: one centered reading column, out of which the
- * annotated row breaks as a wider spread from 768px, the real row on the left and kept in view
- * while the key on the right is read. Hairline sections, every number in mono. The example
- * station is the first fading one, whose score and rank are both mid-range, falling back to rank 1.
+ * page in the shell's world, without the shell: one centered reading column, 640px wide, that
+ * every section shares, so the page has a single left edge from the title to the last link. The
+ * real ledger row runs the column's full width and stays pinned at the top of the viewport while
+ * its key reads beneath it. Every key is a list of terms over their meanings, so a sentence gets
+ * the column's whole measure; explanations sit at full ink, and Ink 2 is kept for the lede, the
+ * headings, the weights, and the card quotes. Hairline sections, every number in mono. The
+ * example station is the first fading one, whose score and rank are both mid-range, falling back
+ * to rank 1.
+ *
+ * The page teaches by showing: pointing at a term lights the part of the row it names (RowKey),
+ * the mark's sentence draws the marks it describes, the sign excerpt's number counts up once as
+ * the real sign does, and a contents line under the lede names the seven sections.
  */
+
+/** The sections, in reading order, for the contents line under the lede. */
+const CONTENTS: readonly { id: string; label: string }[] = [
+  { id: "row", label: "The row" },
+  { id: "sign", label: "The sign" },
+  { id: "parts", label: "The four parts" },
+  { id: "tiers", label: "Tiers" },
+  { id: "ranked", label: "Who is ranked" },
+  { id: "data", label: "The data" },
+  { id: "api", label: "The API" },
+];
 
 const PARTS: readonly { part: string; weight: string; sentence: string; asks: string }[] = [
   {
@@ -60,123 +79,45 @@ export function exampleStation(stations: readonly StationListItem[]): LedgerStat
   return ranked.find((s) => s.tier === "fading") ?? ranked[0] ?? null;
 }
 
-function Term({ children }: { children: React.ReactNode }) {
-  return <dt className="text-15 font-medium">{children}</dt>;
-}
-
-function Meaning({ children }: { children: React.ReactNode }) {
-  return <dd className="text-15 text-ink-2">{children}</dd>;
-}
-
-const Mono = ({ children }: { children: React.ReactNode }) => (
-  <span className="font-mono tabular text-ink">{children}</span>
-);
-
-function KeyRow({ children }: { children: React.ReactNode }) {
-  return <div className="grid grid-cols-[7rem_minmax(0,1fr)] gap-x-4 border-b border-rule py-3 lg:grid-cols-[9rem_minmax(0,1fr)]">{children}</div>;
-}
-
 export function MethodPage({ list }: { list: StationListResponse | null }) {
   const stations = list?.stations ?? [];
   const example = exampleStation(stations);
   const total = stations.filter((s) => s.slug !== null).length;
   const rankedTotal = stations.filter((s) => s.slug !== null && s.rank !== null).length;
   const rankedCount = example?.rankedCount ?? rankedTotal;
-  const week = example?.sparkline ?? null;
-  const lastDay = week ? (week.values[week.values.length - 1] ?? null) : null;
 
   return (
     <div className="min-h-dvh bg-surface text-ink">
       <MethodBar dataThrough={list?.dataThrough ?? null} />
-      <main className="mx-auto w-full max-w-[68ch] px-4 pb-16 pt-8 md:px-0">
+      <main className="mx-auto w-full max-w-[640px] px-4 pb-16 pt-8">
         <h1 className="text-24 font-semibold">How the Ghost score works</h1>
         <p className="mt-2 text-15 text-ink-2">
           Every figure in the ledger and on a station&apos;s sign, explained from one real row, then the score, the
           data behind it, and how to get the data yourself.
         </p>
+        <nav aria-label="On this page" className="mt-4 flex flex-wrap gap-x-4 gap-y-1 text-13">
+          {CONTENTS.map(({ id, label }) => (
+            <a key={id} href={`#${id}`} className={linkClass}>
+              {label}
+            </a>
+          ))}
+        </nav>
 
-        {/* The one wide moment: the section steps out of the column to a centered spread. */}
-        <Section
-          title="A row of the ledger"
-          className="md:relative md:left-1/2 md:w-[min(960px,calc(100vw-80px))] md:-translate-x-1/2"
-        >
+        <Section id="row" title="A row of the ledger" className="mt-12 scroll-mt-4">
           {example ? (
-            <div className="md:grid md:grid-cols-[360px_minmax(0,1fr)] md:items-start md:gap-8 lg:gap-12">
-              <div className="md:sticky md:top-4">
-                <AnnotatedRow station={example} />
-              </div>
-              <dl className="mt-2 md:mt-0 md:border-t md:border-rule">
-                <KeyRow>
-                  <Term>Rank</Term>
-                  <Meaning>
-                    Where the station stands among the <Mono>{rankedCount}</Mono> ranked stations; 1 is the most
-                    ghost-like. {example.displayName} is <Mono>{ordinal(example.rank ?? 0)}</Mono>.
-                  </Meaning>
-                </KeyRow>
-                <KeyRow>
-                  <Term>Ghost score</Term>
-                  <Meaning>
-                    A percentile over the same stations, from 0 to 100: 100 is the emptiest station for its context, 0
-                    the busiest. {example.displayName} scores <Mono>{example.score}</Mono>.
-                  </Meaning>
-                </KeyRow>
-                <KeyRow>
-                  <Term>The mark</Term>
-                  <Meaning>
-                    The tier at a glance, in ink rather than color: a solid dot for healthy, a ring for quiet, a fainter
-                    ring for fading, a small ghost for a ghost stop. {example.displayName} is{" "}
-                    <span className="inline-flex items-center gap-1.5 text-ink">
-                      {example.tier && <PresenceMark tier={example.tier} size={12} />}
-                      {example.tier ? TIER_LABEL[example.tier].toLowerCase() : "unranked"}
-                    </span>
-                    .
-                  </Meaning>
-                </KeyRow>
-                <KeyRow>
-                  <Term>Name and lines</Term>
-                  <Meaning>
-                    The station, over a bar in the official color of each line it serves:{" "}
-                    <span className="inline-flex items-center gap-2 text-ink">
-                      <LineBars lines={example.lines} decorative barClassName="h-[3px] w-4" />
-                      {linesLabel(example.lines)}
-                    </span>
-                    .
-                  </Meaning>
-                </KeyRow>
-                <KeyRow>
-                  <Term>Last week</Term>
-                  <Meaning>
-                    Seven days of riders as one stroke, scaled to the week&apos;s own low and high, with a dot on the last
-                    day. A break is a day with no data, never a zero.
-                    {week && lastDay !== null && (
-                      <>
-                        {" "}
-                        On <Mono>{formatCalendarDate(week.end, { month: "short", day: "numeric" })}</Mono>, the stroke&apos;s
-                        last day, {example.displayName} had <Mono>{formatRiders(lastDay)}</Mono>.
-                      </>
-                    )}
-                  </Meaning>
-                </KeyRow>
-                <KeyRow>
-                  <Term>Riders per day</Term>
-                  <Meaning>
-                    The average daily entries over the last 12 months, the figure the peers comparison uses.{" "}
-                    {example.displayName} averages{" "}
-                    <Mono>{example.avg12m === null ? "n/a" : formatRiders(example.avg12m)}</Mono>.
-                  </Meaning>
-                </KeyRow>
-              </dl>
-            </div>
+            <RowKey station={example} rankedCount={rankedCount} />
           ) : (
             <p className="text-15 text-ink-2">The station list is not available right now, so there is no row to show.</p>
           )}
         </Section>
 
-        <Section title="The sign at the top of a station's page">
+        <Section id="sign" title="The sign at the top of a station's page" className="mt-12 scroll-mt-4">
           {example && (
             <div className="flex flex-wrap items-end gap-x-6 gap-y-3">
               {example.avg12m !== null && (
-                <p className="font-mono text-56 tabular tracking-tight">{formatRiders(example.avg12m)}</p>
+                <p className="font-mono text-56 tabular tracking-tight">
+                  <CountOnce value={example.avg12m} />
+                </p>
               )}
               {example.tier && example.rank !== null && (
                 <div className="pb-1.5">
@@ -206,8 +147,8 @@ export function MethodPage({ list }: { list: StationListResponse | null }) {
           </dl>
         </Section>
 
-        <Section title="The four parts of the score">
-          <p className="text-15 text-ink-2">
+        <Section id="parts" title="The four parts of the score" className="mt-16 scroll-mt-4">
+          <p className="text-15">
             Each part becomes a percentile among the ranked stations, so a higher number always means emptier, and each
             writes one sentence on the station&apos;s card.
           </p>
@@ -221,29 +162,29 @@ export function MethodPage({ list }: { list: StationListResponse | null }) {
                     {p.weight}
                   </dd>
                 </div>
-                <dd className="mt-1 text-15 text-ink-2">{p.asks}</dd>
+                <dd className="mt-1 text-15">{p.asks}</dd>
                 <dd className="mt-1 text-13 text-ink-2">
                   On the card: &ldquo;{p.sentence}&rdquo;
                 </dd>
               </div>
             ))}
           </dl>
-          <p className="mt-4 text-15 text-ink-2">
+          <p className="mt-4 text-15">
             The weighted sum is ranked again, which is why the score is itself a percentile: <Mono>100</Mono> for the
             emptiest station for its context and <Mono>0</Mono> for the busiest, whatever the season or the year. A
             part with no value counts as <Mono>50</Mono>.
           </p>
-          <p className="mt-3 text-15 text-ink-2">
+          <p className="mt-4 text-15">
             A part is set aside, and the card says why, when its window overlaps a closure or reaches back before the
             station opened. The change from last year is also set aside when a station next door closed or reopened
             between the two windows, because the riders it moved make the years incomparable.
           </p>
         </Section>
 
-        <Section title="Tiers">
+        <Section id="tiers" title="Tiers" className="mt-12 scroll-mt-4">
           <dl>
             {TIERS.map(({ tier, range }) => (
-              <KeyRow key={tier}>
+              <KeyLine key={tier}>
                 <Term>
                   <span className="inline-flex items-center gap-2">
                     <span className="flex w-4 shrink-0 items-center justify-center">
@@ -252,18 +193,18 @@ export function MethodPage({ list }: { list: StationListResponse | null }) {
                     {TIER_LABEL[tier]}
                   </span>
                 </Term>
-                <Meaning>{range}</Meaning>
-              </KeyRow>
+                <dd className="text-15">{range}</dd>
+              </KeyLine>
             ))}
           </dl>
-          <p className="mt-3 text-15 text-ink-2">
+          <p className="mt-4 text-15">
             The bands are fixed, so the top tier is always the emptiest tenth of the ranked stations. A healthy station
             is never called a ghost; its page tells a story of growth or stability instead.
           </p>
         </Section>
 
-        <Section title="Who is ranked">
-          <p className="text-15 text-ink-2">
+        <Section id="ranked" title="Who is ranked" className="mt-12 scroll-mt-4">
+          <p className="text-15">
             A station is ranked when it is open and has riders in recent data.
             {total > 0 && (
               <>
@@ -298,14 +239,14 @@ export function MethodPage({ list }: { list: StationListResponse | null }) {
               <Meaning>Open, but with no riders recorded in recent data. Ranked again when riders appear.</Meaning>
             </KeyRow>
           </dl>
-          <p className="mt-3 text-15 text-ink-2">
+          <p className="mt-4 text-15">
             Stations outside the ranking get no score, rank, or tier and take no part in any comparison, including as
             another station&apos;s peer.
           </p>
         </Section>
 
-        <Section title="The data">
-          <p className="text-15 text-ink-2">
+        <Section id="data" title="The data" className="mt-16 scroll-mt-4">
+          <p className="text-15">
             Every number comes from the{" "}
             <a href={CTA_RIDERSHIP_URL} target="_blank" rel="noopener noreferrer" className={`${linkClass} inline-flex items-center gap-1`}>
               CTA&apos;s daily station entries
@@ -315,7 +256,7 @@ export function MethodPage({ list }: { list: StationListResponse | null }) {
             back to <Mono>2001</Mono>. An entry is a rider who paid to enter, so a station where more riders enter
             without paying undercounts.
           </p>
-          <p className="mt-3 text-15 text-ink-2">
+          <p className="mt-4 text-15">
             CTA publishes the entries about two months after the fact, in monthly batches on no announced schedule.
             This site checks every morning, refetches the last 60 days so CTA&apos;s revisions are absorbed, and once a
             week compares every month it holds against CTA&apos;s.
@@ -332,29 +273,29 @@ export function MethodPage({ list }: { list: StationListResponse | null }) {
           </p>
         </Section>
 
-        <Section title="The API">
-          <p className="text-15 text-ink-2">
+        <Section id="api" title="The API" className="mt-12 scroll-mt-4">
+          <p className="text-15">
             The same numbers the pages show, as JSON, with no key. Dates are calendar strings, and both routes carry
             the data-through date.
           </p>
           <dl className="mt-2">
             <div className="border-b border-rule py-3">
               <dt className="font-mono text-15 tabular">GET /api/chicago/stations</dt>
-              <dd className="mt-1 text-15 text-ink-2">
+              <dd className="mt-1 text-15">
                 Every station, rank 1 first, with its tier, rank, score, 12-month and 30-day averages, last week, and
                 lines.
               </dd>
             </div>
             <div className="border-b border-rule py-3">
               <dt className="font-mono text-15 tabular">GET /api/chicago/stations/&#123;slug&#125;</dt>
-              <dd className="mt-1 text-15 text-ink-2">
+              <dd className="mt-1 text-15">
                 One station: its 91-day series, the comparisons, the four parts with their numbers and the peers used,
                 the story, and the sources. The slug is the one in the station&apos;s page address.
               </dd>
             </div>
             <div className="border-b border-rule py-3">
               <dt className="font-mono text-15 tabular">GET /api/health</dt>
-              <dd className="mt-1 text-15 text-ink-2">
+              <dd className="mt-1 text-15">
                 Whether the daily refresh is current. It answers an error status when no refresh has succeeded in ten
                 days.
               </dd>

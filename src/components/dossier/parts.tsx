@@ -12,14 +12,17 @@ export function Section({
   title,
   children,
   className,
+  id,
 }: {
   title: string;
   children: React.ReactNode;
   className?: string;
+  /** An anchor for an in-page contents line. */
+  id?: string;
 }) {
   const headingId = useId();
   return (
-    <section aria-labelledby={headingId} className={cn("mt-8 border-t border-rule pt-4", className)}>
+    <section id={id} aria-labelledby={headingId} className={cn("mt-8 border-t border-rule pt-4", className)}>
       <h2 id={headingId} className="text-13 font-medium text-ink-2">
         {title}
       </h2>

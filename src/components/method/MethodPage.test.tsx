@@ -1,4 +1,5 @@
 import { render, screen, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 import { LEDGER_STATIONS } from "@/components/ledger/__fixtures__/stations";
 import { ThemeProvider } from "@/components/theme";
@@ -52,6 +53,27 @@ describe("MethodPage", () => {
     );
     expect(screen.getByText("GET /api/chicago/stations")).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Back to the map" })).toHaveAttribute("href", "/");
+
+    // The contents line names every section and links to it.
+    const contents = within(screen.getByRole("navigation", { name: "On this page" })).getAllByRole("link");
+    expect(contents.map((a) => a.getAttribute("href"))).toEqual(["#row", "#sign", "#parts", "#tiers", "#ranked", "#data", "#api"]);
+    expect(document.getElementById("parts")).toContainElement(screen.getByRole("heading", { name: "The four parts of the score" }));
+  });
+
+  it("lights the part of the row an entry explains while the pointer is on it, and no cell otherwise", async () => {
+    renderPage(list);
+    const user = userEvent.setup();
+    const cell = (name: string) => document.querySelector(`[data-cell="${name}"]`) as HTMLElement;
+    for (const name of ["rank", "score", "name", "riders"]) expect(cell(name)).not.toHaveClass("opacity-35");
+
+    await user.hover(screen.getByText("Riders per day", { selector: "dt" }));
+    expect(cell("rank")).toHaveClass("opacity-35");
+    expect(cell("score")).toHaveClass("opacity-35");
+    expect(cell("name")).toHaveClass("opacity-35");
+    expect(cell("riders")).not.toHaveClass("opacity-35");
+
+    await user.unhover(screen.getByText("Riders per day", { selector: "dt" }));
+    expect(cell("rank")).not.toHaveClass("opacity-35");
   });
 
   it("stands without a list: no row, the method still explained", () => {
