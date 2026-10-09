@@ -8,7 +8,7 @@ import { SHEET_OPEN_SNAP } from "./model";
 /** The handle's row: 4px of handle inside 8px margins. */
 const HANDLE_PX = 20;
 /** The ledger's head on a 375px phone, until it is measured: lede, search, bars, sort heads. */
-const HEAD_FALLBACK_PX = 168;
+const HEAD_FALLBACK_PX = 140;
 
 /**
  * The phone's station list: a bottom sheet over the full-bleed map, holding the same ledger as
@@ -16,7 +16,7 @@ const HEAD_FALLBACK_PX = 168;
  * Toggling the sheet's open state on navigation is what swallowed the first tap on a phone
  * (Reddit report B1, KTD16), so nothing here ever changes `open`; a station page unmounts it.
  *
- * It opens at half the viewport, so the first screen shows the ledger's head and its first rows.
+ * It opens just over half the viewport, so the first screen shows the ledger's head and four rows.
  * Its lowest snap is the head alone, measured, so the sort heads never clip at the bottom edge
  * and pulling the sheet down reveals the whole network.
  */
