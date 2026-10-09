@@ -53,7 +53,7 @@ src/
 │   ├── map/         MapView, layers, marks (rasterized presence marks), stationMap
 │   ├── marks/       PresenceMark (tier marks), LineBars
 │   ├── narrative/   StationStory, FactCard
-│   ├── method/      the method page: MethodPage, MethodBar, AnnotatedRow (the real LedgerRow)
+│   ├── method/      the method page: MethodPage, MethodBar, RowKey (the pinned row and its key), AnnotatedRow (the real LedgerRow), key (list primitives)
 │   ├── charts/      Sparkline (SVG)
 │   └── theme/       ThemeProvider, ThemeToggle, THEME_SCRIPT
 ├── lib/

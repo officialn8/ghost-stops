@@ -44,6 +44,9 @@ export function rowLabel(station: LedgerStation, exclusion: Exclusion | null, ou
   return parts.join(", ");
 }
 
+/** A cell of the row the method page's key can single out; the others fade to 35% while it is pointed at. */
+export type RowCell = "rank" | "score" | "mark" | "name" | "lines" | "spark" | "riders";
+
 export interface LedgerRowProps {
   station: LedgerStation;
   exclusion: Exclusion | null;
@@ -56,6 +59,12 @@ export interface LedgerRowProps {
   onOpen: (slug: string) => void;
   /** The row took focus, by Tab, an arrow key, a click, or the drawer closing: it becomes the Tab stop. */
   onFocus: (slug: string) => void;
+  /**
+   * The method page's key points at the row: the named cells keep their presence and every other
+   * cell fades to 35%, the Ink Presence Rule as an interaction. Undefined in the ledger, where no
+   * key exists; null when nothing is pointed at.
+   */
+  spotlight?: readonly RowCell[] | null;
 }
 
 /**
@@ -67,10 +76,15 @@ export interface LedgerRowProps {
  * numbers stay at full ink. A station outside the ranking shows why in place of the numbers, and
  * its row opens the closure dossier like any other (R24). The selected row inverts.
  */
-function LedgerRowView({ station, exclusion, outsideFilter, selected, tabIndex, tierWord, onOpen, onFocus }: LedgerRowProps) {
+function LedgerRowView({ station, exclusion, outsideFilter, selected, tabIndex, tierWord, onOpen, onFocus, spotlight }: LedgerRowProps) {
   const nameInk = selected ? "text-surface" : exclusion ? "text-ink-3" : NAME_INK[station.tier ?? "healthy"];
   const quiet = selected ? "text-surface/[.72]" : "text-ink-2";
   const quietest = selected ? "text-surface/[.72]" : "text-ink-3";
+  // Only a row under a key fades; a ledger row carries no transition class at all.
+  const fade = (cell: RowCell) =>
+    spotlight === undefined
+      ? undefined
+      : cn("transition-opacity duration-150", spotlight !== null && spotlight.length > 0 && !spotlight.includes(cell) && "opacity-35");
 
   return (
     <li>
@@ -89,17 +103,21 @@ function LedgerRowView({ station, exclusion, outsideFilter, selected, tabIndex, 
       >
         {/* Rank, then the score the rank follows from, then the mark: three fixed columns. */}
         <span className="flex w-16 shrink-0 items-center gap-1">
-          <span className={cn("w-[3ch] text-right font-mono tabular text-13", quietest)}>{station.rank ?? ""}</span>
-          <span className={cn("w-[3ch] text-right font-mono tabular text-13", quietest)}>{station.score ?? ""}</span>
-          <PresenceMark tier={station.tier} excluded={exclusion} size={10} className="ml-auto shrink-0" />
+          <span data-cell="rank" className={cn("w-[3ch] text-right font-mono tabular text-13", quietest, fade("rank"))}>
+            {station.rank ?? ""}
+          </span>
+          <span data-cell="score" className={cn("w-[3ch] text-right font-mono tabular text-13", quietest, fade("score"))}>
+            {station.score ?? ""}
+          </span>
+          <PresenceMark tier={station.tier} excluded={exclusion} size={10} className={cn("ml-auto shrink-0", fade("mark"))} />
         </span>
 
         <span className="flex min-w-0 flex-1 flex-col gap-1">
-          <span className={cn("truncate font-narrow text-15 font-semibold", nameInk)}>
+          <span data-cell="name" className={cn("truncate font-narrow text-15 font-semibold", nameInk, fade("name"))}>
             {station.displayName}
           </span>
           <span className="flex h-4 items-center gap-2">
-            <LineBars lines={station.lines} decorative barClassName="h-[3px] w-4" />
+            <LineBars lines={station.lines} decorative barClassName="h-[3px] w-4" className={fade("lines")} />
             {tierWord && station.tier && !exclusion && (
               <span className={cn("text-13 leading-4", quiet)}>{TIER_LABEL[station.tier]}</span>
             )}
@@ -111,8 +129,8 @@ function LedgerRowView({ station, exclusion, outsideFilter, selected, tabIndex, 
           <span className={cn("shrink-0 text-right text-13", quiet)}>{exclusionText(station, exclusion)}</span>
         ) : (
           <>
-            <Sparkline sparkline={station.sparkline} />
-            <span className="w-16 shrink-0 text-right font-mono tabular text-15">
+            <Sparkline sparkline={station.sparkline} className={fade("spark")} />
+            <span data-cell="riders" className={cn("w-16 shrink-0 text-right font-mono tabular text-15", fade("riders"))}>
               {station.avg12m === null ? <span className={quiet}>n/a</span> : formatRiders(station.avg12m)}
             </span>
           </>
