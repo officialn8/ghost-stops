@@ -42,6 +42,7 @@ const listItem: StationListItem = {
   tier: "ghost",
   rank: 1,
   rankedCount: 25,
+    score: 95,
   avg12m: 263,
   avg30d: 290,
   dataStatus: "available",

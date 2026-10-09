@@ -16,6 +16,7 @@ export function station(overrides: Partial<StationListItem> & Pick<StationListIt
     tier: ranked ? "quiet" : null,
     rank: 1,
     rankedCount: 6,
+    score: ranked ? 60 : null,
     avg12m: 1000,
     avg30d: 1000,
     dataStatus: "available",
@@ -31,17 +32,18 @@ export function station(overrides: Partial<StationListItem> & Pick<StationListIt
  * name Halsted.
  */
 export const LEDGER_STATIONS: readonly StationListItem[] = [
-  station({ slug: "oak-park-green", displayName: "Oak Park", rank: 1, tier: "ghost", avg12m: 703.08 }),
-  station({ slug: "halsted-green", displayName: "Halsted", rank: 2, tier: "ghost", avg12m: 248.4 }),
-  station({ slug: "monroe-red", displayName: "Monroe", lines: ["Red"], rank: 3, tier: "fading", avg12m: 3722.86 }),
-  station({ slug: "halsted-orange", displayName: "Halsted", lines: ["Orange"], rank: 4, tier: "quiet", avg12m: 1500 }),
-  station({ slug: "ohare", displayName: "O'Hare", lines: ["Blue"], rank: 5, tier: "healthy", avg12m: 9000 }),
+  station({ slug: "oak-park-green", displayName: "Oak Park", rank: 1, tier: "ghost", score: 100, avg12m: 703.08 }),
+  station({ slug: "halsted-green", displayName: "Halsted", rank: 2, tier: "ghost", score: 97, avg12m: 248.4 }),
+  station({ slug: "monroe-red", displayName: "Monroe", lines: ["Red"], rank: 3, tier: "fading", score: 84, avg12m: 3722.86 }),
+  station({ slug: "halsted-orange", displayName: "Halsted", lines: ["Orange"], rank: 4, tier: "quiet", score: 60, avg12m: 1500 }),
+  station({ slug: "ohare", displayName: "O'Hare", lines: ["Blue"], rank: 5, tier: "healthy", score: 20, avg12m: 9000 }),
   station({
     slug: "clark-lake",
     displayName: "Clark/Lake",
     lines: ["Blue", "Brown", "Green", "Orange", "Purple", "Pink"],
     rank: 6,
     tier: "healthy",
+    score: 2,
     avg12m: 12034.5,
   }),
   station({

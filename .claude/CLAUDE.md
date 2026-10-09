@@ -37,6 +37,7 @@ src/
 │   │   ├── layout.tsx               Shell: top bar, ledger, map, drawer
 │   │   ├── page.tsx                 "/" renders nothing; the shell is the page
 │   │   └── station/[slug]/          the station page: data.ts, page.tsx, loading, error, not-found
+│   ├── method/page.tsx              "/method": the ledger's figures explained from a live row, the score, the data, the API
 │   ├── api/
 │   │   ├── chicago/stations/route.ts          GET: every station for the map and ledger
 │   │   ├── chicago/stations/[slug]/route.ts   GET: one station's detail
@@ -52,6 +53,7 @@ src/
 │   ├── map/         MapView, layers, marks (rasterized presence marks), stationMap
 │   ├── marks/       PresenceMark (tier marks), LineBars
 │   ├── narrative/   StationStory, FactCard
+│   ├── method/      the method page: MethodPage, MethodBar, AnnotatedRow (the real LedgerRow)
 │   ├── charts/      Sparkline (SVG)
 │   └── theme/       ThemeProvider, ThemeToggle, THEME_SCRIPT
 ├── lib/
@@ -61,7 +63,7 @@ src/
 │   │                freshness, schedule, window
 │   ├── scoring/     score (v2), components, peers, availability, windows, percentile, whyCard
 │   ├── narratives/  archetypes, generate (the narrative job), renderer, formatters
-│   ├── stations/    detail (the detail payload), ridership (series), metadata (page titles)
+│   ├── stations/    list (the list payload), detail (the detail payload), ridership (series), metadata (page titles)
 │   ├── prisma.ts    the one Prisma client
 │   ├── utils.ts     tiers (getTier, tierStyle), CTA line colors, contrast helpers
 │   ├── format.ts    shared number and date formatters
@@ -130,7 +132,7 @@ The shell (`src/components/shell/Shell.tsx`) lives in the `app/(shell)` route-gr
 - **768 to 1100px:** the drawer replaces the ledger while open.
 - **Under 768px:** the map is full-bleed under a bottom sheet holding the ledger, and a station page shrinks the same map to 28vh with the dossier below. One Mapbox instance serves every layout.
 
-The station page renders on the server from `readStationDetail`, cached under the `stations` tag for known slugs only (`app/(shell)/station/[slug]/data.ts`).
+The station page renders on the server from `readStationDetail`, cached under the `stations` tag for known slugs only (`app/(shell)/station/[slug]/data.ts`). The method page, `/method`, is the one page outside the shell: a reading page that renders `readStationList` (`src/lib/stations/list.ts`, the same cached reader the list API answers from) into a live example row, then the score, the data, and the API. The ledger's foot and every dossier's Sources link to it.
 
 ### Design rules (Direction A, "Wayfinding")
 

@@ -22,8 +22,8 @@ export function exclusionText(station: Pick<LedgerStation, "closedAt">, exclusio
 }
 
 /**
- * A row's accessible name, station first, e.g. "Halsted, Green Line, rank 1 of 140, ghost, 248
- * riders per day", or "State/Lake, Brown, Green, Orange, Purple, Pink Lines, closed Jan 2026".
+ * A row's accessible name, station first, e.g. "Halsted, Green Line, rank 1 of 140, ghost, score
+ * 97, 248 riders per day", or "State/Lake, Brown, Green, Orange, Purple, Pink Lines, closed Jan 2026".
  */
 export function rowLabel(station: LedgerStation, exclusion: Exclusion | null, outsideFilter: boolean): string {
   const parts = [station.displayName];
@@ -37,6 +37,7 @@ export function rowLabel(station: LedgerStation, exclusion: Exclusion | null, ou
       parts.push(station.rankedCount ? `rank ${station.rank} of ${station.rankedCount}` : `rank ${station.rank}`);
     }
     if (station.tier) parts.push(TIER_LABEL[station.tier].toLowerCase());
+    if (station.score !== null) parts.push(`score ${station.score}`);
     parts.push(station.avg12m === null ? "riders per day not available" : `${formatRiders(station.avg12m)} riders per day`);
   }
   if (outsideFilter) parts.push("outside filter");
@@ -50,22 +51,26 @@ export interface LedgerRowProps {
   selected: boolean;
   /** 0 for the list's one Tab stop, -1 for every other row; the arrow keys move between them (R28). */
   tabIndex: 0 | -1;
+  /** Write the tier word in the row: under the riders and name sorts, where no group heading carries it. */
+  tierWord: boolean;
   onOpen: (slug: string) => void;
   /** The row took focus, by Tab, an arrow key, a click, or the drawer closing: it becomes the Tab stop. */
   onFocus: (slug: string) => void;
 }
 
 /**
- * One station in the ledger: a 56px button with the rank and presence mark, the
- * name over its line bars, the week's sparkline, and the 12-month riders per day (KTD18), the
- * row's most prominent number. The rows share one Tab stop; the tier is written in the group
- * heading above them, so the row itself carries only the mark. Presence is the name's own ink level and the mark's shape (R23);
+ * One station in the ledger: a 56px button with the rank, the Ghost score, and the presence mark,
+ * the name over its line bars, the week's sparkline, and the 12-month riders per day (KTD18), the
+ * row's most prominent number. The score sits beside the rank, small, so the sort is legible
+ * without outranking the riders figure. The rows share one Tab stop; under the rank sort the
+ * tier is written in the group heading above them, and under the other sorts in the row. Presence is the name's own ink level and the mark's shape (R23);
  * numbers stay at full ink. A station outside the ranking shows why in place of the numbers, and
  * its row opens the closure dossier like any other (R24). The selected row inverts.
  */
-function LedgerRowView({ station, exclusion, outsideFilter, selected, tabIndex, onOpen, onFocus }: LedgerRowProps) {
+function LedgerRowView({ station, exclusion, outsideFilter, selected, tabIndex, tierWord, onOpen, onFocus }: LedgerRowProps) {
   const nameInk = selected ? "text-surface" : exclusion ? "text-ink-3" : NAME_INK[station.tier ?? "healthy"];
   const quiet = selected ? "text-surface/[.72]" : "text-ink-2";
+  const quietest = selected ? "text-surface/[.72]" : "text-ink-3";
 
   return (
     <li>
@@ -82,11 +87,11 @@ function LedgerRowView({ station, exclusion, outsideFilter, selected, tabIndex, 
           selected ? "bg-ink text-surface focus-visible:outline-surface" : "hover:bg-ink/[.04]",
         )}
       >
-        <span className="flex w-12 shrink-0 items-center justify-between pr-1">
-          <span className={cn("font-mono tabular text-13", selected ? "text-surface/[.72]" : "text-ink-3")}>
-            {station.rank ?? ""}
-          </span>
-          <PresenceMark tier={station.tier} excluded={exclusion} size={10} className="shrink-0" />
+        {/* Rank, then the score the rank follows from, then the mark: three fixed columns. */}
+        <span className="flex w-16 shrink-0 items-center gap-1">
+          <span className={cn("w-[3ch] text-right font-mono tabular text-13", quietest)}>{station.rank ?? ""}</span>
+          <span className={cn("w-[3ch] text-right font-mono tabular text-13", quietest)}>{station.score ?? ""}</span>
+          <PresenceMark tier={station.tier} excluded={exclusion} size={10} className="ml-auto shrink-0" />
         </span>
 
         <span className="flex min-w-0 flex-1 flex-col gap-1">
@@ -95,6 +100,9 @@ function LedgerRowView({ station, exclusion, outsideFilter, selected, tabIndex, 
           </span>
           <span className="flex h-4 items-center gap-2">
             <LineBars lines={station.lines} decorative barClassName="h-[3px] w-4" />
+            {tierWord && station.tier && !exclusion && (
+              <span className={cn("text-13 leading-4", quiet)}>{TIER_LABEL[station.tier]}</span>
+            )}
             {outsideFilter && <span className={cn("text-11", quiet)}>outside filter</span>}
           </span>
         </span>

@@ -72,6 +72,13 @@
     scrollbar-width: thin;
     scrollbar-color: rgb(var(--ink) / 0.24) transparent;
   }
+
+  /* The search field's clearing is the ledger's own (Escape, "Clear search"), not the browser's x. */
+  input[type="search"]::-webkit-search-cancel-button,
+  input[type="search"]::-webkit-search-decoration {
+    -webkit-appearance: none;
+    appearance: none;
+  }
 }
 
 @layer utilities {

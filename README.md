@@ -105,6 +105,7 @@ CI runs all of these, plus a gitleaks scan of the full history, on every push.
 
 - `/`: the map and the ranked list of every station, with sort, line filter, and search.
 - `/station/[slug]`: one station's page, for example `/station/halsted-green`.
+- `/method`: how the Ghost score works, explained from a live row of the ledger, with the data and the API.
 - `GET /api/chicago/stations`: every station with its tier, rank, riders per day, and last week of ridership.
 - `GET /api/chicago/stations/{slug}`: one station's detail, the same data its page shows.
 - `GET /api/health`: the state of the data sync.

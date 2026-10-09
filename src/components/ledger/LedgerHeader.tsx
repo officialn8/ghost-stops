@@ -25,6 +25,7 @@ const OFF_ALPHA = "4D";
 /** What the ledger holds, for the line above the search field. */
 export interface LedgerSummary {
   total: number;
+  rankedTotal: number;
   matchCount: number;
   narrowed: boolean;
 }
@@ -63,21 +64,20 @@ function Lede({ summary }: { summary: LedgerSummary | null }) {
     <p className="text-13 text-ink-2" data-ledger-summary>
       {summary ? (
         <>
-          <span className="font-mono tabular text-ink">{summary.total}</span> stations
+          <span className="font-mono tabular text-ink">{summary.total}</span> stations,{" "}
+          <span className="font-mono tabular text-ink">{summary.rankedTotal}</span> ranked by Ghost score
         </>
       ) : (
-        "L stations"
+        "L stations, ranked by Ghost score"
       )}
-      , ranked by Ghost score
     </p>
   );
 }
 
 /**
  * The ledger's fixed head (R27): the lede, search, the line filter as eight bars in the official
- * colors, and the sort heads in the one uppercase tracked label style. The column fits the bars
- * in one row; the phone sheet wraps them to two rows of four so the whole head shows at the
- * sheet's lowest snap point.
+ * colors, and the sort heads in the one uppercase tracked label style. The bars sit in one row
+ * everywhere; on a phone that keeps the head short, so the sheet opens on station rows.
  *
  * The eight bars are one Tab stop: the arrow keys move between them, Home and End jump to the
  * ends, and the sort heads follow with one Tab (R28).
@@ -98,7 +98,6 @@ export function LedgerHeader({
   const allOff = noLineActive(activeLines);
   const [focusedLine, setFocusedLine] = useState<CTALine>(CTA_LINE_ORDER[0]);
   const bars = useRef<Partial<Record<CTALine, HTMLButtonElement | null>>>({});
-  const columns = variant === "sheet" ? 4 : CTA_LINE_ORDER.length;
 
   const moveAcrossBars = (event: React.KeyboardEvent<HTMLDivElement>) => {
     const index = CTA_LINE_ORDER.indexOf(focusedLine);
@@ -110,12 +109,6 @@ export function LedgerHeader({
         break;
       case "ArrowLeft":
         next = index === 0 ? last : index - 1;
-        break;
-      case "ArrowDown":
-        next = Math.min(index + columns, last);
-        break;
-      case "ArrowUp":
-        next = Math.max(index - columns, 0);
         break;
       case "Home":
         next = 0;
@@ -171,7 +164,7 @@ export function LedgerHeader({
         role="group"
         aria-label="Filter by line"
         onKeyDown={moveAcrossBars}
-        className={cn("mt-2 grid gap-1", variant === "sheet" ? "grid-cols-4" : "grid-cols-8")}
+        className="mt-2 grid grid-cols-8 gap-1"
       >
         {CTA_LINE_ORDER.map((line) => {
           const on = allOff || activeLines[line];

@@ -1,7 +1,9 @@
 "use client";
 
 import { Fragment, useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type RefObject } from "react";
+import Link from "next/link";
 import { animate, useReducedMotion } from "motion/react";
+import { linkClass } from "@/components/dossier/parts";
 import { PresenceMark, TIER_LABEL } from "@/components/marks/PresenceMark";
 import { ListStatus } from "@/components/shell/ListStatus";
 import { useShell } from "@/components/shell/ShellContext";
@@ -179,7 +181,11 @@ export function Ledger({ variant }: { variant: "column" | "sheet" }) {
     <div className="flex min-h-0 flex-1 flex-col">
       <LedgerHeader
         variant={variant}
-        summary={ready ? { total: ledger.total, matchCount: ledger.matchCount, narrowed: ledger.narrowed } : null}
+        summary={
+          ready
+            ? { total: ledger.total, rankedTotal: ledger.rankedTotal, matchCount: ledger.matchCount, narrowed: ledger.narrowed }
+            : null
+        }
         query={query}
         onQueryChange={setQuery}
         onSubmit={openFirstMatch}
@@ -222,7 +228,8 @@ export function Ledger({ variant }: { variant: "column" | "sheet" }) {
 
 /**
  * A group's heading, which doubles as the legend: the mark the rows carry, the word for it, and
- * how many rows follow. Sentence case, type and the one mark, on a hairline.
+ * how many rows follow. Sentence case, type and the one mark, on a hairline. It sticks to the top
+ * of the list while its rows scroll, so the tier is always in view.
  */
 function GroupHeading({
   id,
@@ -238,7 +245,13 @@ function GroupHeading({
   first: boolean;
 }) {
   return (
-    <h2 id={id} className={cn("flex items-center gap-2 border-b border-rule px-4 pb-2 text-13 text-ink-2", first ? "pt-3" : "pt-6")}>
+    <h2
+      id={id}
+      className={cn(
+        "sticky top-0 flex items-center gap-2 border-b border-rule bg-surface px-4 pb-2 text-13 text-ink-2",
+        first ? "pt-3" : "pt-6",
+      )}
+    >
       <span className="flex w-4 shrink-0 items-center justify-center">{mark}</span>
       <span>
         {label}, <span className="font-mono tabular">{count}</span> {count === 1 ? "station" : "stations"}
@@ -278,6 +291,7 @@ function LedgerBody({
         outsideFilter={outsideFilter}
         selected={station.slug === selectedSlug}
         tabIndex={station.slug === tabStopSlug ? 0 : -1}
+        tierWord={ledger.tierGroups === null}
         onOpen={onOpen}
         onFocus={onFocusRow}
       />
@@ -340,15 +354,23 @@ function LedgerBody({
         );
       })}
 
-      {/* Where the numbers come from and how old they are, in the list itself (R13). */}
+      {/* Where the numbers come from, how old they are, and what the score is, in the list itself (R13). */}
       {dataThrough && (
-        <p className="px-4 pb-4 pt-6 text-13 text-ink-2">
-          CTA publishes station entries about two months after the fact. Data through{" "}
-          <time className="font-mono tabular text-ink" dateTime={dataThrough}>
-            {dataThrough}
-          </time>
-          .
-        </p>
+        <div className="px-4 pb-4 pt-6 text-13 text-ink-2">
+          <p>
+            CTA publishes station entries about two months after the fact. Data through{" "}
+            <time className="font-mono tabular text-ink" dateTime={dataThrough}>
+              {dataThrough}
+            </time>
+            .
+          </p>
+          <p className="mt-2">
+            The Ghost score is how empty a station is for its own line and its own past, from 0 to 100.{" "}
+            <Link href="/method" className={linkClass}>
+              How it works
+            </Link>
+          </p>
+        </div>
       )}
     </>
   );
