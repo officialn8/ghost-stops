@@ -3,9 +3,12 @@ import { prisma } from "@/lib/prisma";
 import { readTrainFreshness, readTrainHealthInputs } from "./health";
 import { createMemoryObjectStore } from "./objectStore";
 
-// Runs in the `db` Vitest project against the local or CI Postgres.
+// Runs in the `db` Vitest project against the local or CI Postgres. Both readers answer from the
+// newest LiveDay row in the table, so these days sit after every date the other db test files
+// write (all in 2026), which keeps them the newest whatever those files leave behind. The project
+// runs one file at a time, and this file clears its days before each test and after the last.
 const NOW = new Date("2026-10-16T13:21:00Z");
-const TEST_DAYS = ["2026-09-21", "2026-09-22", "2026-09-23"];
+const TEST_DAYS = ["2030-01-01", "2030-01-02", "2030-01-03"];
 const date = (day: string) => new Date(`${day}T00:00:00Z`);
 
 async function clearTestDays(): Promise<void> {
@@ -23,7 +26,11 @@ const day = (serviceDate: string, verdict: "COUNTED" | "SET_ASIDE") => ({
     reducedAt: new Date(`${serviceDate}T08:20:00Z`),
 });
 
-beforeEach(clearTestDays);
+// Two counted days, then a set-aside one: the newest day of any verdict is not the newest counted day.
+beforeEach(async () => {
+    await clearTestDays();
+    await prisma.liveDay.createMany({ data: [day("2030-01-01", "COUNTED"), day("2030-01-02", "COUNTED"), day("2030-01-03", "SET_ASIDE")] });
+});
 
 afterAll(async () => {
     await clearTestDays();
@@ -31,22 +38,25 @@ afterAll(async () => {
 });
 
 describe("readTrainFreshness", () => {
-    it("names the latest counted day, passing over a later set-aside one, and null before any", async () => {
-        // Other tests may leave rows on other dates; only the test dates are asserted on when newer.
-        await prisma.liveDay.createMany({ data: [day("2026-09-21", "COUNTED"), day("2026-09-22", "COUNTED"), day("2026-09-23", "SET_ASIDE")] });
-        const newest = await prisma.liveDay.findFirst({ orderBy: { serviceDate: "desc" }, select: { serviceDate: true } });
-        if (newest?.serviceDate.toISOString().slice(0, 10) === "2026-09-23") {
-            expect(await readTrainFreshness(prisma)).toEqual({ observedThrough: "2026-09-22" });
-        }
-        const inputs = await readTrainHealthInputs(prisma, createMemoryObjectStore(), NOW);
-        expect(inputs.latestDay).not.toBeNull();
-        expect(inputs.checkpointAgeMs).toBeNull();
+    it("names the latest counted day, passing over a later set-aside one", async () => {
+        expect(await readTrainFreshness(prisma)).toEqual({ observedThrough: "2030-01-02" });
+    });
+});
+
+describe("readTrainHealthInputs", () => {
+    it("reads the latest day of any verdict beside the latest counted one, and a store with no checkpoint as null", async () => {
+        expect(await readTrainHealthInputs(prisma, createMemoryObjectStore(), NOW)).toEqual({
+            latestDay: "2030-01-03",
+            observedThrough: "2030-01-02",
+            checkpointAgeMs: null,
+        });
     });
 
-    it("reads null before any row", async () => {
-        if ((await prisma.liveDay.count()) === 0) {
-            expect(await readTrainFreshness(prisma)).toEqual({ observedThrough: null });
-            expect(await readTrainHealthInputs(prisma, null, NOW)).toEqual({ latestDay: null, observedThrough: null, checkpointAgeMs: "unreadable" });
-        }
+    it("reads the checkpoint as unreadable when no store is configured", async () => {
+        expect(await readTrainHealthInputs(prisma, null, NOW)).toEqual({
+            latestDay: "2030-01-03",
+            observedThrough: "2030-01-02",
+            checkpointAgeMs: "unreadable",
+        });
     });
 });

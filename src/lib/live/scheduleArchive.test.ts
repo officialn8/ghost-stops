@@ -1,11 +1,12 @@
+import { createHash } from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { CTA_ROSTER } from "@/lib/cta/roster";
-import { hashBytes, type FeedFetch } from "./gtfs";
-import { createMemoryObjectStore, type MemoryObjectStore } from "./objectStore";
+import type { FeedFetch } from "./gtfs";
+import { createMemoryObjectStore, gzipJson, type MemoryObjectStore } from "./objectStore";
 import { loadSchedule, readScheduleIndex, refreshSchedule, SCHEDULE_INDEX_KEY, scheduleKey, versionInForce, type ScheduleIndex } from "./scheduleArchive";
 
 const SLICE_ZIP = fileURLToPath(new URL("./__fixtures__/gtfs-rail-slice.zip", import.meta.url));
@@ -52,7 +53,7 @@ describe("refreshSchedule", () => {
         expect(result.status).toBe("archived");
         if (result.status !== "archived") return;
         expect(result.version).toEqual({
-            hash: hashBytes(zipBytes),
+            hash: createHash("sha256").update(zipBytes).digest("hex"),
             bytes: zipBytes.byteLength,
             lastModified: "Mon, 14 Sep 2026 21:50:47 GMT",
             firstSeen: "2026-10-12T15:00:00.000Z",
@@ -99,6 +100,20 @@ describe("refreshSchedule", () => {
 
     it("reports a 304 before any version as a failure", async () => {
         expect((await refresh(fake([{ status: 304 }]).fetch)).status).toBe("failed");
+    });
+});
+
+describe("format stamps", () => {
+    it("refuses an index stamped with a version it does not read, naming the key and the version", async () => {
+        await store.put(SCHEDULE_INDEX_KEY, Buffer.from(JSON.stringify({ version: 2, versions: [] }), "utf8"), { contentType: "application/json" });
+
+        await expect(readScheduleIndex(store)).rejects.toThrow(`${SCHEDULE_INDEX_KEY} is stamped version 2`);
+    });
+
+    it("refuses an archived schedule stamped with a version it does not read, naming the key and the version", async () => {
+        await store.put(scheduleKey("abc"), gzipJson({ version: 2, hash: "abc" }), { contentType: "application/gzip" });
+
+        await expect(loadSchedule(store, "abc")).rejects.toThrow(`${scheduleKey("abc")} is stamped version 2`);
     });
 });
 

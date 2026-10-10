@@ -2,11 +2,12 @@
 
 /**
  * Re-reduces one past service day from its raw file (live Ghost score plan U8, KTD6, KTD16):
- * replays the day's raw record through the tracker and the reducer under the current rule and
- * the schedule version recorded for the day (or, for a probe day with no row yet, the version in
- * force when it closed), writes it under the current reducer version, asks the site to refresh,
- * and records the raw path. It refuses the open day and any date with no raw day in the bucket;
- * when parts exist but the day object does not, it compacts them first.
+ * replays the day's raw record, with the overlap its tracker saw in the neighboring days' files
+ * (the hour before 03:00 and the minutes up to the close), through the tracker and the reducer
+ * under the current rule and the schedule version recorded for the day (or, for a probe day with
+ * no row yet, the version in force when it closed), writes it under the current reducer version,
+ * asks the site to refresh, and records the raw path. It refuses the open day and any date with
+ * no raw day in the bucket; when parts exist but the day object does not, it compacts them first.
  *
  *   npx tsx scripts/live-rereduce.ts --date 2026-10-15
  *
@@ -18,7 +19,7 @@ import { parseArgs } from "node:util";
 import { GHOST_TOLERANCE_MINUTES } from "../src/lib/live/matcher";
 import { finishDay, reduceAndWrite, type NightlyDeps } from "../src/lib/live/nightly";
 import { createR2Store, readR2Env } from "../src/lib/live/objectStore";
-import { compactDay, readRawDay } from "../src/lib/live/rawStore";
+import { compactDay, readRawDayWithOverlap } from "../src/lib/live/rawStore";
 import { replayRawLines } from "../src/lib/live/replay";
 import { siteFromEnv } from "../src/lib/live/revalidate";
 import { dayCloseInstant } from "../src/lib/live/serviceDay";
@@ -52,7 +53,7 @@ async function main(): Promise<void> {
     // compactDay reports no-parts only after finding no day object either, so the read below says so.
     const compaction = await compactDay(store, date);
     if (compaction.status === "compacted") log(`${date} raw parts compacted first: ${compaction.parts} part(s), ${compaction.bytes} bytes`);
-    const lines = await readRawDay(store, date);
+    const lines = await readRawDayWithOverlap(store, date, GHOST_TOLERANCE_MINUTES);
     if (lines === null) throw new Error(`${date} has no raw day in the bucket`);
     const replay = replayRawLines(lines);
     const tracker = replay.trackers.get(date);

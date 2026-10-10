@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -10,8 +11,6 @@ import {
     ENTRY_BYTE_CAPS,
     extractRailSchedule,
     GtfsError,
-    hashBytes,
-    routesIn,
     zipEntrySource,
     type FeedFetch,
     type RailSchedule,
@@ -63,7 +62,7 @@ describe("extractRailSchedule", () => {
         expect(fromZip.bytes).toBe(20_544);
         expect(fromZip.lastModified).toBe("Mon, 14 Sep 2026 21:50:47 GMT");
         expect(fromZip.extractedAt).toBe("2026-10-09T22:00:00.000Z");
-        expect(routesIn(fromZip)).toEqual(["red", "blue", "brn", "g", "org", "p", "pink", "y"]);
+        expect([...new Set(fromZip.trips.map((t) => t.route))].sort()).toEqual(["blue", "brn", "g", "org", "p", "pink", "red", "y"]);
         expect(fromZip.trips).toHaveLength(55);
         expect(Object.keys(fromZip.platforms)).toHaveLength(298);
         expect(fromZip.platforms["30228"]).toBe("41190"); // Jarvis
@@ -172,7 +171,7 @@ describe("downloadFeed", () => {
             status: "downloaded",
             file: path.join(outDir, "feed.zip"),
             bytes: zipBytes.byteLength,
-            hash: hashBytes(zipBytes),
+            hash: createHash("sha256").update(zipBytes).digest("hex"),
             lastModified: "Mon, 14 Sep 2026 21:50:47 GMT",
         });
         expect(fs.readFileSync(path.join(outDir, "feed.zip")).equals(zipBytes)).toBe(true);

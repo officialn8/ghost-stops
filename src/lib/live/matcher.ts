@@ -16,7 +16,9 @@
  * tolerance whether or not a slot preceded it (the normal case: a train live from its first
  * appearance opens no slot), unknown when its window had a gap, and otherwise unobserved. A
  * ghost whose slot maps to no scheduled stop counts as unmapped, kept apart and never scored.
- * One train is one passage is one stop: each passage fulfils at most one scheduled stop.
+ * One train is one passage is one stop: each passage fulfils at most one scheduled stop, and a
+ * slot fulfilled by its own run reserves that run's passage for its stop before the rest are
+ * assigned, so a late train is not counted again at the stop after it.
  *
  * A day holds about 50,000 scheduled stops and as many passages, so every lookup goes through
  * a per-platform bucket of instants (sorted, binary-searched) rather than a scan of the day.
@@ -99,6 +101,7 @@ export interface DayVerdicts {
 }
 
 const runKey = (route: TrainRoute, run: string) => `${route}|${run}`;
+const platformRunKey = (stationId: string, stopId: string, route: TrainRoute, run: string) => `${platformKey(stationId, stopId, route)}|${run}`;
 
 /** Items bucketed by key; each bucket keeps the items' order, which callers keep sorted by time. */
 function bucket<T>(items: readonly T[], keyOf: (item: T) => string): Map<string, T[]> {
@@ -155,6 +158,7 @@ export function verdictsFor(tracker: TrackerState, schedule: DaySchedule, tolera
     const passages = [...tracker.passages].sort((a, b) => a.arrivedAt - b.arrivedAt);
     const passagesByRun = bucket(passages, (p) => runKey(p.route, p.run));
     const passagesByPlatform = bucket(passages, (p) => platformKey(p.stationId, p.stopId, p.route));
+    const passagesByPlatformRun = bucket(passages, (p) => platformRunKey(p.stationId, p.stopId, p.route, p.run));
     // schedule.stops is sorted by instant, so each bucket is too.
     const stopsByPlatformRoute = bucket(schedule.stops, (s) => platformRouteKey(s.stopId, s.route));
     const slots = Object.values(tracker.slots).sort((a, b) => a.scheduledAt - b.scheduledAt);
@@ -171,10 +175,38 @@ export function verdictsFor(tracker: TrackerState, schedule: DaySchedule, tolera
         }
     }
 
-    // 2. Each passage fulfils at most one scheduled stop: the nearest unassigned one on its platform
-    //    and route within the tolerance.
+    // 2. Each passage fulfils at most one scheduled stop. First, a slot replaced by a live prediction
+    //    with its run reserves, for the stop it maps to, the free passage with that run on its
+    //    platform and route nearest its scheduled time, from the tolerance before it to the end of
+    //    the day: the same-run rule fulfils at any lateness, so its passage can come at any lateness
+    //    too, but no earlier than a passage can serve a stop. Run numbers recur through a day, hours
+    //    apart, so the nearest is the trip's own passage whenever one was logged. Without the
+    //    reservation a late train's passage would go to the next stop by proximity, and one train
+    //    would fulfil two stops. Then every other passage takes the nearest unassigned stop on its
+    //    platform and route within the tolerance.
     const passageOfStop = new Map<ScheduledStop, Passage>();
+    const reserved = new Set<Passage>();
+    for (const slot of slots) {
+        const stop = stopOfSlot.get(slot);
+        if (slot.liveSameRunAt === null || stop === undefined) continue;
+        const distance = (p: Passage) => Math.abs(p.arrivedAt - slot.scheduledAt);
+        let best: Passage | null = null;
+        for (const run of slot.runs) {
+            const candidates = passagesByPlatformRun.get(platformRunKey(slot.stationId, slot.stopId, slot.route, run)) ?? [];
+            for (let i = lowerBound(candidates, passageTime, slot.scheduledAt - tol); i < candidates.length; i++) {
+                const p = candidates[i];
+                if (reserved.has(p)) continue;
+                // The nearer wins, and at equal distance the earlier, as `nearest` has it.
+                if (best === null || distance(p) < distance(best) || (distance(p) === distance(best) && p.arrivedAt < best.arrivedAt)) best = p;
+            }
+        }
+        if (best !== null) {
+            reserved.add(best);
+            passageOfStop.set(stop, best);
+        }
+    }
     for (const p of passages) {
+        if (reserved.has(p)) continue;
         const candidates = stopsByPlatformRoute.get(platformRouteKey(p.stopId, p.route)) ?? [];
         const stop = nearest(candidates, stopInstant, p.arrivedAt, tol, (s) => !passageOfStop.has(s));
         if (stop !== null) passageOfStop.set(stop, p);

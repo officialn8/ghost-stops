@@ -8,6 +8,7 @@
  */
 import type { Prisma, PrismaClient } from "@/generated/prisma/client";
 import { toUtcDate } from "@/lib/sync/window";
+import type { PlatformSummary } from "./matcher";
 import { REDUCER_VERSION, type LiveDayRow, type LiveStationDayRow } from "./reduce";
 import { expectedPolls } from "./serviceDay";
 
@@ -34,6 +35,25 @@ type Db = Pick<PrismaClient, "$transaction" | "city">;
 
 /** The sync's transaction settings (src/lib/sync/run.ts): a handful of set-based statements, never Prisma's 5-second default. */
 const TRANSACTION_OPTIONS = { timeout: 60_000, maxWait: 10_000 };
+
+/**
+ * One platform summary as the JSON stored in `LiveStationDay.byDirection`. Prisma's Json input
+ * type is an index-signature object, which an interface such as `PlatformSummary` does not satisfy,
+ * so each field is written out. The return type names every key of the summary, so a field added
+ * to it fails to compile until it is stored here, and each value is checked as JSON.
+ */
+const platformJson = (p: PlatformSummary): { [K in keyof PlatformSummary]: Prisma.InputJsonValue | null } => ({
+    stopId: p.stopId,
+    route: p.route,
+    scheduled: p.scheduled,
+    fulfilled: p.fulfilled,
+    cancelled: p.cancelled,
+    ghosts: p.ghosts,
+    unknown: p.unknown,
+    unobserved: p.unobserved,
+    observedGapMin: p.observedGapMin,
+    scheduledGapMin: p.scheduledGapMin,
+});
 
 export async function writeDay(
     db: Db,
@@ -94,8 +114,7 @@ export async function writeDay(
                     notCountedCause: row.notCountedCause,
                     observedGapMin: row.observedGapMin,
                     scheduledGapMin: row.scheduledGapMin,
-                    // Plain numbers, strings, and nulls; Prisma's Json input type has no index signature for the interface.
-                    byDirection: row.byDirection as unknown as Prisma.InputJsonValue,
+                    byDirection: row.byDirection.map(platformJson),
                 })),
             });
         }

@@ -38,7 +38,12 @@ export const STALE_STATION_ERROR_CODES: readonly number[] = [103, 108];
 
 export type Endpoint = "positions" | "arrivals";
 
-export type TrainTrackerFailure = "timeout" | "network" | "http" | "oversize" | "parse" | "api" | "quota" | "key";
+/**
+ * Why a call failed. The client produces every kind but "not-requested", which the worker's loop
+ * writes for an arrivals batch its sweep never sent (calls stopped, the tick's budget spent, or
+ * shutdown), so the raw record says those stations were not polled rather than saying nothing.
+ */
+export type TrainTrackerFailure = "timeout" | "network" | "http" | "oversize" | "parse" | "api" | "quota" | "key" | "not-requested";
 
 /** One call as the recorder and the quota counter see it: an endpoint name, never a URL. */
 export interface RawCall {

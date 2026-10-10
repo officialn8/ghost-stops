@@ -20,7 +20,8 @@ export const REVALIDATE_WINDOW_MS = 15 * 60_000;
 const NO_STORE = { "Cache-Control": "no-store" };
 
 export async function POST(request: NextRequest) {
-    if (!bearerMatches(request.headers.get("authorization"), process.env.WORKER_REVALIDATE_SECRET)) {
+    // Trimmed as the worker trims its copy (src/lib/live/revalidate.ts), so a pasted newline at either end cannot part them.
+    if (!bearerMatches(request.headers.get("authorization"), process.env.WORKER_REVALIDATE_SECRET?.trim())) {
         return NextResponse.json({ error: "Unauthorized" }, { status: 401, headers: NO_STORE });
     }
     const latest = await prisma.liveDay.findFirst({ orderBy: { reducedAt: "desc" }, select: { reducedAt: true } });

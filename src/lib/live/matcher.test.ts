@@ -193,6 +193,53 @@ describe("scheduled stop verdicts", () => {
         expect([a, b].filter((v) => v === "fulfilled")).toHaveLength(1);
     });
 
+    it("lets one train fulfil one stop: a same-run slot's passage is reserved for its stop, not given to the next by proximity", () => {
+        // Stops at 08:00 and 08:04 on one platform and route. The 08:00 stop's schedule-only slot carried
+        // run 7; run 7 went live and came at 08:03, nearer the 08:04 stop: one passage, one fulfilled stop.
+        const sched = schedule([
+            { stationId: JARVIS, stopId: SOUTH, instant: at("08:00") },
+            { stationId: JARVIS, stopId: SOUTH, instant: at("08:04") },
+        ]);
+        const s = slot({ scheduledAt: at("08:00"), runs: ["7"], liveSameRunAt: at("07:59") });
+        const p = passage({ arrivedAt: at("08:03"), run: "7" });
+        const verdicts = verdictsFor(tracker({ slots: [s], passages: [p] }), sched);
+
+        expect(verdicts.slots[0]).toMatchObject({ verdict: "fulfilled", by: "same-run", late: false });
+        expect(verdicts.stops.find((v) => v.stop.instant === at("08:00"))).toMatchObject({ verdict: "fulfilled", slot: s, passage: p });
+        expect(verdicts.stops.find((v) => v.stop.instant === at("08:04"))).toMatchObject({ verdict: "unobserved", slot: null, passage: null });
+        expect(verdicts.byStation.get(JARVIS)).toMatchObject({ scheduled: 2, fulfilled: 1, unobserved: 1 });
+    });
+
+    it("reserves the same-run passage at any lateness, never one from before the tolerance, and the nearest when the run comes round again", () => {
+        const s = slot({ scheduledAt: at("08:00"), runs: ["7"], liveSameRunAt: at("08:06") });
+        const outcomes = (verdicts: ReturnType<typeof verdictsFor>) => verdicts.stops.map((v) => [v.verdict, v.passage?.arrivedAt ?? null]);
+
+        // Nine minutes late, beyond the tolerance and nearer the 08:08 stop: still the 08:00 stop's train.
+        const lateSched = schedule([
+            { stationId: JARVIS, stopId: SOUTH, instant: at("08:00") },
+            { stationId: JARVIS, stopId: SOUTH, instant: at("08:08") },
+        ]);
+        const late = verdictsFor(tracker({ slots: [s], passages: [passage({ arrivedAt: at("08:09"), run: "7" })] }), lateSched);
+        expect(late.slots[0]).toMatchObject({ verdict: "fulfilled", by: "same-run", late: true });
+        expect(outcomes(late)).toEqual([["fulfilled", at("08:09")], ["unobserved", null]]);
+
+        // Run 7's trip two hours earlier is another train, left to its own stop.
+        const earlierSched = schedule([
+            { stationId: JARVIS, stopId: SOUTH, instant: at("06:00") },
+            { stationId: JARVIS, stopId: SOUTH, instant: at("08:00") },
+        ]);
+        const earlier = verdictsFor(tracker({ slots: [s], passages: [passage({ arrivedAt: at("06:01"), run: "7" })] }), earlierSched);
+        expect(outcomes(earlier)).toEqual([["fulfilled", at("06:01")], ["fulfilled", null]]);
+
+        // Run 7 comes round again at 10:20: the slot takes the nearer passage, the later stop keeps its own.
+        const reuseSched = schedule([
+            { stationId: JARVIS, stopId: SOUTH, instant: at("08:00") },
+            { stationId: JARVIS, stopId: SOUTH, instant: at("10:20") },
+        ]);
+        const reuse = verdictsFor(tracker({ slots: [s], passages: [passage({ arrivedAt: at("08:03"), run: "7" }), passage({ arrivedAt: at("10:21"), run: "7" })] }), reuseSched);
+        expect(outcomes(reuse)).toEqual([["fulfilled", at("08:03")], ["fulfilled", at("10:21")]]);
+    });
+
     it("calls a stop with no prediction of either kind unobserved, or unknown when its window had a gap", () => {
         const quiet = verdictsFor(tracker(), jarvisSchedule());
         expect(quiet.stops.map((v) => v.verdict)).toEqual(["unobserved", "unobserved", "unobserved", "unobserved"]);
@@ -259,7 +306,23 @@ describe("the indexed matcher equals a plain scan", () => {
             }
         }
         const passageOfStop = new Map<ScheduledStop, Passage>();
+        const reserved = new Set<Passage>();
+        for (const slot of slots) {
+            const stop = stopOfSlot.get(slot);
+            if (slot.liveSameRunAt === null || stop === undefined) continue;
+            let best: Passage | null = null;
+            for (const p of passages) {
+                if (reserved.has(p) || p.stationId !== slot.stationId || p.stopId !== slot.stopId || p.route !== slot.route || !slot.runs.includes(p.run)) continue;
+                if (p.arrivedAt < slot.scheduledAt - tol) continue;
+                if (best === null || Math.abs(p.arrivedAt - slot.scheduledAt) < Math.abs(best.arrivedAt - slot.scheduledAt)) best = p;
+            }
+            if (best !== null) {
+                reserved.add(best);
+                passageOfStop.set(stop, best);
+            }
+        }
         for (const p of passages) {
+            if (reserved.has(p)) continue;
             let nearestStop: ScheduledStop | null = null;
             for (const stop of sched.stops) {
                 if (stop.stopId !== p.stopId || stop.route !== p.route || passageOfStop.has(stop)) continue;

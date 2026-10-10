@@ -20,7 +20,7 @@ import { pipeline } from "node:stream/promises";
 import { parse } from "csv-parse";
 import yauzl from "yauzl";
 import { parseGtfsTime } from "./serviceDay";
-import { TRAIN_ROUTES, type TrainRoute } from "./trainTracker";
+import type { TrainRoute } from "./trainTracker";
 
 export const GTFS_URL = "https://www.transitchicago.com/downloads/sch_data/google_transit.zip";
 
@@ -165,9 +165,12 @@ export interface ServiceException {
     type: 1 | 2;
 }
 
+/** The format stamp on an archived schedule; `loadSchedule` (./scheduleArchive.ts) refuses any other. */
+export const RAIL_SCHEDULE_VERSION = 1;
+
 /** Everything a day's scheduled stops need, extracted from one feed version (KTD6). */
 export interface RailSchedule {
-    version: 1;
+    version: typeof RAIL_SCHEDULE_VERSION;
     /** SHA-256 of the zip bytes, the version's name. */
     hash: string;
     bytes: number;
@@ -307,7 +310,7 @@ export async function extractRailSchedule(source: EntrySource, options: ExtractO
     exceptions.sort((a, b) => (a.date === b.date ? (a.service < b.service ? -1 : 1) : a.date < b.date ? -1 : 1));
 
     return {
-        version: 1,
+        version: RAIL_SCHEDULE_VERSION,
         hash: options.hash ?? "",
         bytes: options.bytes ?? 0,
         lastModified: options.lastModified ?? null,
@@ -318,10 +321,6 @@ export async function extractRailSchedule(source: EntrySource, options: ExtractO
         trips: railTrips,
         latestStopSeconds,
     };
-}
-
-export function hashBytes(bytes: Buffer): string {
-    return createHash("sha256").update(bytes).digest("hex");
 }
 
 /** The subset of `fetch` the downloader uses. */
@@ -392,10 +391,4 @@ export async function downloadFeed(options: FeedDownloadOptions): Promise<FeedDo
     }
     fs.renameSync(temp, options.toFile);
     return { status: "downloaded", file: options.toFile, bytes: total, hash: hash.digest("hex"), lastModified: response.headers.get("last-modified") };
-}
-
-/** The Train Tracker route ids the feed covers, in canonical order. */
-export function routesIn(schedule: RailSchedule): TrainRoute[] {
-    const present = new Set(schedule.trips.map((t) => t.route));
-    return TRAIN_ROUTES.filter((r) => present.has(r));
 }

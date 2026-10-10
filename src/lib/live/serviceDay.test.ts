@@ -3,7 +3,6 @@ import {
     chicagoWallClock,
     dayCloseInstant,
     expectedPolls,
-    formatChicagoLocal,
     instantOfChicagoLocal,
     instantOfGtfsTime,
     latestClosedServiceDay,
@@ -142,12 +141,6 @@ describe("latestClosedServiceDay", () => {
         expect(latestClosedServiceDay(utc("2026-10-14T08:15:00"), 5)).toBe("2026-10-13");
         expect(latestClosedServiceDay(utc("2026-10-14T20:00:00"), 5)).toBe("2026-10-13");
         expect(latestClosedServiceDay(utc("2026-10-15T07:59:00"), 5)).toBe("2026-10-13"); // 02:59, still service day Oct 14
-    });
-});
-
-describe("formatChicagoLocal", () => {
-    it("writes the Chicago wall clock as YYYY-MM-DD HH:mm:ss", () => {
-        expect(formatChicagoLocal(utc("2026-10-14T06:05:09"))).toBe("2026-10-14 01:05:09");
     });
 });
 

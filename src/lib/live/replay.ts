@@ -2,7 +2,9 @@
  * Replays a day's raw lines through the slot tracker (KTD3, KTD16): the sensitivity table and a
  * re-reduce rebuild the tracker from the raw record, under the current parser and rule, exactly
  * as the worker would have. Lines are grouped into ticks at each positions call, the way the
- * worker makes them; a tick's arrivals batches follow its positions line.
+ * worker makes them; a tick's arrivals batches follow its positions line. A batch the worker's
+ * sweep never sent has a line with no body and the failure "not-requested", which replays as the
+ * failed call it was, so its stations are listed as not polled that minute.
  */
 import type { RawLine } from "./rawStore";
 import { applyTick, createDayTracker, createSweepState, type TickInput, type TrackerState } from "./tracker";

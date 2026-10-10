@@ -5,7 +5,7 @@
  * changes a closed day (R16).
  */
 import fs from "node:fs";
-import { downloadFeed, extractRailSchedule, zipEntrySource, GtfsError, type EntrySource, type FeedDownload, type FeedFetch, type RailSchedule } from "./gtfs";
+import { downloadFeed, extractRailSchedule, zipEntrySource, GtfsError, RAIL_SCHEDULE_VERSION, type EntrySource, type FeedDownload, type FeedFetch, type RailSchedule } from "./gtfs";
 import { gunzipJson, gzipJson, type ObjectStore } from "./objectStore";
 
 export const SCHEDULE_PREFIX = "schedules";
@@ -22,18 +22,32 @@ export interface ScheduleVersion {
     trips: number;
 }
 
+/** The format stamp on the index; `readScheduleIndex` refuses any other. */
+export const SCHEDULE_INDEX_VERSION = 1;
+
 export interface ScheduleIndex {
-    version: 1;
+    version: typeof SCHEDULE_INDEX_VERSION;
     /** Oldest first. */
     versions: ScheduleVersion[];
 }
 
 export const scheduleKey = (hash: string) => `${SCHEDULE_PREFIX}/${hash}.json.gz`;
 
+/**
+ * Refuses an object stamped with a format this build does not read, naming its key. Without the
+ * check, a worker rolled back past a format change would read the newer object as its own shape
+ * and could write it back damaged.
+ */
+function assertStamp(key: string, found: unknown, expected: number): void {
+    if (found !== expected) throw new Error(`${key} is stamped version ${String(found)}; this build reads version ${expected}`);
+}
+
 export async function readScheduleIndex(store: ObjectStore): Promise<ScheduleIndex> {
     const object = await store.get(SCHEDULE_INDEX_KEY);
-    if (object === null) return { version: 1, versions: [] };
-    return JSON.parse(object.body.toString("utf8")) as ScheduleIndex;
+    if (object === null) return { version: SCHEDULE_INDEX_VERSION, versions: [] };
+    const index = JSON.parse(object.body.toString("utf8")) as ScheduleIndex;
+    assertStamp(SCHEDULE_INDEX_KEY, index.version, SCHEDULE_INDEX_VERSION);
+    return index;
 }
 
 export async function writeScheduleIndex(store: ObjectStore, index: ScheduleIndex): Promise<void> {
@@ -50,8 +64,12 @@ export async function archiveSchedule(store: ObjectStore, schedule: RailSchedule
 }
 
 export async function loadSchedule(store: ObjectStore, hash: string): Promise<RailSchedule | null> {
-    const object = await store.get(scheduleKey(hash));
-    return object === null ? null : gunzipJson<RailSchedule>(object.body);
+    const key = scheduleKey(hash);
+    const object = await store.get(key);
+    if (object === null) return null;
+    const schedule = gunzipJson<RailSchedule>(object.body);
+    assertStamp(key, schedule.version, RAIL_SCHEDULE_VERSION);
+    return schedule;
 }
 
 export interface RefreshOptions {

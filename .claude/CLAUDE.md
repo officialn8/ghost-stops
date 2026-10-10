@@ -202,5 +202,6 @@ Migrations run only from an operator machine as `neondb_owner` over the direct h
 - `README.md`: setup from a fresh clone.
 - `DEPLOYMENT.md`: Vercel, Neon, migrations, the sync, health, rollback.
 - `docs/plans/2026-10-02-2208-feat-ghost-stops-revival-plan.md`: the requirements (R-IDs) and key decisions (KTD-IDs) the code cites.
+- `docs-private/plans/2026-10-09-1935-feat-live-ghost-score-plan.md` (private, gitignored): the source of the R, KTD, AE, and U IDs cited under `src/lib/live/`, `scripts/live-*.ts`, `src/lib/bearerAuth.ts`, the revalidate and health routes, and the worker's `Dockerfile` and `fly.toml`. Its numbering restarts at 1, so a bare ID in those files means this plan, and anywhere else in the code it means the revival plan.
 - `docs/runbooks/history-load.md`: every production migration, backfill, and go-live, step by step.
 - `docs/audit-2026-10-02/`: the October 2026 audit that started the revival.

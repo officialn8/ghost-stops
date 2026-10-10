@@ -41,7 +41,10 @@ jobs:
             if [ "$status" = "200" ]; then exit 0; fi
             if [ "$attempt" = "1" ]; then sleep 60; fi
           done
-          echo "::error::Health check failed with HTTP $status. Data may be stale or the sync stuck; see the body above and the SyncRun table."
+          # The body holds two reports: the top-level status is the ridership sync, trains.status the live worker.
+          sync_status="$(jq -r '.status // empty' body.json 2>/dev/null || true)"
+          trains_status="$(jq -r '.trains.status // empty' body.json 2>/dev/null || true)"
+          echo "::error::Health check failed with HTTP $status. The top-level status (${sync_status:-unknown}) is the ridership sync (SyncRun table); trains.status (${trains_status:-unknown}) is the live worker (Healthchecks.io, Fly); see the body above."
           exit 1
 
       - name: Keep the schedule enabled

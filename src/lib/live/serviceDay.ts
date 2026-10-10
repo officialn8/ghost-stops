@@ -203,9 +203,3 @@ export function latestClosedServiceDay(nowEpochMs: number, toleranceMinutes: num
     while (dayCloseInstant(day, toleranceMinutes) > nowEpochMs) day = addDays(day, -1);
     return day;
 }
-
-/** The Chicago wall clock as "YYYY-MM-DD HH:mm:ss". */
-export function formatChicagoLocal(epochMs: number): string {
-    const wall = chicagoWallClock(epochMs);
-    return `${wall.date} ${pad2(wall.hour)}:${pad2(wall.minute)}:${pad2(wall.second)}`;
-}

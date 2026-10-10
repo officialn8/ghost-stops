@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { postRevalidate, type RevalidateOptions } from "./revalidate";
+import { postRevalidate, siteFromEnv, type RevalidateOptions } from "./revalidate";
 
 type Answer = { status: number; body?: unknown } | Error;
 
@@ -60,5 +60,20 @@ describe("postRevalidate", () => {
         const { result, calls } = post([{ status: 404 }]);
         expect((await result).outcome).toBe("failed");
         expect(calls).toHaveLength(1);
+    });
+});
+
+describe("siteFromEnv", () => {
+    it("reads the site and the secret, trimmed, and is null when either is unset", () => {
+        expect(siteFromEnv({ SITE_URL: " https://ghost-stops.vercel.app ", WORKER_REVALIDATE_SECRET: ` ${SECRET}\n` })).toEqual({ url: "https://ghost-stops.vercel.app", secret: SECRET });
+        expect(siteFromEnv({ SITE_URL: "https://ghost-stops.vercel.app" })).toBeNull();
+        expect(siteFromEnv({ WORKER_REVALIDATE_SECRET: SECRET })).toBeNull();
+        expect(siteFromEnv({ SITE_URL: "", WORKER_REVALIDATE_SECRET: SECRET })).toBeNull();
+        expect(siteFromEnv({})).toBeNull();
+    });
+
+    it("refuses a site that is not https, since the secret travels as a bearer header", () => {
+        expect(() => siteFromEnv({ SITE_URL: "http://ghost-stops.vercel.app", WORKER_REVALIDATE_SECRET: SECRET })).toThrow("SITE_URL must be an https URL");
+        expect(() => siteFromEnv({ SITE_URL: "http://localhost:3000" })).toThrow(/https/);
     });
 });

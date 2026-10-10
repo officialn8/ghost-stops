@@ -2,8 +2,9 @@
 
 /**
  * The tolerance sensitivity table over recorded days (live Ghost score plan U7, KTD4): replays
- * each day's raw file from R2 through the tracker and the matcher at tolerances 2, 3, 5, and 8
- * minutes and prints ghosts per 100 system-wide and per line, the share of slots fulfilled by run
+ * each day's raw file from R2, with the overlap in its neighbors' files (a neighbor is read again
+ * for the next day; the cost is accepted), through the tracker and the matcher at tolerances 2,
+ * 3, 5, and 8 minutes and prints ghosts per 100 system-wide and per line, the share of slots fulfilled by run
  * number after the tolerance, the share of scheduled stops fulfilled from the passage log alone,
  * and how long schedule-only entries stay posted. The plateau value becomes
  * GHOST_TOLERANCE_MINUTES in src/lib/live/matcher.ts, with its date; the table is pasted into the
@@ -18,7 +19,7 @@ import { addDays, isCalendarDate } from "../src/lib/sync/window";
 import type { RailSchedule } from "../src/lib/live/gtfs";
 import { GHOST_TOLERANCE_MINUTES } from "../src/lib/live/matcher";
 import { createR2Store, readR2Env } from "../src/lib/live/objectStore";
-import { readRawDay } from "../src/lib/live/rawStore";
+import { readRawDayWithOverlap } from "../src/lib/live/rawStore";
 import { replayRawLines } from "../src/lib/live/replay";
 import { scheduledStopsFor } from "../src/lib/live/schedule";
 import { loadSchedule, readScheduleIndex, versionInForce } from "../src/lib/live/scheduleArchive";
@@ -48,7 +49,7 @@ async function main(): Promise<void> {
     const archived = new Map<string, RailSchedule | null>();
     const days: SensitivityDay[] = [];
     for (let date = from; date <= to; date = addDays(date, 1)) {
-        const lines = await readRawDay(store, date);
+        const lines = await readRawDayWithOverlap(store, date, GHOST_TOLERANCE_MINUTES);
         if (lines === null) {
             console.error(`${date}: no raw file in the bucket; skipped`);
             continue;

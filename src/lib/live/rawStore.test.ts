@@ -19,11 +19,12 @@ import {
     partKeyOfFile,
     putCheckpoint,
     readRawDay,
+    readRawDayWithOverlap,
     type Checkpoint,
     type RawLine,
     type RawWriter,
 } from "./rawStore";
-import { hourIndexOf, parseChicagoLocal, serviceDayStart } from "./serviceDay";
+import { dayCloseInstant, hourIndexOf, parseChicagoLocal, serviceDayStart } from "./serviceDay";
 
 const DAY = "2026-10-14";
 const DAY_START = serviceDayStart(DAY); // 03:00 CDT
@@ -210,6 +211,62 @@ describe("the raw writer", () => {
         await w.uploadPending();
         expect((await readRawDay(store, DAY))?.map((l) => l.pollEpoch)).toEqual([DAY_START]);
         expect(await readRawDay(store, "2026-10-13")).toBeNull();
+    });
+
+    it("closes the open part only for the day asked, and lists the pending parts of one day", async () => {
+        const w = writer();
+        w.append(line(parseChicagoLocal("2026-10-15 02:59:00"), 1));
+        w.append(line(parseChicagoLocal("2026-10-15 03:00:00"), 2)); // the day rolls: 2026-10-14's part is closed, 2026-10-15's is open
+        const yesterdays = path.join(dir, partFileName(DAY, 23, parseChicagoLocal("2026-10-15 02:59:00")));
+        expect(w.pendingFiles()).toEqual([yesterdays]);
+        expect(w.pendingFiles(DAY)).toEqual([yesterdays]);
+        expect(w.pendingFiles("2026-10-15")).toEqual([]);
+
+        w.closeOpenPart(DAY); // not the open day's part
+        w.append(line(parseChicagoLocal("2026-10-15 03:01:00"), 3));
+        expect(fs.readdirSync(dir)).toHaveLength(2); // 2026-10-15's part was not split
+        expect(w.pendingFiles("2026-10-15")).toEqual([]);
+
+        w.closeOpenPart("2026-10-15");
+        expect(w.pendingFiles("2026-10-15")).toEqual([path.join(dir, partFileName("2026-10-15", 0, parseChicagoLocal("2026-10-15 03:00:00")))]);
+        w.append(line(parseChicagoLocal("2026-10-15 03:02:00"), 4));
+        expect(fs.readdirSync(dir)).toHaveLength(3); // a new part after the close
+        w.closeOpenPart();
+        expect(w.pendingFiles()).toHaveLength(3);
+    });
+});
+
+describe("readRawDayWithOverlap", () => {
+    const at = (text: string) => parseChicagoLocal(text);
+    const dayObject = (day: string, epochs: number[]) =>
+        store.put(dayObjectKey(day), gzipSync(Buffer.from(epochs.map((epoch, i) => `${JSON.stringify(line(epoch, i + 1))}\n`).join(""))));
+
+    it("adds the hour before the day's start from the day before, and the polls up to its close from the day after", async () => {
+        await dayObject("2026-10-13", [at("2026-10-14 01:59:00"), at("2026-10-14 02:00:00"), at("2026-10-14 02:30:00")]);
+        await dayObject(DAY, [at("2026-10-14 03:00:00"), at("2026-10-14 12:00:00"), at("2026-10-15 02:59:00")]);
+        await dayObject("2026-10-15", [at("2026-10-15 03:00:00"), at("2026-10-15 03:14:59"), at("2026-10-15 03:15:00"), at("2026-10-15 04:00:00")]);
+        expect(dayCloseInstant(DAY, 5)).toBe(at("2026-10-15 03:15:00"));
+
+        const lines = await readRawDayWithOverlap(store, DAY, 5);
+
+        expect(lines?.map((l) => l.pollEpoch)).toEqual([
+            at("2026-10-14 02:00:00"),
+            at("2026-10-14 02:30:00"),
+            at("2026-10-14 03:00:00"),
+            at("2026-10-14 12:00:00"),
+            at("2026-10-15 02:59:00"),
+            at("2026-10-15 03:00:00"),
+            at("2026-10-15 03:14:59"),
+        ]);
+    });
+
+    it("is null when the day itself has no raw record, and needs no neighbor", async () => {
+        await dayObject("2026-10-13", [at("2026-10-14 02:30:00")]);
+        expect(await readRawDayWithOverlap(store, DAY, 5)).toBeNull();
+
+        await dayObject(DAY, [at("2026-10-14 03:00:00")]);
+        expect((await readRawDayWithOverlap(store, "2026-10-15", 5))?.map((l) => l.pollEpoch)).toBeUndefined();
+        expect((await readRawDayWithOverlap(store, DAY, 5))?.map((l) => l.pollEpoch)).toEqual([at("2026-10-14 02:30:00"), at("2026-10-14 03:00:00")]);
     });
 });
 

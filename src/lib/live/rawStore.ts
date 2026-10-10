@@ -18,8 +18,9 @@ import fs from "node:fs";
 import path from "node:path";
 import { Readable } from "node:stream";
 import { createGunzip, gzipSync } from "node:zlib";
+import { addDays } from "@/lib/sync/window";
 import { gunzipJson, gzipJson, ObjectStoreError, type ObjectStore, type PutCondition } from "./objectStore";
-import { hourIndexOf, pad2, serviceDateOf } from "./serviceDay";
+import { dayCloseInstant, hourIndexOf, MINUTE_MS, pad2, serviceDateOf, serviceDayStart } from "./serviceDay";
 import type { RawCall } from "./trainTracker";
 
 export const RAW_PREFIX = "raw/v1";
@@ -62,12 +63,15 @@ export type RawLine = RawCall;
 export interface RawWriter {
     /** Appends one line to its hour's part, synchronously; a new hour or day closes the open part first. */
     append(line: RawLine): void;
-    /** Closes the open part, if any, so the next upload pass takes it: at day close and on shutdown. */
-    closeOpenPart(): void;
+    /**
+     * Closes the open part, if any, so the next upload pass takes it: on shutdown, and at day close
+     * with the closing day's date, which leaves an open part of the next day alone.
+     */
+    closeOpenPart(serviceDate?: string): void;
     /** Uploads every closed part file on disk, oldest first; returns the keys uploaded. Failed ones stay. */
     uploadPending(): Promise<string[]>;
-    /** Part files on disk waiting for a successful upload, the open one excluded. */
-    pendingFiles(): string[];
+    /** Part files on disk waiting for a successful upload, the open one excluded; one day's only when given. */
+    pendingFiles(serviceDate?: string): string[];
 }
 
 export interface RawWriterOptions {
@@ -120,10 +124,10 @@ export function createRawWriter(options: RawWriterOptions): RawWriter {
         return key;
     }
 
-    function pendingFiles(): string[] {
+    function pendingFiles(serviceDate?: string): string[] {
         return fs
             .readdirSync(dir)
-            .filter((name) => PART_FILE.test(name))
+            .filter((name) => PART_FILE.test(name) && (serviceDate === undefined || name.startsWith(`${serviceDate}.`)))
             .map((name) => path.join(dir, name))
             .filter((file) => file !== open?.file)
             .sort();
@@ -141,8 +145,8 @@ export function createRawWriter(options: RawWriterOptions): RawWriter {
             fs.appendFileSync(open.file, `${JSON.stringify(line)}\n`);
         },
 
-        closeOpenPart() {
-            open = null;
+        closeOpenPart(serviceDate) {
+            if (serviceDate === undefined || open?.serviceDate === serviceDate) open = null;
         },
 
         async uploadPending() {
@@ -232,6 +236,24 @@ export async function readRawDay(store: ObjectStore, serviceDate: string): Promi
     const lines: RawLine[] = [];
     for await (const line of gunzipLines(members)) lines.push(JSON.parse(line) as RawLine);
     return lines;
+}
+
+/**
+ * A day's raw lines with the overlap its tracker saw (KTD5): the polls from the hour before
+ * 03:00 in the day before's file, where its first slots were first posted, and the polls up to
+ * the day's close instant in the day after's file, where its last trains came and went. Raw
+ * lines bucket by poll time, so a replay of one file alone loses both. Null when the day itself
+ * has no raw record; a neighbor that has none contributes nothing. Lines come back in poll order.
+ */
+export async function readRawDayWithOverlap(store: ObjectStore, serviceDate: string, toleranceMinutes: number): Promise<RawLine[] | null> {
+    const day = await readRawDay(store, serviceDate);
+    if (day === null) return null;
+    const from = serviceDayStart(serviceDate) - 60 * MINUTE_MS;
+    const until = dayCloseInstant(serviceDate, toleranceMinutes);
+    // Each neighbor is read whole and cut down at once, so only one full day is held beside this one.
+    const before = ((await readRawDay(store, addDays(serviceDate, -1))) ?? []).filter((line) => line.pollEpoch >= from);
+    const after = ((await readRawDay(store, addDays(serviceDate, 1))) ?? []).filter((line) => line.pollEpoch < until);
+    return [...before, ...day, ...after].sort((a, b) => a.pollEpoch - b.pollEpoch);
 }
 
 /** The checkpoint envelope: who wrote it, when, whether they let go, and the worker's state. */

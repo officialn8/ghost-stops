@@ -153,6 +153,19 @@ production).
 
 ## Rollback
 
-The app keeps no state outside Neon. To undo a bad deploy, promote the previous production
-deployment in Vercel (instant rollback). To undo a bad data change, restore the Neon snapshot taken
-before it.
+Durable state lives in two places: Neon, and the R2 bucket that holds the live worker's raw polls,
+the schedule archive, and its checkpoint. A Neon restore does not touch R2.
+
+To undo a bad deploy, promote the previous production deployment in Vercel (instant rollback). The
+worker needs no stop for this, because older code ignores `LiveDay` and `LiveStationDay`.
+
+To undo a bad data change, restore the Neon snapshot taken before it, with the worker stopped so
+that no nightly write lands during the restore:
+
+1. Stop the worker: `fly machine stop`. If the stop will run past 45 minutes, pause its
+   Healthchecks check first (the runbook's "Planned stops and restarts" has the rules).
+2. Restore the snapshot.
+3. Start the worker: `fly machine start`.
+4. Re-reduce each service day the restore lost, from its raw file in R2:
+   `npx tsx scripts/live-rereduce.ts --date YYYY-MM-DD`. Like the worker's checks above, it needs
+   its variables exported in that shell.

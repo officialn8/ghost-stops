@@ -33,10 +33,14 @@ export interface RevalidateResult {
 
 const DEFAULT_RETRY_DELAYS_MS = [2_000, 8_000, 30_000] as const;
 
-/** The site the worker refreshes, from WORKER_REVALIDATE_SECRET and SITE_URL; null when either is unset. */
+/**
+ * The site the worker refreshes, from WORKER_REVALIDATE_SECRET and SITE_URL; null when either is
+ * unset. The secret travels as a bearer header, so a SITE_URL that is not https is refused.
+ */
 export function siteFromEnv(env: Record<string, string | undefined>): { url: string; secret: string } | null {
     const secret = env.WORKER_REVALIDATE_SECRET?.trim();
     const url = env.SITE_URL?.trim();
+    if (url && !url.startsWith("https://")) throw new Error("SITE_URL must be an https URL");
     return secret && url ? { url, secret } : null;
 }
 

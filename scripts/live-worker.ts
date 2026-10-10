@@ -23,14 +23,14 @@ import { parseArgs } from "node:util";
 import { todayInChicago } from "../src/lib/cta/closures";
 import { CTA_ROSTER } from "../src/lib/cta/roster";
 import { createHealthchecks } from "../src/lib/live/healthchecks";
-import { createCallSink, runLoop, serializeClosedDay } from "../src/lib/live/loop";
+import { createCallSink, runLoop } from "../src/lib/live/loop";
 import { GHOST_TOLERANCE_MINUTES } from "../src/lib/live/matcher";
 import { closeDay, fillGapDays, finishDay, isOpenOn, type NightlyDeps } from "../src/lib/live/nightly";
 import { createMemoryObjectStore, createR2Store, readR2Env, type ObjectStore } from "../src/lib/live/objectStore";
 import { createRawWriter, RAW_PREFIX } from "../src/lib/live/rawStore";
 import { siteFromEnv } from "../src/lib/live/revalidate";
 import { countByRoute, scheduledStopsFor } from "../src/lib/live/schedule";
-import { readScheduleIndex, refreshSchedule, versionInForce } from "../src/lib/live/scheduleArchive";
+import { refreshSchedule } from "../src/lib/live/scheduleArchive";
 import { pad2, serviceDateOf } from "../src/lib/live/serviceDay";
 import { bodyBytes, createTrainTracker, readTrainTrackerKey, type RawCall } from "../src/lib/live/trainTracker";
 import { isCliEntry, requireDatabaseUrl } from "./cli";
@@ -174,17 +174,20 @@ async function run(): Promise<number> {
     if (healthchecks === null) log("HEALTHCHECKS_PING_URL is not set; no dead-man's switch");
 
     // The schedule: checked now and after each day close; the newest version's latest stop time
-    // decides the day's close instant.
+    // decides the day's close instant, and each check updates it.
     const feedFile = path.join(dir, "gtfs", "google_transit.zip");
+    let latestStopSeconds: number | undefined;
     const refresh = async () => {
         const result = await refreshSchedule({ store, feedFile, rosterIds: new Set(ROSTER_IDS), log });
         log(`schedule check: ${result.status}${result.status === "failed" ? ` (${result.reason})` : ""}`);
+        // The newest version in the index, which a failed check leaves in force.
+        latestStopSeconds = result.version?.latestStopSeconds;
     };
     await refresh();
-    const latestStopSeconds = versionInForce(await readScheduleIndex(store), Date.now())?.latestStopSeconds;
 
     // The nightly steps (U8): reduce and write the closed day, refresh the site, compact the raw
-    // day; finish a day the checkpoint left half done; record gap days as set aside.
+    // day (the loop defers it while a raw part is still on disk); finish a day the checkpoint left
+    // half done; record gap days as set aside at startup and after each close.
     const { prisma } = await import("../src/lib/prisma");
     const site = siteFromEnv(process.env);
     if (site === null) log("WORKER_REVALIDATE_SECRET or SITE_URL is not set; the site will not be asked to refresh");
@@ -218,15 +221,12 @@ async function run(): Promise<number> {
         stations: openStationIds,
         machineId: machineId(process.env),
         toleranceMinutes: GHOST_TOLERANCE_MINUTES,
-        latestStopSeconds,
+        latestStopSeconds: () => latestStopSeconds,
         signal: controller.signal,
         healthchecks,
         hooks: {
             onDayClose: async (tracker, context) => {
-                // The serialized tracker stays beside the raw day: the record of what the worker held.
-                await serializeClosedDay(store, tracker);
-                const day = await closeDay(nightly, tracker, { quotaStopped: context.quota.stopped });
-                await fillGapDays(nightly, Date.now());
+                const day = await closeDay(nightly, tracker, { quotaStopped: context.stopReason !== null, compact: !context.rawPending });
                 await refresh();
                 return day;
             },

@@ -6,9 +6,21 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { CTA_ROSTER } from "@/lib/cta/roster";
 import type { Healthchecks } from "./healthchecks";
 import { createCallSink, dayStateKey, QUOTA_HARD_STOP, runLoop, type DayReduction, type LoopHooks, type LoopOptions, type WorkerState } from "./loop";
-import { createMemoryObjectStore, type MemoryObjectStore } from "./objectStore";
-import { CHECKPOINT_KEY, createRawWriter, dayPartsPrefix, getCheckpoint, putCheckpoint, type Checkpoint, type RawWriter } from "./rawStore";
-import { minuteIndexOf, parseChicagoLocal } from "./serviceDay";
+import { createMemoryObjectStore, ObjectStoreError, type MemoryObjectStore } from "./objectStore";
+import {
+    CHECKPOINT_KEY,
+    compactDay,
+    createRawWriter,
+    dayObjectKey,
+    dayPartsPrefix,
+    getCheckpoint,
+    putCheckpoint,
+    readRawDay,
+    type Checkpoint,
+    type CompactionResult,
+    type RawWriter,
+} from "./rawStore";
+import { minuteIndexOf, parseChicagoLocal, serviceDateOf } from "./serviceDay";
 import { createDayTracker, type TrackerState } from "./tracker";
 import {
     TRAIN_ROUTES,
@@ -27,6 +39,8 @@ const T0 = parseChicagoLocal("2026-10-14 17:00:00");
 const ROSTER_IDS = CTA_ROSTER.map((s) => s.ctaStationId);
 const EIGHT = ROSTER_IDS.slice(0, 8);
 const MACHINE = "e784e1";
+
+type CloseContext = Parameters<LoopHooks["onDayClose"]>[1];
 
 /** A Train Tracker stand-in that answers from a script and reports its calls to the sink like the client does. */
 class FakeSource implements TrainSource {
@@ -91,9 +105,14 @@ interface Harness {
     source: FakeSource;
     rawWriter: RawWriter;
     sink: ReturnType<typeof createCallSink>;
+    /** The recording hooks the loop runs with unless a test overrides them. */
+    hooks: LoopHooks;
+    /** Every call the source made, as the sink saw it. */
+    calls: RawCall[];
     pings: number;
     fails: number;
     closed: TrackerState[];
+    closeContexts: { serviceDate: string; context: CloseContext }[];
     finished: DayReduction[];
     gapFills: number[];
     logged: string[];
@@ -102,35 +121,57 @@ interface Harness {
     checkpoint(): Promise<Checkpoint<WorkerState> | null>;
 }
 
+interface HarnessOptions {
+    stationIds?: readonly string[];
+    start?: number;
+    /** While this answers true, every raw-part upload fails with a 503; the checkpoint and the day states still land. */
+    rawUploadFailsWhile?: (nowEpochMs: number) => boolean;
+}
+
 let dir: string;
 let h: Harness;
 
-function harness(options: { stationIds?: readonly string[]; start?: number } = {}): Harness {
+function harness(options: HarnessOptions = {}): Harness {
     const clock = { value: options.start ?? T0 };
-    const store = createMemoryObjectStore({ now: () => clock.value });
-    const rawWriter = createRawWriter({ dir, store, log: (m) => h.logged.push(m) });
+    const memory = createMemoryObjectStore({ now: () => clock.value });
+    const store: MemoryObjectStore = {
+        ...memory,
+        put: async (key, body, putOptions) => {
+            if (key.startsWith("raw/v1/") && options.rawUploadFailsWhile?.(clock.value)) throw new ObjectStoreError("put", key, 503);
+            return memory.put(key, body, putOptions);
+        },
+    };
+    const rawWriter = createRawWriter({ dir, store, log: (m) => result.logged.push(m) });
     const sink = createCallSink(rawWriter);
-    const source = new FakeSource({ now: () => clock.value, advance: (ms) => (clock.value += ms), onCall: sink.onCall });
+    const source = new FakeSource({
+        now: () => clock.value,
+        advance: (ms) => (clock.value += ms),
+        onCall: (call) => {
+            result.calls.push(call);
+            sink.onCall(call);
+        },
+    });
     const controller = new AbortController();
     const healthchecks: Healthchecks = {
         ping: async () => {
-            h.pings += 1;
+            result.pings += 1;
         },
         fail: async () => {
-            h.fails += 1;
+            result.fails += 1;
         },
     };
     const hooks: LoopHooks = {
-        onDayClose: async (tracker) => {
-            h.closed.push(tracker);
+        onDayClose: async (tracker, context) => {
+            result.closed.push(tracker);
+            result.closeContexts.push({ serviceDate: tracker.serviceDate, context });
             return { serviceDate: tracker.serviceDate, reduced: true, revalidated: true, compacted: true };
         },
         finishDay: async (day) => {
-            h.finished.push(day);
+            result.finished.push(day);
             return { ...day, revalidated: true, compacted: true };
         },
         fillGaps: async (now) => {
-            h.gapFills.push(now);
+            result.gapFills.push(now);
         },
     };
     const result: Harness = {
@@ -139,9 +180,12 @@ function harness(options: { stationIds?: readonly string[]; start?: number } = {
         source,
         rawWriter,
         sink,
+        hooks,
+        calls: [],
         pings: 0,
         fails: 0,
         closed: [],
+        closeContexts: [],
         finished: [],
         gapFills: [],
         logged: [],
@@ -170,6 +214,29 @@ function harness(options: { stationIds?: readonly string[]; start?: number } = {
         checkpoint: async () => (await getCheckpoint<WorkerState>(store))?.checkpoint ?? null,
     };
     return result;
+}
+
+/** Hooks that compact the raw day the way the worker's do: at the close unless a part is still on disk, else when the loop finishes the day. */
+function compactingHooks(harness: Harness, compactions: CompactionResult[]): LoopHooks {
+    return {
+        ...harness.hooks,
+        onDayClose: async (tracker, context) => {
+            await harness.hooks.onDayClose(tracker, context);
+            let compacted = false;
+            if (!context.rawPending) {
+                const result = await compactDay(harness.store, tracker.serviceDate);
+                compactions.push(result);
+                compacted = result.status !== "no-parts";
+            }
+            return { serviceDate: tracker.serviceDate, reduced: true, revalidated: true, compacted };
+        },
+        finishDay: async (day) => {
+            await harness.hooks.finishDay(day);
+            const result = await compactDay(harness.store, day.serviceDate);
+            compactions.push(result);
+            return { ...day, revalidated: true, compacted: result.status !== "no-parts" };
+        },
+    };
 }
 
 function scheduleOnly(stationId: string, stopId: string, run: string, arrivalAt: number): ArrivalPrediction {
@@ -217,12 +284,16 @@ async function seedCheckpoint(overrides: Omit<Partial<Checkpoint<WorkerState>>, 
         trackers: [tracker],
         sweep: { openLive: {} },
         quota: { chicagoDate: "2026-10-14", calls: 1_234, stopped: false, stopReason: null },
+        stoppedDays: {},
         previousDay: { serviceDate: "2026-10-13", reduced: true, revalidated: true, compacted: true },
         ticks: 10,
         ...overrides.state,
     };
     await putCheckpoint(h.store, { version: 1, machineId: MACHINE, writtenAt: T0 - 2 * MINUTE, released: false, ...overrides, state });
 }
+
+/** The poll epochs of every call the source made on a service day, in order: what the day's raw record must hold. */
+const callsOn = (serviceDate: string) => h.calls.filter((c) => serviceDateOf(c.pollEpoch) === serviceDate).map((c) => c.pollEpoch);
 
 beforeEach(() => {
     dir = fs.mkdtempSync(path.join(os.tmpdir(), "loop-"));
@@ -254,6 +325,7 @@ describe("the tick", () => {
         expect(checkpoint).toMatchObject({ machineId: MACHINE, released: true });
         expect(checkpoint?.state.ticks).toBe(3);
         expect(checkpoint?.state.quota).toEqual({ chicagoDate: "2026-10-14", calls: 111, stopped: false, stopReason: null });
+        expect(checkpoint?.state.stoppedDays).toEqual({});
         expect(checkpoint?.state.trackers.map((t) => t.serviceDate)).toEqual(["2026-10-14"]);
         expect(Object.keys(checkpoint!.state.trackers[0].minutes)).toHaveLength(3);
         expect(h.gapFills).toEqual([T0]);
@@ -294,8 +366,7 @@ describe("the tick", () => {
         const checkpoint = await h.checkpoint();
         const [record] = Object.values(checkpoint!.state.trackers[0].minutes);
         expect(record).toMatchObject({ p: 1, f: EIGHT.slice(4, 8).sort() });
-        const lines = fs.readdirSync(dir).length === 0 ? [] : [];
-        expect(lines).toEqual([]); // uploaded at shutdown
+        expect(fs.readdirSync(dir)).toEqual([]); // uploaded at shutdown
         const parts = await h.store.list(dayPartsPrefix("2026-10-14"));
         const raw = gunzipSync((await h.store.get(parts[0].key))!.body).toString("utf8").trim().split("\n").map((l) => JSON.parse(l) as RawCall);
         expect(raw.filter((l) => l.failure === "http")).toHaveLength(1);
@@ -313,6 +384,7 @@ describe("the tick", () => {
         expect(h.pings).toBe(0);
         const checkpoint = await h.checkpoint();
         expect(checkpoint?.state.quota).toMatchObject({ stopped: true, stopReason: "quota" });
+        expect(checkpoint?.state.stoppedDays).toEqual({ "2026-10-14": "quota" });
         expect(Object.keys(checkpoint!.state.trackers[0].minutes)).toHaveLength(1);
         expect(checkpoint?.state.ticks).toBe(4);
         expect(h.logged).toContain("daily quota exhausted; calls stop until the Chicago day resets");
@@ -327,6 +399,7 @@ describe("the tick", () => {
         expect(h.source.arrivalsCalls).toHaveLength(0);
         expect(h.fails).toBe(1);
         expect((await h.checkpoint())?.state.quota.stopReason).toBe("key");
+        expect((await h.checkpoint())?.state.stoppedDays).toEqual({ "2026-10-14": "key" });
     });
 
     it("stops at the hard quota stop before CTA refuses", async () => {
@@ -346,6 +419,90 @@ describe("the tick", () => {
 
         expect(h.source.positionsCalls).toBe(1);
         expect((await h.checkpoint())?.state.quota).toEqual({ chicagoDate: "2026-10-14", calls: 3, stopped: false, stopReason: null });
+    });
+});
+
+describe("a stop across the service day", () => {
+    it("keeps a quota stop on its service day past the midnight reset, so the day closes with the cause", async () => {
+        h = harness({ start: parseChicagoLocal("2026-10-14 23:29:00") });
+        // CTA answers 102 once, at 23:30; the key works again after its midnight reset.
+        h.source.onBeforeCall = () => {
+            if (h.clock.value >= parseChicagoLocal("2026-10-15 00:00:00")) h.source.failing.clear();
+            else if (h.clock.value >= parseChicagoLocal("2026-10-14 23:30:00")) h.source.failing.set(EIGHT[1], new TrainTrackerQuotaError("arrivals"));
+        };
+
+        await h.run({ maxTicks: 230 }); // 23:29 through 03:18
+
+        expect(h.fails).toBe(1);
+        expect(h.source.positionsCalls).toBe(2 + 199); // 23:29, 23:30, then every minute from midnight
+        expect(h.closeContexts.map((c) => [c.serviceDate, c.context.stopReason, c.context.quota.stopped])).toEqual([["2026-10-14", "quota", false]]);
+        const minutes = Object.keys(h.closed[0].minutes).map(Number);
+        const stopMinute = minuteIndexOf("2026-10-14", parseChicagoLocal("2026-10-14 23:30:00"));
+        const midnight = minuteIndexOf("2026-10-14", parseChicagoLocal("2026-10-15 00:00:00"));
+        expect(minutes).toContain(stopMinute);
+        expect(minutes.filter((m) => m > stopMinute && m < midnight)).toEqual([]);
+        expect(minutes).toContain(midnight);
+        const checkpoint = await h.checkpoint();
+        expect(checkpoint?.state.stoppedDays).toEqual({});
+        expect(checkpoint?.state.quota).toMatchObject({ chicagoDate: "2026-10-15", stopped: false, stopReason: null });
+    });
+
+    it("marks a day whose tracker only stopped ticks created, so it closes with the cause as well", async () => {
+        h = harness({ start: parseChicagoLocal("2026-10-15 02:29:00") });
+        h.source.failing.set(EIGHT[1], new TrainTrackerQuotaError("arrivals"));
+        h.source.onBeforeCall = () => {
+            if (h.clock.value >= parseChicagoLocal("2026-10-16 00:00:00")) h.source.failing.clear();
+        };
+
+        await h.run({ maxTicks: 1490 }); // 02:29 on the 15th through 03:18 on the 16th
+
+        expect(h.fails).toBe(1);
+        expect(h.closeContexts.map((c) => [c.serviceDate, c.context.stopReason, c.context.quota.stopped])).toEqual([
+            ["2026-10-14", "quota", true],
+            ["2026-10-15", "quota", false],
+        ]);
+        // The 15th was polled only after the reset; its tracker came from the stopped ticks.
+        const [, fifteenth] = h.closed;
+        const minutes = Object.keys(fifteenth.minutes).map(Number);
+        expect(minutes.length).toBeGreaterThan(0);
+        expect(Math.min(...minutes)).toBe(minuteIndexOf("2026-10-15", parseChicagoLocal("2026-10-16 00:00:00")));
+        const checkpoint = await h.checkpoint();
+        expect(checkpoint?.state.trackers.map((t) => t.serviceDate)).toEqual(["2026-10-16"]);
+        expect(checkpoint?.state.stoppedDays).toEqual({});
+    });
+});
+
+describe("the raw record", () => {
+    it("writes a line for each arrivals batch the sweep passed over at the budget, counting only the calls it made", async () => {
+        await h.run({ maxTicks: 1, tickBudgetMs: 150, concurrency: 1 });
+
+        expect(h.source.arrivalsCalls).toEqual([EIGHT.slice(0, 4)]);
+        expect(h.pings).toBe(0);
+        const checkpoint = await h.checkpoint();
+        expect(checkpoint?.state.quota.calls).toBe(2);
+        expect(Object.values(checkpoint!.state.trackers[0].minutes)[0]).toMatchObject({ p: 1, f: EIGHT.slice(4, 8).sort() });
+        const lines = (await readRawDay(h.store, "2026-10-14"))!;
+        expect(lines.map((l) => [l.endpoint, l.failure])).toEqual([
+            ["positions", null],
+            ["arrivals", null],
+            ["arrivals", "not-requested"],
+        ]);
+        expect(lines[2]).toMatchObject({ stationIds: EIGHT.slice(4, 8), httpStatus: null, body: null, errorCode: null, durationMs: 0 });
+        expect(lines[2].pollEpoch).toBeGreaterThanOrEqual(lines[0].pollEpoch); // grouped with this tick on replay
+    });
+
+    it("writes the line for the batches a shutdown passes over during the sweep", async () => {
+        h.source.onBeforeCall = () => {
+            if (h.source.positionsCalls === 1 && h.source.arrivalsCalls.length === 0) h.controller.abort();
+        };
+
+        const result = await h.run({ maxTicks: 5, jitterMs: 10, concurrency: 1, random: () => 0.5 });
+
+        expect(result).toEqual({ ticks: 1, exit: "stopped" });
+        expect(h.source.arrivalsCalls).toHaveLength(1);
+        const lines = (await readRawDay(h.store, "2026-10-14"))!;
+        expect(lines.map((l) => l.failure)).toEqual([null, null, "not-requested"]);
+        expect((await h.checkpoint())?.state.quota.calls).toBe(2);
     });
 });
 
@@ -400,6 +557,27 @@ describe("startup", () => {
         expect((await h.checkpoint())?.state.previousDay).toEqual({ serviceDate: "2026-10-13", reduced: true, revalidated: true, compacted: true });
     });
 
+    it("leaves a previous day's finish to a later upload pass while one of its parts is still on disk", async () => {
+        h = harness({ rawUploadFailsWhile: (now) => now < T0 + 30 * MINUTE });
+        fs.writeFileSync(path.join(dir, `2026-10-13.20.${String(T0 - 20 * 60 * MINUTE).padStart(13, "0")}.ndjson`), '{"endpoint":"positions","pollEpoch":1}\n');
+        await seedCheckpoint({ state: { previousDay: { serviceDate: "2026-10-13", reduced: true, revalidated: true, compacted: false } } });
+        let partsInStoreAtFinish = -1;
+        const hooks: LoopHooks = {
+            ...h.hooks,
+            finishDay: async (day) => {
+                partsInStoreAtFinish = (await h.store.list(dayPartsPrefix(day.serviceDate))).length;
+                return h.hooks.finishDay(day);
+            },
+        };
+
+        await h.run({ maxTicks: 62, hooks }); // the hourly retry at tick 61 falls past the failure window
+
+        expect(h.logged).not.toContain("uploaded 1 raw part(s) left on disk");
+        expect(h.finished).toEqual([{ serviceDate: "2026-10-13", reduced: true, revalidated: true, compacted: false }]);
+        expect(partsInStoreAtFinish).toBe(1);
+        expect((await h.checkpoint())?.state.previousDay).toEqual({ serviceDate: "2026-10-13", reduced: true, revalidated: true, compacted: true });
+    });
+
     it("exits when another machine's unreleased checkpoint is under three minutes old, and starts on a released one", async () => {
         await seedCheckpoint({ machineId: "other", writtenAt: T0 - MINUTE });
         expect(await h.run()).toEqual({ ticks: 0, exit: "held" });
@@ -418,6 +596,37 @@ describe("startup", () => {
         expect((await h.checkpoint())?.state.quota.calls).toBe(1_237);
     });
 
+    it("takes the lease before closing a day, so a second successor that read the same stale checkpoint closes nothing", async () => {
+        h = harness({ start: parseChicagoLocal("2026-10-15 03:20:00") });
+        await seedCheckpoint({ machineId: "old", writtenAt: h.clock.value - 10 * MINUTE });
+        const stale = await h.store.get(CHECKPOINT_KEY);
+
+        expect((await h.run({ maxTicks: 1 })).exit).toBe("max-ticks");
+        expect(h.closed.map((t) => t.serviceDate)).toEqual(["2026-10-14"]);
+
+        // A second instance that read the checkpoint before the first wrote it.
+        const closedByB: string[] = [];
+        const store: MemoryObjectStore = { ...h.store, get: async (key) => (key === CHECKPOINT_KEY ? stale : h.store.get(key)) };
+        const result = await h.run({
+            maxTicks: 1,
+            store,
+            machineId: "b",
+            hooks: {
+                ...h.hooks,
+                onDayClose: async (tracker) => {
+                    closedByB.push(tracker.serviceDate);
+                    return { serviceDate: tracker.serviceDate, reduced: true, revalidated: true, compacted: true };
+                },
+            },
+        });
+
+        expect(result).toEqual({ ticks: 0, exit: "lost-lease" });
+        expect(closedByB).toEqual([]);
+        expect(h.closed).toHaveLength(1);
+        expect(h.logged).toContain("checkpoint changed under us: another instance holds the day; exiting");
+        expect((await h.checkpoint())?.machineId).toBe(MACHINE);
+    });
+
     it("uploads raw parts left on disk before the first tick", async () => {
         fs.writeFileSync(path.join(dir, `2026-10-14.13.${String(T0 - 60 * MINUTE).padStart(13, "0")}.ndjson`), '{"endpoint":"positions","pollEpoch":1}\n');
 
@@ -429,16 +638,11 @@ describe("startup", () => {
 });
 
 describe("days", () => {
-    it("closes the fall-back day at 03:15 CST on 2026-11-01 and no earlier", async () => {
+    it("closes the fall-back day at 03:15 CST on 2026-11-01 and no earlier, from a checkpoint written before the stop marker existed", async () => {
         h = harness({ start: Date.parse("2026-11-01T09:14:00Z") }); // 03:14 CST
         const tracker = createDayTracker("2026-10-31");
-        await putCheckpoint(h.store, {
-            version: 1,
-            machineId: MACHINE,
-            writtenAt: h.clock.value - MINUTE,
-            released: false,
-            state: { version: 1, trackers: [tracker], sweep: { openLive: {} }, quota: { chicagoDate: "2026-11-01", calls: 0, stopped: false, stopReason: null }, previousDay: null, ticks: 0 },
-        });
+        const legacy: Omit<WorkerState, "stoppedDays"> = { version: 1, trackers: [tracker], sweep: { openLive: {} }, quota: { chicagoDate: "2026-11-01", calls: 0, stopped: false, stopReason: null }, previousDay: null, ticks: 0 };
+        await putCheckpoint(h.store, { version: 1, machineId: MACHINE, writtenAt: h.clock.value - MINUTE, released: false, state: legacy as WorkerState });
 
         await h.run({ maxTicks: 2 });
 
@@ -447,27 +651,115 @@ describe("days", () => {
         const closeTick = h.logged.findIndex((l) => l.startsWith("service day 2026-10-31 closed"));
         const firstTick = h.logged.findIndex((l) => l.startsWith("tick 1:"));
         expect(closeTick).toBeGreaterThan(firstTick); // the 03:14 tick ran first, the close came with the 03:15 tick
+        expect((await h.checkpoint())?.state.stoppedDays).toEqual({});
     });
 
     it("waits for the feed's latest stop time when it runs past 03:00", async () => {
         h = harness({ start: parseChicagoLocal("2026-10-15 03:20:00") });
         await seedCheckpoint({ writtenAt: h.clock.value - MINUTE });
 
-        await h.run({ maxTicks: 1, latestStopSeconds: 27 * 3600 + 40 * 60 }); // closes at 03:55
+        await h.run({ maxTicks: 1, latestStopSeconds: () => 27 * 3600 + 40 * 60 }); // closes at 03:55
         expect(h.closed).toEqual([]);
     });
 
-    it("serializes a closed day to the store when no reducer is wired", async () => {
+    it("reads the feed's latest stop time at each close, so a schedule refreshed while running moves the close", async () => {
+        h = harness({ start: parseChicagoLocal("2026-10-15 03:20:00") });
+        await seedCheckpoint({ writtenAt: h.clock.value - MINUTE });
+        let latestStopSeconds: number | undefined = 27 * 3600 + 40 * 60; // closes at 03:55 ...
+        h.source.onBeforeCall = () => {
+            if (h.source.positionsCalls === 1) latestStopSeconds = undefined; // ... until the feed read after the first tick says 03:15
+        };
+
+        await h.run({ maxTicks: 2, latestStopSeconds: () => latestStopSeconds });
+
+        expect(h.closed.map((t) => t.serviceDate)).toEqual(["2026-10-14"]);
+        const closeLine = h.logged.findIndex((l) => l.startsWith("service day 2026-10-14 closed"));
+        const firstTick = h.logged.findIndex((l) => l.startsWith("tick 11:"));
+        expect(closeLine).toBeGreaterThan(firstTick);
+    });
+
+    it("serializes a closed day to the store before the close hook runs, and records nothing else without a reducer", async () => {
         await seedCheckpoint();
         h.clock.value = parseChicagoLocal("2026-10-15 03:20:00");
-
-        await h.run({ maxTicks: 1, hooks: {} });
-
+        let snapshotAtClose: boolean | null = null;
+        await h.run({
+            maxTicks: 1,
+            hooks: {
+                onDayClose: async (tracker) => {
+                    snapshotAtClose = (await h.store.head(dayStateKey(tracker.serviceDate))) !== null;
+                    return { serviceDate: tracker.serviceDate, reduced: false, revalidated: false, compacted: false };
+                },
+            },
+        });
+        expect(snapshotAtClose).toBe(true);
         const object = await h.store.get(dayStateKey("2026-10-14"));
         expect(object).not.toBeNull();
         const stored = JSON.parse(gunzipSync(object!.body).toString("utf8")) as TrackerState;
         expect(Object.keys(stored.slots)).toEqual(["41190|30228|red|x"]);
         expect((await h.checkpoint())?.state.previousDay).toEqual({ serviceDate: "2026-10-14", reduced: false, revalidated: false, compacted: false });
+
+        // The default hooks: the same, with no reducer wired at all.
+        await seedCheckpoint();
+        await h.store.delete(dayStateKey("2026-10-14"));
+        await h.run({ maxTicks: 1, hooks: {} });
+        expect(await h.store.head(dayStateKey("2026-10-14"))).not.toBeNull();
+        expect((await h.checkpoint())?.state.previousDay).toEqual({ serviceDate: "2026-10-14", reduced: false, revalidated: false, compacted: false });
+    });
+
+    it("fills the gap days after a close as well as at startup", async () => {
+        h = harness({ start: parseChicagoLocal("2026-10-15 03:14:00") });
+        await seedCheckpoint({ writtenAt: h.clock.value - MINUTE });
+
+        await h.run({ maxTicks: 2 });
+
+        expect(h.closed.map((t) => t.serviceDate)).toEqual(["2026-10-14"]);
+        expect(h.gapFills).toEqual([parseChicagoLocal("2026-10-15 03:14:00"), parseChicagoLocal("2026-10-15 03:15:00")]);
+    });
+
+    it("uploads the day's last raw part before the close hook, so the compacted day object holds every line of the day", async () => {
+        h = harness({ start: parseChicagoLocal("2026-10-15 01:50:00") });
+        const compactions: CompactionResult[] = [];
+
+        await h.run({ maxTicks: 90, hooks: compactingHooks(h, compactions) }); // 01:50 through 03:19
+
+        expect(h.closeContexts.map((c) => [c.serviceDate, c.context.rawPending, c.context.stopReason])).toEqual([["2026-10-14", false, null]]);
+        expect(h.logged.filter((l) => l.startsWith("raw part not uploaded"))).toEqual([]);
+        // The 01:xx part went up when 02:00 closed it, the 02:xx part when 03:00 did: two parts, every line, in order.
+        expect(compactions).toEqual([expect.objectContaining({ status: "compacted", parts: 2 })]);
+        const appended = callsOn("2026-10-14");
+        expect(appended).toHaveLength(70 * 3); // 01:50 through 02:59, three calls a tick
+        expect((await readRawDay(h.store, "2026-10-14"))?.map((l) => l.pollEpoch)).toEqual(appended);
+        expect(await h.store.head(dayObjectKey("2026-10-14"))).not.toBeNull();
+        expect(await h.store.list(dayPartsPrefix("2026-10-14"))).toEqual([]);
+        expect(h.finished).toEqual([]);
+        expect((await h.checkpoint())?.state.previousDay).toEqual({ serviceDate: "2026-10-14", reduced: true, revalidated: true, compacted: true });
+    });
+
+    it("tells the hook when the day's last part is still on disk, and finishes the day once an upload pass has cleared it", async () => {
+        // Raw uploads fail from 02:59 to 03:20: the part that closes at 03:00 and the retry at the 03:15 close both stay on disk.
+        const failing = [parseChicagoLocal("2026-10-15 02:59:00"), parseChicagoLocal("2026-10-15 03:20:00")];
+        h = harness({ start: parseChicagoLocal("2026-10-15 02:50:00"), rawUploadFailsWhile: (now) => now >= failing[0] && now < failing[1] });
+        const compactions: CompactionResult[] = [];
+        const hooks = compactingHooks(h, compactions);
+        let partsInStoreAtFinish = -1;
+        const finishDay = hooks.finishDay;
+        hooks.finishDay = async (day) => {
+            partsInStoreAtFinish = (await h.store.list(dayPartsPrefix(day.serviceDate))).length;
+            return finishDay(day);
+        };
+
+        await h.run({ maxTicks: 65, hooks }); // 02:50 through 03:54: the hourly retry falls at 03:50
+
+        expect(h.closeContexts.map((c) => [c.serviceDate, c.context.rawPending])).toEqual([["2026-10-14", true]]);
+        expect(h.logged).toContain("2026-10-14: a raw part is still on disk; the day compacts once it is uploaded");
+        expect(h.logged.filter((l) => l.startsWith("raw part not uploaded"))).toHaveLength(2);
+        expect(h.finished).toEqual([{ serviceDate: "2026-10-14", reduced: true, revalidated: true, compacted: false }]);
+        expect(partsInStoreAtFinish).toBe(1);
+        expect(compactions).toEqual([expect.objectContaining({ status: "compacted", parts: 1 })]);
+        const appended = callsOn("2026-10-14");
+        expect(appended).toHaveLength(10 * 3);
+        expect((await readRawDay(h.store, "2026-10-14"))?.map((l) => l.pollEpoch)).toEqual(appended);
+        expect((await h.checkpoint())?.state.previousDay).toEqual({ serviceDate: "2026-10-14", reduced: true, revalidated: true, compacted: true });
     });
 });
 
@@ -490,7 +782,13 @@ describe("shutdown and the lease", () => {
     it("exits without overwriting when the checkpoint changed under it", async () => {
         h.source.onBeforeCall = () => {
             if (h.source.positionsCalls === 2 && h.source.arrivalsCalls.length === 2) {
-                void putCheckpoint(h.store, { version: 1, machineId: "other", writtenAt: h.clock.value, released: false, state: { version: 1, trackers: [], sweep: { openLive: {} }, quota: { chicagoDate: "2026-10-14", calls: 0, stopped: false, stopReason: null }, previousDay: null, ticks: 99 } });
+                void putCheckpoint(h.store, {
+                    version: 1,
+                    machineId: "other",
+                    writtenAt: h.clock.value,
+                    released: false,
+                    state: { version: 1, trackers: [], sweep: { openLive: {} }, quota: { chicagoDate: "2026-10-14", calls: 0, stopped: false, stopReason: null }, stoppedDays: {}, previousDay: null, ticks: 99 },
+                });
             }
         };
 

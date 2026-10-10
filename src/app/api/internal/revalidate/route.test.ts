@@ -66,16 +66,29 @@ describe("POST /api/internal/revalidate", () => {
         expect(revalidateTag).toHaveBeenCalledWith(STATIONS_CACHE_TAG, { expire: 0 });
     });
 
-    it("answers 401 to a wrong secret, the cron secret, no header, or an unset secret, without reading the database", async () => {
+    it("answers 401 to a wrong secret, the cron secret, no header, or an unset or blank secret, without reading the database", async () => {
         expect((await POST(request({ authorization: "Bearer wrong" }))).status).toBe(401);
         expect((await POST(request({ authorization: "Bearer test-cron-secret" }))).status).toBe(401);
         expect((await POST(request())).status).toBe(401);
 
         vi.stubEnv("WORKER_REVALIDATE_SECRET", "");
         expect((await POST(request({ authorization: "Bearer " }))).status).toBe(401);
+        vi.stubEnv("WORKER_REVALIDATE_SECRET", " ");
+        expect((await POST(request({ authorization: "Bearer " }))).status).toBe(401);
+        expect((await POST(request({ authorization: "Bearer  " }))).status).toBe(401);
 
         expect(prismaMock.liveDay.findFirst).not.toHaveBeenCalled();
         expect(revalidateTag).not.toHaveBeenCalled();
+    });
+
+    it("trims the configured secret, as the worker trims its copy", async () => {
+        vi.stubEnv("WORKER_REVALIDATE_SECRET", " ghrv_test-worker-secret\n");
+        prismaMock.liveDay.findFirst.mockResolvedValue({ reducedAt: minutesAgo(1) } as never);
+
+        const response = await POST(request({ authorization: "Bearer ghrv_test-worker-secret" }));
+
+        expect(response.status).toBe(200);
+        expect(await response.json()).toEqual({ revalidated: [STATIONS_CACHE_TAG] });
     });
 
     it("is POST only, so Next answers GET with 405", () => {

@@ -7,18 +7,26 @@
  * Ticks are computed from a start epoch, never from the previous tick's end, so a slow tick does
  * not shift the schedule; a tick that would start late by a minute or more is skipped and the
  * minute stays without a ledger record, which is how the ledger says "missed". Ticks never
- * overlap: the sweep works to a budget inside the minute and marks the batches it could not make
- * as failed.
+ * overlap: the sweep works to a budget inside the minute, marks the batches it could not make
+ * as failed, and writes each of them a raw line of its own, so a replay sees the same miss.
  *
  * Startup follows KTD2: the checkpoint is loaded whenever any of its days is still open, whatever
  * its age, and the minutes since it was written stay missed; a day the checkpoint shows closed is
  * handed to the close hook first. The checkpoint is also the single-instance lease: an unreleased
- * one under three minutes old from another machine id makes this instance exit, and a lost
- * conditional put later does the same.
+ * one under three minutes old from another machine id makes this instance exit, the first
+ * conditional put is made before any other work so two successors never both close a day, and a
+ * lost conditional put later ends the instance the same way.
+ *
+ * Raw parts: a part that has closed (its hour or its day rolled) is uploaded on the next tick, and
+ * one that failed to upload is retried hourly. At day close the day's last part goes up before the
+ * close hook runs, so the compaction has every hour; when it cannot, the hook is told and the day
+ * is finished later, once an upload pass has cleared it.
  *
  * Quota (KTD14): calls are counted per Chicago day in the checkpoint; at the hard stop, or on
  * CTA's error 102, calls stop until the day resets, the fail URL is posted once, and every later
- * minute stays missed. A revoked key (101) is treated the same way, so the alert reaches Nate.
+ * minute stays missed. A service day outlives the midnight reset, so the stop is also marked on
+ * every service day it touches and the day closes with the cause. A revoked key (101) is treated
+ * the same way, so the alert reaches Nate.
  */
 import { setTimeout as wait } from "node:timers/promises";
 import { todayInChicago } from "@/lib/cta/closures";
@@ -26,7 +34,7 @@ import type { Healthchecks } from "./healthchecks";
 import { GHOST_TOLERANCE_MINUTES } from "./matcher";
 import { gzipJson, PreconditionFailedError, type ObjectStore } from "./objectStore";
 import { getCheckpoint, isCheckpointHeld, putCheckpoint, type Checkpoint, type RawWriter } from "./rawStore";
-import { dayCloseInstant, MINUTE_MS } from "./serviceDay";
+import { dayCloseInstant, MINUTE_MS, serviceDateOf } from "./serviceDay";
 import { applyTick, createDayTracker, createSweepState, type SweepState, type TickInput, type TrackerState } from "./tracker";
 import {
     ARRIVALS_BATCH_SIZE,
@@ -51,7 +59,7 @@ export const DEFAULT_TICK_BUDGET_MS = 55_000;
 /** Open live predictions unseen for this long are forgotten (a board that stopped answering). */
 const OPEN_LIVE_TTL_MS = 2 * 60 * MINUTE_MS;
 
-/** Raw parts left on disk by a failed upload are retried this often. */
+/** Raw parts left on disk by a failed upload are retried this often; a part that has just closed goes up at once. */
 const UPLOAD_PASS_EVERY_TICKS = 60;
 
 export type StopReason = "quota" | "key";
@@ -66,7 +74,11 @@ export interface Quota {
     stopReason: StopReason | null;
 }
 
-/** How far a closed day got: reduced and written, the site refreshed, the raw day compacted (U8). */
+/**
+ * How far a closed day got (U8): `reduced` says its rows were written (false after a refused
+ * write, which an operator re-reduces by hand); `revalidated` and `compacted` say the site was
+ * refreshed and the raw day compacted. The day is done when those two hold.
+ */
 export interface DayReduction {
     serviceDate: string;
     reduced: boolean;
@@ -80,14 +92,21 @@ export interface WorkerState {
     trackers: TrackerState[];
     sweep: SweepState;
     quota: Quota;
+    /** Service days calls stopped during, by date, until each closes: the midnight reset does not clear them. */
+    stoppedDays: Record<string, StopReason>;
     previousDay: DayReduction | null;
     ticks: number;
 }
 
 export interface LoopHooks {
-    /** A day has closed: reduce, write, revalidate, compact (U8). The default only serializes it to the store. */
-    onDayClose(tracker: TrackerState, context: { closedAt: number; quota: Quota }): Promise<DayReduction>;
-    /** At startup, finish a day left reduced but not revalidated or compacted (U8). */
+    /**
+     * A day has closed and its tracker is in the store: reduce, write, revalidate, compact (U8).
+     * `stopReason` is set when calls stopped at any point of the day. `rawPending` says a raw part
+     * of the day is still on disk, and the hook must then leave the compaction to `finishDay`,
+     * which the loop calls once an upload pass has cleared the part. The default records nothing.
+     */
+    onDayClose(tracker: TrackerState, context: { closedAt: number; quota: Quota; stopReason: StopReason | null; rawPending: boolean }): Promise<DayReduction>;
+    /** Finishes a day left not revalidated or not compacted: at startup, and after an upload pass clears its parts (U8). */
     finishDay(day: DayReduction): Promise<DayReduction>;
     /** At startup and after each close, write set-aside rows for days with no record (KTD7, U8). */
     fillGaps(nowEpochMs: number): Promise<void>;
@@ -130,8 +149,8 @@ export interface LoopOptions {
     stations: () => readonly string[];
     machineId: string;
     toleranceMinutes?: number;
-    /** The feed's latest scheduled stop time, when known, which may push the close past 03:15. */
-    latestStopSeconds?: number;
+    /** The feed's latest scheduled stop time, when known, which may push the close past 03:15; read at each close. */
+    latestStopSeconds?: () => number | undefined;
     now?: () => number;
     sleep?: (ms: number, signal: AbortSignal) => Promise<void>;
     /** Shutdown: aborts the sleep, finishes the tick, uploads the open part, releases the checkpoint. */
@@ -154,7 +173,7 @@ export interface LoopResult {
 
 export const dayStateKey = (serviceDate: string) => `days/v1/${serviceDate}.json.gz`;
 
-/** A closed day's tracker, serialized whole beside its raw record. */
+/** A closed day's tracker, serialized whole beside its raw record: the record of what the worker held. */
 export async function serializeClosedDay(store: ObjectStore, tracker: TrackerState): Promise<void> {
     await store.put(dayStateKey(tracker.serviceDate), gzipJson(tracker), { contentType: "application/gzip" });
 }
@@ -164,8 +183,11 @@ export function freshQuota(chicagoDate: string): Quota {
 }
 
 export function freshWorkerState(chicagoDate: string): WorkerState {
-    return { version: 1, trackers: [], sweep: createSweepState(), quota: freshQuota(chicagoDate), previousDay: null, ticks: 0 };
+    return { version: 1, trackers: [], sweep: createSweepState(), quota: freshQuota(chicagoDate), stoppedDays: {}, previousDay: null, ticks: 0 };
 }
+
+/** A closed day needs nothing more once the site is refreshed and its raw day is compacted. */
+const isDone = (day: DayReduction): boolean => day.revalidated && day.compacted;
 
 function chunk<T>(items: readonly T[], size: number): T[][] {
     const chunks: T[][] = [];
@@ -183,16 +205,13 @@ export async function runLoop(options: LoopOptions): Promise<LoopResult> {
     const tickBudgetMs = options.tickBudgetMs ?? DEFAULT_TICK_BUDGET_MS;
     const random = options.random ?? Math.random;
     const hooks: LoopHooks = {
-        onDayClose: async (tracker) => {
-            await serializeClosedDay(options.store, tracker);
-            return { serviceDate: tracker.serviceDate, reduced: false, revalidated: false, compacted: false };
-        },
+        onDayClose: async (tracker) => ({ serviceDate: tracker.serviceDate, reduced: false, revalidated: false, compacted: false }),
         finishDay: async (day) => day,
         fillGaps: async () => {},
         ...options.hooks,
     };
 
-    // Startup: the checkpoint, the lease, and the days it left open or closed.
+    // Startup: the checkpoint and the lease, then the days the checkpoint left open or closed.
     let etag: string | null = null;
     let state: WorkerState;
     const read = await getCheckpoint<WorkerState>(options.store);
@@ -203,6 +222,7 @@ export async function runLoop(options: LoopOptions): Promise<LoopResult> {
     if (read !== null) {
         etag = read.etag;
         state = read.checkpoint.state;
+        state.stoppedDays ??= {}; // a checkpoint written before the stop marker existed
         const age = Math.round((now() - read.checkpoint.writtenAt) / MINUTE_MS);
         log(`checkpoint from machine ${read.checkpoint.machineId} loaded, ${age} min old, ${state.trackers.length} open day(s)`);
     } else {
@@ -210,7 +230,7 @@ export async function runLoop(options: LoopOptions): Promise<LoopResult> {
         log("no checkpoint; starting fresh");
     }
     const trackers = new Map(state.trackers.map((t) => [t.serviceDate, t]));
-    const closeOf = (serviceDate: string) => dayCloseInstant(serviceDate, tolerance, options.latestStopSeconds);
+    const closeOf = (serviceDate: string) => dayCloseInstant(serviceDate, tolerance, options.latestStopSeconds?.());
     /** The day's tracker, created on first use; null once the day has closed. */
     const trackerFor = (serviceDate: string): TrackerState | null => {
         let tracker = trackers.get(serviceDate);
@@ -221,15 +241,8 @@ export async function runLoop(options: LoopOptions): Promise<LoopResult> {
         }
         return tracker;
     };
-
-    async function closeDaysBefore(epochMs: number): Promise<void> {
-        for (const [serviceDate, tracker] of [...trackers.entries()].sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))) {
-            if (closeOf(serviceDate) > epochMs) continue;
-            trackers.delete(serviceDate);
-            log(`service day ${serviceDate} closed: ${Object.keys(tracker.slots).length} slots, ${tracker.passages.length} passages, ${Object.keys(tracker.minutes).length} minutes`);
-            state.previousDay = await hooks.onDayClose(tracker, { closedAt: epochMs, quota: state.quota });
-        }
-    }
+    /** Part files on disk after the last upload pass; a different count means a part has closed since. */
+    let lastPending = 0;
 
     async function writeCheckpoint(released: boolean): Promise<boolean> {
         state.trackers = [...trackers.values()];
@@ -248,12 +261,41 @@ export async function runLoop(options: LoopOptions): Promise<LoopResult> {
         }
     }
 
-    if (state.previousDay !== null && !(state.previousDay.reduced && state.previousDay.revalidated && state.previousDay.compacted)) {
-        state.previousDay = await hooks.finishDay(state.previousDay);
+    /** Uploads the closed parts and, once none of the previous day's is left on disk, finishes that day. */
+    async function uploadPass(): Promise<string[]> {
+        const uploaded = await options.rawWriter.uploadPending();
+        lastPending = options.rawWriter.pendingFiles().length;
+        const day = state.previousDay;
+        if (day !== null && !isDone(day) && options.rawWriter.pendingFiles(day.serviceDate).length === 0) {
+            state.previousDay = await hooks.finishDay(day);
+        }
+        return uploaded;
     }
-    await closeDaysBefore(now());
-    const leftovers = await options.rawWriter.uploadPending();
+
+    async function closeDaysBefore(epochMs: number): Promise<void> {
+        for (const [serviceDate, tracker] of [...trackers.entries()].sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))) {
+            if (closeOf(serviceDate) > epochMs) continue;
+            trackers.delete(serviceDate);
+            const stopReason = state.stoppedDays[serviceDate] ?? null;
+            log(`service day ${serviceDate} closed: ${Object.keys(tracker.slots).length} slots, ${tracker.passages.length} passages, ${Object.keys(tracker.minutes).length} minutes${stopReason === null ? "" : `, calls stopped (${stopReason})`}`);
+            // The day's last raw part goes up before the hook, so the compaction has every hour.
+            options.rawWriter.closeOpenPart(serviceDate);
+            await uploadPass();
+            const rawPending = options.rawWriter.pendingFiles(serviceDate).length > 0;
+            if (rawPending) log(`${serviceDate}: a raw part is still on disk; the day compacts once it is uploaded`);
+            await serializeClosedDay(options.store, tracker);
+            // The quota as it stood at the close, a copy: the midnight reset must not rewrite the record.
+            state.previousDay = await hooks.onDayClose(tracker, { closedAt: epochMs, quota: { ...state.quota }, stopReason, rawPending });
+            delete state.stoppedDays[serviceDate];
+            await hooks.fillGaps(epochMs);
+        }
+    }
+
+    // The lease first: nothing below runs until this instance holds the checkpoint.
+    if (!(await writeCheckpoint(false))) return { ticks: 0, exit: "lost-lease" };
+    const leftovers = await uploadPass();
     if (leftovers.length > 0) log(`uploaded ${leftovers.length} raw part(s) left on disk`);
+    await closeDaysBefore(now());
     await hooks.fillGaps(now());
 
     // The tick schedule: whole minutes from the first tick.
@@ -288,6 +330,9 @@ export async function runLoop(options: LoopOptions): Promise<LoopResult> {
         rolloverQuota(state.quota, todayInChicago(new Date(pollEpoch)));
         if (state.quota.stopped) {
             // No call and no ledger record: the minute stays missed, as the day's record will say.
+            // The day still gets its tracker and the stop's mark, so one stopped throughout closes with the cause.
+            const day = serviceDateOf(pollEpoch);
+            if (trackerFor(day) !== null) state.stoppedDays[day] ??= state.quota.stopReason ?? "quota";
             ticks += 1;
             state.ticks += 1;
             if (!(await writeCheckpoint(false))) return { ticks, exit: "lost-lease" };
@@ -301,21 +346,27 @@ export async function runLoop(options: LoopOptions): Promise<LoopResult> {
         ticks += 1;
         state.ticks += 1;
 
-        if (tick.stop !== null) await stopCalls(tick.stop, tick.stop === "quota" ? "daily quota exhausted" : "key refused");
-        else if (state.quota.calls >= QUOTA_HARD_STOP) await stopCalls("quota", `${QUOTA_HARD_STOP} calls today`);
+        if (tick.stop !== null) await stopCalls(tick.stop, pollEpoch, tick.stop === "quota" ? "daily quota exhausted" : "key refused");
+        else if (state.quota.calls >= QUOTA_HARD_STOP) await stopCalls("quota", pollEpoch, `${QUOTA_HARD_STOP} calls today`);
 
         if (!(await writeCheckpoint(false))) return { ticks, exit: "lost-lease" };
         if (tick.success) await options.healthchecks?.ping();
-        if (ticks % UPLOAD_PASS_EVERY_TICKS === 1) await options.rawWriter.uploadPending();
+        // A part that has just closed goes up now; one that failed to upload waits for the hourly pass.
+        const pending = options.rawWriter.pendingFiles().length;
+        if (pending > 0 && (pending !== lastPending || ticks % UPLOAD_PASS_EVERY_TICKS === 1)) await uploadPass();
         log(`tick ${state.ticks}: ${taken.calls} calls, ${taken.failures} failed, ${Math.round(taken.bytes / 1024)} KB, ${now() - pollEpoch} ms${tick.success ? "" : ", no ping"}`);
     }
     await shutdown(true);
     return { ticks, exit: "stopped" };
 
-    /** Stops the calls until the Chicago day resets and posts the fail URL once (KTD13, KTD14). */
-    async function stopCalls(reason: StopReason, why: string): Promise<void> {
+    /**
+     * Stops the calls until the Chicago day resets, marks the poll's service day and every open
+     * one with the cause, and posts the fail URL once (KTD13, KTD14).
+     */
+    async function stopCalls(reason: StopReason, pollEpoch: number, why: string): Promise<void> {
         state.quota.stopped = true;
         state.quota.stopReason = reason;
+        for (const day of new Set([serviceDateOf(pollEpoch), ...trackers.keys()])) state.stoppedDays[day] ??= reason;
         log(`${why}; calls stop until the Chicago day resets`);
         await options.healthchecks?.fail();
     }
@@ -329,6 +380,15 @@ export async function runLoop(options: LoopOptions): Promise<LoopResult> {
         const classify = (error: unknown): void => {
             if (error instanceof TrainTrackerQuotaError) stop = "quota";
             else if (error instanceof TrainTrackerKeyError) stop = "key";
+        };
+        /**
+         * A batch the sweep never sent gets a raw line of its own, written past the sink so it is
+         * neither a call nor quota, and a replay lists its stations as not polled (KTD3). It is
+         * stamped with the moment it was passed over, after the positions call, so the replay
+         * groups it with this tick rather than the one before.
+         */
+        const notRequested = (stationIds: string[]): void => {
+            options.rawWriter.append({ endpoint: "arrivals", pollEpoch: now(), stationIds, httpStatus: null, body: null, errorCode: null, failure: "not-requested", durationMs: 0 });
         };
 
         let positions: PositionsResponse | null = null;
@@ -346,12 +406,16 @@ export async function runLoop(options: LoopOptions): Promise<LoopResult> {
             for (;;) {
                 const index = next++;
                 if (index >= batches.length) return;
-                if (stopped() || now() > deadline) continue;
+                if (stopped() || now() > deadline) {
+                    notRequested(batches[index]);
+                    continue;
+                }
                 if (jitterMs > 0) {
                     try {
                         await sleep(Math.floor(random() * jitterMs), options.signal);
                     } catch {
-                        return;
+                        notRequested(batches[index]); // shutdown: the rest of the sweep is passed over
+                        continue;
                     }
                 }
                 try {
@@ -371,6 +435,7 @@ export async function runLoop(options: LoopOptions): Promise<LoopResult> {
         return { input: { pollEpoch, positions, arrivals: results }, success, stop };
     }
 
+    /** The open part is closed and every part uploaded; a previous day left unfinished waits for the successor. */
     async function shutdown(released: boolean): Promise<void> {
         options.rawWriter.closeOpenPart();
         await options.rawWriter.uploadPending();

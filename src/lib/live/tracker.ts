@@ -13,17 +13,30 @@
  *   passage time is the last live predicted arrival.
  *
  * A prediction belongs to the day of the time it names, so the minutes around 03:00 feed two
- * open days. Live predictions still on a board are held across ticks in `SweepState`, which is
- * shared by every open day. Each day also keeps a poll ledger: per minute of the day, whether the
- * positions call succeeded, the stations whose arrivals batch failed, the live trains seen per
- * route, and the entries the parser could not read. A minute with no record is a minute the
- * worker did not poll.
+ * open days. The boundary is read with the close margin's grace (`OVERLAP_MS`): a live train whose
+ * arrival slipped from 02:58 to 03:02 is still the train the earlier day's slot was waiting for,
+ * so its sighting marks that day's slots too, and its passage is filed under both days when the
+ * arrival it first named falls in the other. Each day's stops are disjoint, so a day credits a
+ * train at most once, and the doubling is bounded to those minutes.
+ *
+ * Live predictions still on a board are held across ticks in `SweepState`, which is shared by
+ * every open day. Each day also keeps a poll ledger: per minute of the day, whether the positions
+ * call succeeded, the stations whose arrivals batch failed, the live trains seen per route, and
+ * the entries the parser could not read. A minute with no record is a minute the worker did not
+ * poll.
  */
-import { MINUTE_MS, minuteIndexOf, serviceDateOf } from "./serviceDay";
+import { DAY_CLOSE_MARGIN_MINUTES, MINUTE_MS, minuteIndexOf, serviceDateOf } from "./serviceDay";
 import { TRAIN_ROUTES, type ArrivalsResponse, type PositionsResponse, type TrainRoute } from "./trainTracker";
 
 /** A live prediction counts as "about to arrive" within this many ms of the poll. */
 export const PASSAGE_WINDOW_MS = 2 * MINUTE_MS;
+
+/**
+ * How far past a day's end a live prediction still speaks for that day: a slot of the day whose
+ * run shows live for a time this far into the next is marked, and a passage first predicted for
+ * the day is filed under it too. The close margin, within which the day is still open to take them.
+ */
+const OVERLAP_MS = DAY_CLOSE_MARGIN_MINUTES * MINUTE_MS;
 
 export interface Slot {
     key: string;
@@ -63,6 +76,8 @@ export interface OpenLive {
     route: TrainRoute;
     run: string;
     lastSeen: number;
+    /** The predicted arrival when first seen, never updated. Absent only in a checkpoint written before the field; read as `lastArrival`. */
+    firstArrival?: number;
     lastArrival: number;
     /** Showed "approaching", or an arrival within the passage window of the poll, at some tick. */
     near: boolean;
@@ -132,6 +147,11 @@ function indexSlot(index: Map<string, Slot[]>, slot: Slot): void {
     else list.push(slot);
 }
 
+/** The day's slots at one platform and route, in the order they were opened. */
+export function slotsAtPlatform(tracker: TrackerState, stationId: string, stopId: string, route: TrainRoute): readonly Slot[] {
+    return platformSlots(tracker).get(platformKey(stationId, stopId, route)) ?? [];
+}
+
 /** One tick's results as the loop hands them over; a null response is a failed call. */
 export interface TickInput {
     pollEpoch: number;
@@ -190,8 +210,11 @@ export function applyTick(sweep: SweepState, trackerFor: TrackerFor, tick: TickI
                         fault: prediction.fault,
                         liveSameRunAt: null,
                     };
+                    // The index builds lazily from `day.slots`, so take it before the insert: a first
+                    // slot inserted first would be indexed by the build and then again here.
+                    const index = platformSlots(day);
                     day.slots[key] = created;
-                    indexSlot(platformSlots(day), created);
+                    indexSlot(index, created);
                 } else {
                     slot.lastSeen = tick.pollEpoch;
                     if (!slot.runs.includes(run)) slot.runs.push(run);
@@ -205,16 +228,18 @@ export function applyTick(sweep: SweepState, trackerFor: TrackerFor, tick: TickI
             const near = prediction.approaching || prediction.arrivalAt - tick.pollEpoch <= PASSAGE_WINDOW_MS;
             const open = sweep.openLive[key];
             if (open === undefined) {
-                sweep.openLive[key] = { stationId, stopId, route, run, lastSeen: tick.pollEpoch, lastArrival: prediction.arrivalAt, near };
+                sweep.openLive[key] = { stationId, stopId, route, run, lastSeen: tick.pollEpoch, firstArrival: prediction.arrivalAt, lastArrival: prediction.arrivalAt, near };
             } else {
                 open.lastSeen = tick.pollEpoch;
                 open.lastArrival = prediction.arrivalAt;
                 open.near = open.near || near;
             }
             // A live train with a run an open slot carried, at the slot's platform: the slot was replaced.
-            for (const day of new Set([trackerFor(serviceDateOf(prediction.arrivalAt)), pollTracker])) {
+            // The slot sits in the day the arrival names, or in the day before when the arrival is
+            // within the overlap of its end (a 02:58 slot whose train now reads 03:02), or the poll's day.
+            for (const day of new Set([trackerFor(serviceDateOf(prediction.arrivalAt)), trackerFor(serviceDateOf(prediction.arrivalAt - OVERLAP_MS)), pollTracker])) {
                 if (day === null) continue;
-                for (const slot of platformSlots(day).get(platformKey(stationId, stopId, route)) ?? []) {
+                for (const slot of slotsAtPlatform(day, stationId, stopId, route)) {
                     if (slot.liveSameRunAt === null && slot.runs.includes(run)) slot.liveSameRunAt = tick.pollEpoch;
                 }
             }
@@ -227,9 +252,7 @@ export function applyTick(sweep: SweepState, trackerFor: TrackerFor, tick: TickI
         if (seenNow.has(key) || !polled.has(open.stationId)) continue;
         delete sweep.openLive[key];
         if (!open.near) continue;
-        const day = trackerFor(serviceDateOf(open.lastArrival));
-        if (day === null) continue;
-        day.passages.push({
+        const passage: Passage = {
             stationId: open.stationId,
             stopId: open.stopId,
             route: open.route,
@@ -237,7 +260,15 @@ export function applyTick(sweep: SweepState, trackerFor: TrackerFor, tick: TickI
             arrivedAt: open.lastArrival,
             lastSeen: open.lastSeen,
             vanishedAt: tick.pollEpoch,
-        });
+        };
+        // Filed under the day of the passage time, and under the day of the arrival first predicted
+        // when that differs: a train predicted for 02:58 that came at 03:02 is the one the earlier
+        // day's stop was waiting for. Each day's stops are disjoint, so each day credits it at most
+        // once, and only a train that crossed 03:00 while on a board is filed twice.
+        for (const date of new Set([serviceDateOf(open.lastArrival), serviceDateOf(open.firstArrival ?? open.lastArrival)])) {
+            const day = trackerFor(date);
+            if (day !== null) day.passages.push(passage);
+        }
     }
 }
 
@@ -249,12 +280,6 @@ export function minutesWithin(tracker: TrackerState, expectedPolls: number): Min
         if (minute >= 0 && minute < expectedPolls) records.push(record);
     }
     return records;
-}
-
-/** Minutes of the day (under its expected count) with a record, and how many had a working positions call. */
-export function ledgerSummary(tracker: TrackerState, expectedPolls: number): { polled: number; positionsOk: number } {
-    const records = minutesWithin(tracker, expectedPolls);
-    return { polled: records.length, positionsOk: records.filter((r) => r.p === 1).length };
 }
 
 /** The minutes (under the expected count) a station's arrivals batch succeeded in. */

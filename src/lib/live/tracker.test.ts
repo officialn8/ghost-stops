@@ -5,8 +5,9 @@ import {
     createDayTracker,
     createSweepState,
     hasGap,
-    ledgerSummary,
+    minutesWithin,
     slotKey,
+    slotsAtPlatform,
     stationPolls,
     type TickInput,
     type TrackerState,
@@ -133,6 +134,15 @@ describe("slots", () => {
         h.apply(tick(T0 + 2 * MINUTE, [prediction({ run: "901", arrivalAt: scheduledAt + 3 * MINUTE })]));
         expect(h.day().slots[slotKey(JARVIS, SOUTH, "red", scheduledAt)].liveSameRunAt).toBe(T0 + 2 * MINUTE);
     });
+
+    it("indexes every slot at its platform once, the tracker's first slot included", () => {
+        const h = harness();
+        const minutes = [5, 13, 21];
+        h.apply(tick(T0, minutes.map((minute) => prediction({ scheduled: true, run: `9${minute}`, arrivalAt: T0 + minute * MINUTE }))));
+
+        expect(slotsAtPlatform(h.day(), JARVIS, SOUTH, "red").map((s) => s.key)).toEqual(minutes.map((minute) => slotKey(JARVIS, SOUTH, "red", T0 + minute * MINUTE)));
+        expect(slotsAtPlatform(h.day(), JARVIS, NORTH, "red")).toEqual([]);
+    });
 });
 
 describe("passages", () => {
@@ -197,7 +207,6 @@ describe("the ledger", () => {
         const index = minuteIndexOf("2026-10-14", T0);
         expect(h.day().minutes[String(index)]).toEqual({ p: 1, f: ["40900"], t: [17, 0, 0, 0, 0, 1, 0, 0], m: 0 });
         expect(h.day().minutes[String(index + 1)]).toEqual({ p: 0, f: [], t: null, m: 0 });
-        expect(ledgerSummary(h.day(), 1_440)).toEqual({ polled: 2, positionsOk: 1 });
         expect(stationPolls(h.day(), "40900", 1_440)).toBe(1);
         expect(stationPolls(h.day(), JARVIS, 1_440)).toBe(2);
     });
@@ -231,7 +240,50 @@ describe("the overlap around 03:00", () => {
         expect(Object.keys(h.trackerFor("2026-10-15").slots)).toEqual([slotKey(JARVIS, SOUTH, "red", parseChicagoLocal("2026-10-15 03:10:00"))]);
         expect(h.trackerFor("2026-10-14").minutes["1445"]).toEqual({ p: 1, f: [], t: [3, 0, 0, 0, 0, 0, 0, 0], m: 0 });
         expect(h.trackerFor("2026-10-15").minutes["5"]).toEqual({ p: 1, f: [], t: [3, 0, 0, 0, 0, 0, 0, 0], m: 0 });
-        expect(ledgerSummary(h.trackerFor("2026-10-14"), 1_440)).toEqual({ polled: 0, positionsOk: 0 });
+        expect(minutesWithin(h.trackerFor("2026-10-14"), 1_440)).toEqual([]);
+    });
+
+    it("marks a slot of the closing day when its run goes live for a time just past 03:00", () => {
+        const h = harness();
+        const scheduledAt = parseChicagoLocal("2026-10-15 02:58:00");
+        h.apply(tick(parseChicagoLocal("2026-10-15 02:50:00"), [prediction({ scheduled: true, run: "908", arrivalAt: scheduledAt })]));
+        const poll = parseChicagoLocal("2026-10-15 03:00:30");
+        h.apply(tick(poll, [prediction({ run: "908", arrivalAt: parseChicagoLocal("2026-10-15 03:02:00") })]));
+
+        expect(h.trackerFor("2026-10-14").slots[slotKey(JARVIS, SOUTH, "red", scheduledAt)].liveSameRunAt).toBe(poll);
+    });
+
+    it("files a passage under both days when the arrival it first named was before 03:00 and it came after", () => {
+        const h = harness();
+        h.apply(tick(parseChicagoLocal("2026-10-15 02:50:00"), [prediction({ run: "908", arrivalAt: parseChicagoLocal("2026-10-15 02:58:00") })]));
+        h.apply(tick(parseChicagoLocal("2026-10-15 03:01:00"), [prediction({ run: "908", arrivalAt: parseChicagoLocal("2026-10-15 03:02:00") })]));
+        h.apply(tick(parseChicagoLocal("2026-10-15 03:03:00"), []));
+
+        const expected = {
+            stationId: JARVIS,
+            stopId: SOUTH,
+            route: "red",
+            run: "908",
+            arrivedAt: parseChicagoLocal("2026-10-15 03:02:00"),
+            lastSeen: parseChicagoLocal("2026-10-15 03:01:00"),
+            vanishedAt: parseChicagoLocal("2026-10-15 03:03:00"),
+        };
+        expect(h.trackerFor("2026-10-14").passages).toEqual([expected]);
+        expect(h.trackerFor("2026-10-15").passages).toEqual([expected]);
+        expect(h.sweep.openLive).toEqual({});
+    });
+
+    it("files a passage once when its arrivals stayed in one day, and when an older checkpoint's open prediction has no first arrival", () => {
+        const h = harness();
+        h.apply(tick(parseChicagoLocal("2026-10-15 03:00:00"), [prediction({ run: "909", arrivalAt: parseChicagoLocal("2026-10-15 03:01:00") })]));
+        h.apply(tick(parseChicagoLocal("2026-10-15 03:02:00"), []));
+        expect(h.trackerFor("2026-10-15").passages).toHaveLength(1);
+        expect(h.trackerFor("2026-10-14").passages).toEqual([]);
+
+        h.sweep.openLive["older"] = { stationId: JARVIS, stopId: SOUTH, route: "red", run: "910", lastSeen: parseChicagoLocal("2026-10-15 03:02:00"), lastArrival: parseChicagoLocal("2026-10-15 03:03:00"), near: true };
+        h.apply(tick(parseChicagoLocal("2026-10-15 03:04:00"), []));
+        expect(h.trackerFor("2026-10-15").passages).toHaveLength(2);
+        expect(h.trackerFor("2026-10-14").passages).toEqual([]);
     });
 
     it("keys the two 01:30s of the fall-back night as different slots", () => {
