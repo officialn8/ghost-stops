@@ -60,3 +60,8 @@ next-env.d.ts
 # Claude Code agent worktrees and local settings
 /.claude/worktrees/
 /.claude/settings.local.json
+
+# planning records: plans, ideation, reviews, runbooks written by the planning tools
+# (the repo is public; see .compound-engineering/config.yaml)
+/docs-private/
+/.impeccable/review/

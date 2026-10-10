@@ -76,6 +76,7 @@ prisma/              schema.prisma, migrations/ (Postgres)
 scripts/             run-sync, seed-reference-data, export-history, sample-upstream,
                      extract-score-snapshot, reconcile-track-segments, ingest/ (facts), archive/
 docs/                plans/ (the revival plan), runbooks/history-load.md, audit-2026-10-02/, archive/
+docs-private/        gitignored: plans, ideation, reviews, and new runbooks written by the planning tools
 ```
 
 ## Data pipeline
@@ -163,6 +164,7 @@ Migrations run only from an operator machine as `neondb_owner` over the direct h
 - **One Prisma client.** Import `prisma` from `src/lib/prisma.ts`. Never construct another client or call `$disconnect()` in a route (`src/lib/prisma.test.ts` scans for both).
 - **Dates are calendar strings.** `YYYY-MM-DD` end to end, formatted with `timeZone: 'UTC'` (`src/lib/format.ts`).
 - **CTA station ids, never names.** The roster, sequences, closures, and Socrata matching all key on the five-digit CTA id.
+- **Planning records stay local.** The repo is public. Plans, ideation, review output, and new runbooks go under `docs-private/` (gitignored; `.compound-engineering/config.yaml` points the planning tools there), never under `docs/`.
 - **Secrets.** Never commit a connection string or token. `.env*` is gitignored except `.env.example`, and CI runs gitleaks over the full history.
 - **Tests sit next to their code.** `*.test.ts` runs in the unit project, `*.test.tsx` in components, and `*.db.test.ts` in db. The db project refuses a non-local `DATABASE_URL` (`src/test/db-guard.ts`).
 - **Retired dependencies stay retired.** `src/test/retired-deps.test.ts` keeps react-spring, use-gesture, recharts, and date-fns out.
