@@ -2,8 +2,8 @@
  * The raw record and the checkpoint on the object store (R13, R14; KTD2, KTD3).
  *
  * Raw polls: one NDJSON line per call, appended to a part file on local disk as it happens, so
- * a crash loses at most the line being written. A part covers one hour of a service day; at the
- * top of the hour, at day close, and on shutdown it is gzipped and uploaded under
+ * a crash loses at most the line being written. A part covers one hour of a service day; once
+ * the hour, the day, or the process ends it is gzipped and uploaded by the next upload pass under
  * `raw/v1/YYYY/MM/YYYY-MM-DD/HH.<start-epoch>.ndjson.gz`, where HH is the hour's index within
  * the service day (00 at 03:00 Chicago, so key order is time order across midnight) and the
  * start epoch keeps a successor's part beside a predecessor's. At day close the parts are
@@ -64,13 +64,13 @@ export function partKeyOfFile(fileName: string): string | null {
 export type RawLine = RawCall;
 
 export interface RawWriter {
-    /** Appends one line to its hour's part; a new hour or day first uploads the open part. */
-    write(line: RawLine): Promise<void>;
-    /** Uploads the open part, if any, and starts fresh: at day close and on shutdown. */
-    uploadOpenPart(): Promise<void>;
-    /** Uploads every part file left on disk except the open one; returns the keys uploaded. */
-    uploadLeftovers(): Promise<string[]>;
-    /** Part files still on disk waiting for a successful upload, the open one excluded. */
+    /** Appends one line to its hour's part, synchronously; a new hour or day closes the open part first. */
+    append(line: RawLine): void;
+    /** Closes the open part, if any, so the next upload pass takes it: at day close and on shutdown. */
+    closeOpenPart(): void;
+    /** Uploads every closed part file on disk, oldest first; returns the keys uploaded. Failed ones stay. */
+    uploadPending(): Promise<string[]>;
+    /** Part files on disk waiting for a successful upload, the open one excluded. */
     pendingFiles(): string[];
 }
 
@@ -90,12 +90,9 @@ interface OpenPart {
 
 /** The complete lines of a part file; a final fragment with no newline (a cut-off write) is dropped. */
 export function readPartLines(file: string): string[] {
-    const text = fs.readFileSync(file, "utf8");
-    const lines = text.split("\n");
-    const last = lines.pop();
-    if (last !== undefined && last !== "") {
-        // The file did not end with a newline: the last write was cut off.
-    }
+    const lines = fs.readFileSync(file, "utf8").split("\n");
+    // The last element is "" after a complete final line, or a cut-off write, which is dropped.
+    lines.pop();
     return lines;
 }
 
@@ -125,18 +122,20 @@ export function createRawWriter(options: RawWriterOptions): RawWriter {
         return true;
     }
 
-    async function closeOpenPart(): Promise<void> {
-        if (open === null) return;
-        const { file } = open;
-        open = null;
-        await upload(file);
+    function pendingFiles(): string[] {
+        return fs
+            .readdirSync(dir)
+            .filter((name) => PART_FILE.test(name))
+            .map((name) => path.join(dir, name))
+            .filter((file) => file !== open?.file)
+            .sort();
     }
 
     return {
-        async write(line) {
+        append(line) {
             const serviceDate = serviceDateOf(line.pollEpoch);
             const hourIndex = hourIndexOf(serviceDate, line.pollEpoch);
-            if (open !== null && (open.serviceDate !== serviceDate || open.hourIndex !== hourIndex)) await closeOpenPart();
+            if (open !== null && (open.serviceDate !== serviceDate || open.hourIndex !== hourIndex)) open = null;
             if (open === null) {
                 const startEpoch = line.pollEpoch;
                 open = { serviceDate, hourIndex, startEpoch, file: path.join(dir, partFileName(serviceDate, hourIndex, startEpoch)) };
@@ -144,24 +143,19 @@ export function createRawWriter(options: RawWriterOptions): RawWriter {
             fs.appendFileSync(open.file, `${JSON.stringify(line)}\n`);
         },
 
-        uploadOpenPart: closeOpenPart,
+        closeOpenPart() {
+            open = null;
+        },
 
-        async uploadLeftovers() {
+        async uploadPending() {
             const uploaded: string[] = [];
-            for (const file of this.pendingFiles()) {
+            for (const file of pendingFiles()) {
                 if (await upload(file)) uploaded.push(partKeyOfFile(path.basename(file)) as string);
             }
             return uploaded;
         },
 
-        pendingFiles() {
-            return fs
-                .readdirSync(dir)
-                .filter((name) => PART_FILE.test(name))
-                .map((name) => path.join(dir, name))
-                .filter((file) => file !== open?.file)
-                .sort();
-        },
+        pendingFiles,
     };
 }
 

@@ -93,9 +93,10 @@ describe("the raw writer", () => {
         const w = writer();
         for (let n = 0; n < 120; n++) {
             clock = DAY_START + n * MINUTE;
-            await w.write(line(clock, n));
+            w.append(line(clock, n));
         }
-        await w.uploadOpenPart();
+        w.closeOpenPart();
+        await w.uploadPending();
 
         const keys = [...store.objects().keys()].sort();
         expect(keys).toEqual([partKey(DAY, 0, DAY_START), partKey(DAY, 1, DAY_START + 60 * MINUTE)]);
@@ -112,44 +113,48 @@ describe("the raw writer", () => {
 
     it("keeps every completed line on disk, dropping only a write that was cut off", async () => {
         const w = writer();
-        await w.write(line(clock, 1));
-        await w.write(line(clock + MINUTE, 2));
+        w.append(line(clock, 1));
+        w.append(line(clock + MINUTE, 2));
         const [file] = fs.readdirSync(dir);
         // A crash mid-write leaves a partial last line with no newline.
         fs.appendFileSync(path.join(dir, file), '{"endpoint":"arrivals","pollEpoch":');
 
         const successor = writer();
         expect(successor.pendingFiles()).toEqual([path.join(dir, file)]);
-        expect(await successor.uploadLeftovers()).toEqual([partKey(DAY, 0, DAY_START)]);
+        expect(await successor.uploadPending()).toEqual([partKey(DAY, 0, DAY_START)]);
         expect(storedLines(partKey(DAY, 0, DAY_START)).map((l) => JSON.parse(l.body as string).ctatt.n)).toEqual([1, 2]);
         expect(fs.readdirSync(dir)).toEqual([]);
     });
 
     it("uploads a part twice as an idempotent overwrite", async () => {
         const w = writer();
-        await w.write(line(clock, 1));
-        await w.uploadOpenPart();
+        w.append(line(clock, 1));
+        w.closeOpenPart();
+        await w.uploadPending();
         const first = store.objects().get(partKey(DAY, 0, DAY_START));
 
         const again = writer();
         clock = DAY_START;
-        await again.write(line(clock, 1));
-        await again.uploadOpenPart();
+        again.append(line(clock, 1));
+        again.closeOpenPart();
+        await again.uploadPending();
         expect(store.objects().get(partKey(DAY, 0, DAY_START))?.etag).toBe(first?.etag);
         expect(store.objects().size).toBe(1);
     });
 
     it("compacts a predecessor's and a successor's parts for one hour in key order with no line lost", async () => {
         const w = writer();
-        await w.write(line(DAY_START, 1));
-        await w.write(line(DAY_START + MINUTE, 2));
-        await w.uploadOpenPart(); // shutdown at 03:02
+        w.append(line(DAY_START, 1));
+        w.append(line(DAY_START + MINUTE, 2));
+        w.closeOpenPart(); // shutdown at 03:02
+        await w.uploadPending();
 
         clock = DAY_START + 5 * MINUTE;
         const successor = writer();
-        await successor.write(line(clock, 3));
-        await successor.write(line(clock + MINUTE, 4));
-        await successor.uploadOpenPart();
+        successor.append(line(clock, 3));
+        successor.append(line(clock + MINUTE, 4));
+        successor.closeOpenPart();
+        await successor.uploadPending();
 
         expect([...store.objects().keys()].sort()).toEqual([partKey(DAY, 0, DAY_START), partKey(DAY, 0, DAY_START + 5 * MINUTE)]);
         await compactDay(store, DAY);
@@ -158,9 +163,10 @@ describe("the raw writer", () => {
 
     it("rolls to a new part when the service day changes", async () => {
         const w = writer();
-        await w.write(line(parseChicagoLocal("2026-10-15 02:59:00"), 1));
-        await w.write(line(parseChicagoLocal("2026-10-15 03:00:00"), 2));
-        await w.uploadOpenPart();
+        w.append(line(parseChicagoLocal("2026-10-15 02:59:00"), 1));
+        w.append(line(parseChicagoLocal("2026-10-15 03:00:00"), 2));
+        w.closeOpenPart();
+        await w.uploadPending();
 
         expect([...store.objects().keys()].sort()).toEqual([
             partKey(DAY, 23, parseChicagoLocal("2026-10-15 02:59:00")),
@@ -179,25 +185,30 @@ describe("the raw writer", () => {
 
     it("keeps writing locally while uploads fail, retrying the part later", async () => {
         const w = writer();
-        await w.write(line(DAY_START, 1));
+        w.append(line(DAY_START, 1));
         // One surfaced failure: the R2 client's own three retries are tested with it.
         store.failNext(1, 503);
-        await w.write(line(DAY_START + 60 * MINUTE, 2)); // the hour rolls; the upload fails
+        w.append(line(DAY_START + 60 * MINUTE, 2)); // the hour rolls
+        expect(await w.uploadPending()).toEqual([]); // the upload fails
         expect(logged).toEqual([`raw part not uploaded, kept on disk: put ${partKey(DAY, 0, DAY_START)}: HTTP 503`]);
         expect(w.pendingFiles()).toEqual([path.join(dir, partFileName(DAY, 0, DAY_START))]);
         expect(fs.readdirSync(dir)).toHaveLength(2);
         expect(logged.join(" ")).not.toContain("cloudflarestorage");
+        w.append(line(DAY_START + 61 * MINUTE, 3)); // still writing locally
 
-        expect(await w.uploadLeftovers()).toEqual([partKey(DAY, 0, DAY_START)]);
+        expect(await w.uploadPending()).toEqual([partKey(DAY, 0, DAY_START)]);
         expect(w.pendingFiles()).toEqual([]);
-        await w.uploadOpenPart();
+        w.closeOpenPart();
+        await w.uploadPending();
         expect(store.objects().size).toBe(2);
+        expect(storedLines(partKey(DAY, 1, DAY_START + 60 * MINUTE))).toHaveLength(2);
     });
 
     it("reads a day's lines from its parts when it has not been compacted", async () => {
         const w = writer();
-        await w.write(line(DAY_START, 1));
-        await w.uploadOpenPart();
+        w.append(line(DAY_START, 1));
+        w.closeOpenPart();
+        await w.uploadPending();
         expect((await readRawDay(store, DAY))?.map((l) => l.pollEpoch)).toEqual([DAY_START]);
         expect(await readRawDay(store, "2026-10-13")).toBeNull();
     });
