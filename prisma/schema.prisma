@@ -218,6 +218,8 @@ model LiveDay {
   reducedAt       DateTime
 
   stations LiveStationDay[]
+
+  @@index([reducedAt]) // the revalidate route reads the most recently reduced day
 }
 
 // One station on one service day. The migration adds the checks: counted rows carry no cause and

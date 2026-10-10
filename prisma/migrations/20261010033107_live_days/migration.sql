@@ -45,6 +45,9 @@ CREATE TABLE "LiveStationDay" (
 );
 
 -- CreateIndex
+CREATE INDEX "LiveDay_reducedAt_idx" ON "LiveDay"("reducedAt");
+
+-- CreateIndex
 CREATE INDEX "LiveStationDay_serviceDate_idx" ON "LiveStationDay"("serviceDate");
 
 -- AddForeignKey
