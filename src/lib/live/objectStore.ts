@@ -293,3 +293,16 @@ export function createMemoryObjectStore(options: { now?: () => number } = {}): M
         },
     };
 }
+
+/**
+ * The R2 store from the environment, or null when any of the four variables is unset (a preview
+ * deployment, a shell without them). The site's token is read-only and scoped to the one bucket.
+ */
+export function r2StoreFromEnv(env: Record<string, string | undefined>): ObjectStore | null {
+    const accountId = env.R2_ACCOUNT_ID?.trim();
+    const bucket = env.R2_BUCKET?.trim();
+    const accessKeyId = env.R2_ACCESS_KEY_ID?.trim();
+    const secretAccessKey = env.R2_SECRET_ACCESS_KEY?.trim();
+    if (!accountId || !bucket || !accessKeyId || !secretAccessKey) return null;
+    return createR2Store({ accountId, bucket, accessKeyId, secretAccessKey });
+}

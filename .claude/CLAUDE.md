@@ -105,7 +105,7 @@ Each run:
 
 CTA publishes in roughly monthly batches, about two months behind, with no announced schedule. Data through 2026-07-31 was current in October 2026.
 
-`/api/health` answers 503 when no run has succeeded in 10 days (`stale`), a run has been running for over an hour (`stuck`), or no weekly reconciliation has succeeded in 15 days (`reconcile-stale`). `.github/workflows/health.yml` checks it daily at 12:30 UTC.
+`/api/health` answers 503 when no run has succeeded in 10 days (`stale`), a run has been running for over an hour (`stuck`), or no weekly reconciliation has succeeded in 15 days (`reconcile-stale`). Its `trains` field (`src/lib/live/health.ts`) reports the worker: `not-started` before the first `LiveDay` row, then `trains-stale` (checkpoint over 45 minutes old or unreadable) or `trains-unreduced` (latest day over two service days old) answer 503 too. `.github/workflows/health.yml` checks it daily at 12:30 UTC; Healthchecks.io emails within 15 minutes.
 
 ### The live worker
 

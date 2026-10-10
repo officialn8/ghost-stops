@@ -121,6 +121,14 @@ updated the dataset (`upstreamUpdatedAt`), or 503 when:
 - a run has been marked running for over an hour (`stuck`);
 - no weekly reconciliation has succeeded in 15 days (`reconcile-stale`).
 
+The same body carries a `trains` object for the live worker (statuses, dates, and ages only):
+`not-started` until the first `LiveDay` row exists, whatever the bucket holds, so the probe days
+never fail the check; then `trains-stale` when the worker's checkpoint in R2 is older than 45
+minutes or cannot be read (the route reads it with the read-only R2 token), `trains-unreduced`
+when the latest `LiveDay` is more than two service days old, else `ok`. Either report failing
+answers 503. The worker's own alert is faster: Healthchecks.io emails Nate when the check misses
+its 15-minute grace.
+
 `.github/workflows/health.yml` requests the route daily at 12:30 UTC and fails on anything but 200,
 after one retry a minute later. GitHub then emails whoever last changed the workflow's schedule (Nate). To rehearse a failure,
 run the workflow by hand with its `url` input pointed at a URL that answers non-200.
