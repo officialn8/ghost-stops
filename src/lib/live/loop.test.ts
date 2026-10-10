@@ -14,13 +14,14 @@ import {
     dayObjectKey,
     dayPartsPrefix,
     getCheckpoint,
+    partKey,
     putCheckpoint,
     readRawDay,
     type Checkpoint,
     type CompactionResult,
     type RawWriter,
 } from "./rawStore";
-import { minuteIndexOf, parseChicagoLocal, serviceDateOf } from "./serviceDay";
+import { hourIndexOf, minuteIndexOf, parseChicagoLocal, serviceDateOf } from "./serviceDay";
 import { createDayTracker, type TrackerState } from "./tracker";
 import {
     TRAIN_ROUTES,
@@ -635,6 +636,17 @@ describe("startup", () => {
         expect(h.logged).toContain("uploaded 1 raw part(s) left on disk");
         expect((await h.store.list(dayPartsPrefix("2026-10-14"))).map((p) => p.key)).toContain(`raw/v1/2026/10/2026-10-14/13.${String(T0 - 60 * MINUTE).padStart(13, "0")}.ndjson.gz`);
     });
+
+    it("fails loud on worker state stamped with a version this build does not read, and writes nothing back", async () => {
+        await seedCheckpoint({ state: { version: 2 as never } });
+
+        await expect(h.run({ maxTicks: 1 })).rejects.toThrow("state/checkpoint.json.gz state is stamped version 2; this build reads version 1");
+
+        expect(h.source.positionsCalls).toBe(0);
+        const checkpoint = await h.checkpoint();
+        expect(checkpoint).toMatchObject({ machineId: MACHINE, writtenAt: T0 - 2 * MINUTE, released: false });
+        expect(checkpoint?.state.version).toBe(2);
+    });
 });
 
 describe("days", () => {
@@ -773,6 +785,52 @@ describe("shutdown and the lease", () => {
 
         expect(result).toEqual({ ticks: 1, exit: "stopped" });
         expect(h.source.arrivalsCalls).toHaveLength(2); // the tick finished its sweep
+        expect(fs.readdirSync(dir)).toEqual([]);
+        expect(await h.store.list(dayPartsPrefix("2026-10-14"))).toHaveLength(1);
+        expect((await h.checkpoint())?.released).toBe(true);
+        expect(h.logged.at(-1)).toBe("stopped after 1 tick(s); checkpoint released");
+    });
+
+    it("ends the sleep between ticks on SIGTERM, uploads the open part, and releases the checkpoint", async () => {
+        // The sleep stays pending until the signal aborts, as the real one does; SIGTERM lands a few ms into it.
+        const waits: number[] = [];
+        const result = await h.run({
+            maxTicks: 10,
+            sleep: (ms, signal) =>
+                new Promise<void>((_, reject) => {
+                    waits.push(ms);
+                    signal.addEventListener("abort", () => reject(new Error("aborted")), { once: true });
+                    setTimeout(() => h.controller.abort(), 5);
+                }),
+        });
+
+        expect(result).toEqual({ ticks: 1, exit: "stopped" });
+        expect(waits).toHaveLength(1);
+        expect(waits[0]).toBeGreaterThan(0);
+        expect(h.source.positionsCalls).toBe(1);
+        expect(fs.readdirSync(dir)).toEqual([]);
+        const first = h.calls[0].pollEpoch;
+        expect((await h.store.list(dayPartsPrefix("2026-10-14"))).map((p) => p.key)).toEqual([partKey("2026-10-14", hourIndexOf("2026-10-14", first), first)]);
+        expect((await h.checkpoint())?.released).toBe(true);
+        expect(h.logged.at(-1)).toBe("stopped after 1 tick(s); checkpoint released");
+    });
+
+    it("does the same with the real timer between ticks, which the signal ends at once", async () => {
+        // No injected sleep: the loop waits on node:timers/promises for the near-minute the fake
+        // clock computes, and a real AbortController fires 30 ms into that wait.
+        const started = Date.now();
+        const result = await h.run({
+            maxTicks: 10,
+            sleep: undefined,
+            log: (m) => {
+                h.logged.push(m);
+                if (m.startsWith("tick 1:")) setTimeout(() => h.controller.abort(), 30);
+            },
+        });
+
+        expect(result).toEqual({ ticks: 1, exit: "stopped" });
+        expect(Date.now() - started).toBeLessThan(1_000);
+        expect(h.source.positionsCalls).toBe(1);
         expect(fs.readdirSync(dir)).toEqual([]);
         expect(await h.store.list(dayPartsPrefix("2026-10-14"))).toHaveLength(1);
         expect((await h.checkpoint())?.released).toBe(true);

@@ -179,7 +179,8 @@ describe("reduceDay", () => {
         expect(reduceDay(input({ quotaStopped: true })).day).toMatchObject({ verdict: "SET_ASIDE", cause: "quota" });
         const noSchedule = reduceDay(input({ schedule: null }));
         expect(noSchedule.day).toMatchObject({ verdict: "SET_ASIDE", cause: "no-schedule", scheduleVersion: null });
-        expect(noSchedule.verdicts).toBeNull();
+        // Nothing was matched: no station has a scheduled stop or a platform summary.
+        expect(noSchedule.stations.every((s) => s.scheduled === 0 && s.byDirection.length === 0)).toBe(true);
         expect(station(noSchedule, JARVIS)).toMatchObject({ scheduled: 0, counted: false, notCountedCause: "site-gap" });
     });
 

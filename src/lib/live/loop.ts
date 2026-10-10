@@ -33,7 +33,7 @@ import { todayInChicago } from "@/lib/cta/closures";
 import type { Healthchecks } from "./healthchecks";
 import { GHOST_TOLERANCE_MINUTES } from "./matcher";
 import { gzipJson, PreconditionFailedError, type ObjectStore } from "./objectStore";
-import { getCheckpoint, isCheckpointHeld, putCheckpoint, type Checkpoint, type RawWriter } from "./rawStore";
+import { assertStamp, CHECKPOINT_KEY, CHECKPOINT_VERSION, getCheckpoint, isCheckpointHeld, putCheckpoint, type Checkpoint, type RawWriter } from "./rawStore";
 import { dayCloseInstant, MINUTE_MS, serviceDateOf } from "./serviceDay";
 import { applyTick, createDayTracker, createSweepState, type SweepState, type TickInput, type TrackerState } from "./tracker";
 import {
@@ -86,9 +86,12 @@ export interface DayReduction {
     compacted: boolean;
 }
 
+/** The format stamp on the worker's state; `runLoop` refuses a checkpoint stamped with any other. */
+export const WORKER_STATE_VERSION = 1;
+
 /** What the checkpoint carries besides the envelope (KTD2). */
 export interface WorkerState {
-    version: 1;
+    version: typeof WORKER_STATE_VERSION;
     trackers: TrackerState[];
     sweep: SweepState;
     quota: Quota;
@@ -148,7 +151,6 @@ export interface LoopOptions {
     /** The CTA station ids to sweep, four to a call: the open stations, read at every tick. */
     stations: () => readonly string[];
     machineId: string;
-    toleranceMinutes?: number;
     /** The feed's latest scheduled stop time, when known, which may push the close past 03:15; read at each close. */
     latestStopSeconds?: () => number | undefined;
     now?: () => number;
@@ -183,7 +185,7 @@ export function freshQuota(chicagoDate: string): Quota {
 }
 
 export function freshWorkerState(chicagoDate: string): WorkerState {
-    return { version: 1, trackers: [], sweep: createSweepState(), quota: freshQuota(chicagoDate), stoppedDays: {}, previousDay: null, ticks: 0 };
+    return { version: WORKER_STATE_VERSION, trackers: [], sweep: createSweepState(), quota: freshQuota(chicagoDate), stoppedDays: {}, previousDay: null, ticks: 0 };
 }
 
 /** A closed day needs nothing more once the site is refreshed and its raw day is compacted. */
@@ -199,7 +201,6 @@ export async function runLoop(options: LoopOptions): Promise<LoopResult> {
     const now = options.now ?? Date.now;
     const sleep = options.sleep ?? defaultSleep;
     const log = options.log ?? (() => {});
-    const tolerance = options.toleranceMinutes ?? GHOST_TOLERANCE_MINUTES;
     const concurrency = options.concurrency ?? DEFAULT_CONCURRENCY;
     const jitterMs = options.jitterMs ?? DEFAULT_JITTER_MS;
     const tickBudgetMs = options.tickBudgetMs ?? DEFAULT_TICK_BUDGET_MS;
@@ -220,6 +221,8 @@ export async function runLoop(options: LoopOptions): Promise<LoopResult> {
         return { ticks: 0, exit: "held" };
     }
     if (read !== null) {
+        // State in a format this build does not read must never be written back as its own shape.
+        assertStamp(`${CHECKPOINT_KEY} state`, read.checkpoint.state.version, WORKER_STATE_VERSION);
         etag = read.etag;
         state = read.checkpoint.state;
         state.stoppedDays ??= {}; // a checkpoint written before the stop marker existed
@@ -230,7 +233,7 @@ export async function runLoop(options: LoopOptions): Promise<LoopResult> {
         log("no checkpoint; starting fresh");
     }
     const trackers = new Map(state.trackers.map((t) => [t.serviceDate, t]));
-    const closeOf = (serviceDate: string) => dayCloseInstant(serviceDate, tolerance, options.latestStopSeconds?.());
+    const closeOf = (serviceDate: string) => dayCloseInstant(serviceDate, GHOST_TOLERANCE_MINUTES, options.latestStopSeconds?.());
     /** The day's tracker, created on first use; null once the day has closed. */
     const trackerFor = (serviceDate: string): TrackerState | null => {
         let tracker = trackers.get(serviceDate);
@@ -246,7 +249,7 @@ export async function runLoop(options: LoopOptions): Promise<LoopResult> {
 
     async function writeCheckpoint(released: boolean): Promise<boolean> {
         state.trackers = [...trackers.values()];
-        const checkpoint: Checkpoint<WorkerState> = { version: 1, machineId: options.machineId, writtenAt: now(), released, state };
+        const checkpoint: Checkpoint<WorkerState> = { version: CHECKPOINT_VERSION, machineId: options.machineId, writtenAt: now(), released, state };
         try {
             const result = await putCheckpoint(options.store, checkpoint, etag === null ? { ifNoneMatch: "*" } : { ifMatch: etag });
             etag = result.etag;
@@ -305,7 +308,7 @@ export async function runLoop(options: LoopOptions): Promise<LoopResult> {
     for (;;) {
         if (options.signal.aborted) break;
         if (options.maxTicks !== undefined && ticks >= options.maxTicks) {
-            await shutdown(true);
+            await shutdown();
             return { ticks, exit: "max-ticks" };
         }
         const due = start + n * MINUTE_MS;
@@ -356,7 +359,7 @@ export async function runLoop(options: LoopOptions): Promise<LoopResult> {
         if (pending > 0 && (pending !== lastPending || ticks % UPLOAD_PASS_EVERY_TICKS === 1)) await uploadPass();
         log(`tick ${state.ticks}: ${taken.calls} calls, ${taken.failures} failed, ${Math.round(taken.bytes / 1024)} KB, ${now() - pollEpoch} ms${tick.success ? "" : ", no ping"}`);
     }
-    await shutdown(true);
+    await shutdown();
     return { ticks, exit: "stopped" };
 
     /**
@@ -435,12 +438,12 @@ export async function runLoop(options: LoopOptions): Promise<LoopResult> {
         return { input: { pollEpoch, positions, arrivals: results }, success, stop };
     }
 
-    /** The open part is closed and every part uploaded; a previous day left unfinished waits for the successor. */
-    async function shutdown(released: boolean): Promise<void> {
+    /** The open part is closed, every part uploaded, and the checkpoint released; a previous day left unfinished waits for the successor. */
+    async function shutdown(): Promise<void> {
         options.rawWriter.closeOpenPart();
         await options.rawWriter.uploadPending();
-        await writeCheckpoint(released);
-        log(`stopped after ${ticks} tick(s); checkpoint ${released ? "released" : "kept"}`);
+        await writeCheckpoint(true);
+        log(`stopped after ${ticks} tick(s); checkpoint released`);
     }
 }
 

@@ -301,6 +301,11 @@ describe("the checkpoint", () => {
         expect((await getCheckpoint<{ slots: number }>(store))?.checkpoint.machineId).toBe("other");
     });
 
+    it("refuses an envelope stamped with a version this build does not read, naming the key", async () => {
+        await store.put(CHECKPOINT_KEY, gzipSync(Buffer.from(JSON.stringify({ ...checkpoint(), version: 2 }), "utf8")));
+        await expect(getCheckpoint(store)).rejects.toThrow("state/checkpoint.json.gz is stamped version 2; this build reads version 1");
+    });
+
     it("reports an unreleased checkpoint from another machine under three minutes old as held, and a released one as not", () => {
         const now = DAY_START + 2 * MINUTE;
         expect(isCheckpointHeld(checkpoint({ machineId: "other" }), "e784", now)).toBe(true);

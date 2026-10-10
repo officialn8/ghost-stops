@@ -256,9 +256,21 @@ export async function readRawDayWithOverlap(store: ObjectStore, serviceDate: str
     return [...before, ...day, ...after].sort((a, b) => a.pollEpoch - b.pollEpoch);
 }
 
+/** The format stamp on the checkpoint envelope; `getCheckpoint` refuses any other. */
+export const CHECKPOINT_VERSION = 1;
+
+/**
+ * Refuses an object stamped with a format this build does not read, naming it. Without the
+ * check, a worker rolled back past a format change would read the newer object as its own shape
+ * and could write it back damaged.
+ */
+export function assertStamp(key: string, found: unknown, expected: number): void {
+    if (found !== expected) throw new Error(`${key} is stamped version ${String(found)}; this build reads version ${expected}`);
+}
+
 /** The checkpoint envelope: who wrote it, when, whether they let go, and the worker's state. */
 export interface Checkpoint<T> {
-    version: 1;
+    version: typeof CHECKPOINT_VERSION;
     /** Fly's machine id, so an in-place deploy or a crash restart keeps the same id. */
     machineId: string;
     writtenAt: number;
@@ -275,7 +287,9 @@ export interface CheckpointRead<T> {
 export async function getCheckpoint<T>(store: ObjectStore): Promise<CheckpointRead<T> | null> {
     const object = await store.get(CHECKPOINT_KEY);
     if (object === null) return null;
-    return { checkpoint: gunzipJson<Checkpoint<T>>(object.body), etag: object.etag };
+    const checkpoint = gunzipJson<Checkpoint<T>>(object.body);
+    assertStamp(CHECKPOINT_KEY, checkpoint.version, CHECKPOINT_VERSION);
+    return { checkpoint, etag: object.etag };
 }
 
 /**

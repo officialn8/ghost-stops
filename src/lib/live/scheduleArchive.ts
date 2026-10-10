@@ -7,6 +7,7 @@
 import fs from "node:fs";
 import { downloadFeed, extractRailSchedule, zipEntrySource, GtfsError, RAIL_SCHEDULE_VERSION, type EntrySource, type FeedDownload, type FeedFetch, type RailSchedule } from "./gtfs";
 import { gunzipJson, gzipJson, type ObjectStore } from "./objectStore";
+import { assertStamp } from "./rawStore";
 
 export const SCHEDULE_PREFIX = "schedules";
 export const SCHEDULE_INDEX_KEY = `${SCHEDULE_PREFIX}/index.json`;
@@ -33,14 +34,6 @@ export interface ScheduleIndex {
 
 export const scheduleKey = (hash: string) => `${SCHEDULE_PREFIX}/${hash}.json.gz`;
 
-/**
- * Refuses an object stamped with a format this build does not read, naming its key. Without the
- * check, a worker rolled back past a format change would read the newer object as its own shape
- * and could write it back damaged.
- */
-function assertStamp(key: string, found: unknown, expected: number): void {
-    if (found !== expected) throw new Error(`${key} is stamped version ${String(found)}; this build reads version ${expected}`);
-}
 
 export async function readScheduleIndex(store: ObjectStore): Promise<ScheduleIndex> {
     const object = await store.get(SCHEDULE_INDEX_KEY);

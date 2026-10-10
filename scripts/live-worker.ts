@@ -24,7 +24,6 @@ import { todayInChicago } from "../src/lib/cta/closures";
 import { CTA_ROSTER } from "../src/lib/cta/roster";
 import { createHealthchecks } from "../src/lib/live/healthchecks";
 import { createCallSink, runLoop } from "../src/lib/live/loop";
-import { GHOST_TOLERANCE_MINUTES } from "../src/lib/live/matcher";
 import { closeDay, fillGapDays, finishDay, isOpenOn, type NightlyDeps } from "../src/lib/live/nightly";
 import { createMemoryObjectStore, createR2Store, readR2Env, type ObjectStore } from "../src/lib/live/objectStore";
 import { createRawWriter, RAW_PREFIX } from "../src/lib/live/rawStore";
@@ -197,7 +196,6 @@ async function run(): Promise<number> {
         stationIds: ROSTER_IDS,
         site,
         healthchecks,
-        toleranceMinutes: GHOST_TOLERANCE_MINUTES,
         log,
     };
 
@@ -220,7 +218,6 @@ async function run(): Promise<number> {
         rawWriter,
         stations: openStationIds,
         machineId: machineId(process.env),
-        toleranceMinutes: GHOST_TOLERANCE_MINUTES,
         latestStopSeconds: () => latestStopSeconds,
         signal: controller.signal,
         healthchecks,

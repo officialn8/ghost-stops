@@ -17,7 +17,7 @@
  * closed station's row stays `closed`.
  */
 import type { LiveDayVerdict } from "@/generated/prisma/client";
-import { verdictsFor, zeroCounts, type DayVerdicts, type PlatformSummary, type VerdictCounts } from "./matcher";
+import { GHOST_TOLERANCE_MINUTES, verdictsFor, zeroCounts, type PlatformSummary, type VerdictCounts } from "./matcher";
 import type { DaySchedule } from "./schedule";
 import { expectedPolls, HOUR_MS, serviceDayStart } from "./serviceDay";
 import { minutesWithin, stationPolls, type TrackerState } from "./tracker";
@@ -75,14 +75,12 @@ export interface ReduceInput {
     closedStationIds: ReadonlySet<string>;
     /** A quota stop or a revoked key stopped the calls during this day. */
     quotaStopped: boolean;
-    toleranceMinutes?: number;
     reducedAt: Date;
 }
 
 export interface ReducedDay {
     day: LiveDayRow;
     stations: LiveStationDayRow[];
-    verdicts: DayVerdicts | null;
 }
 
 const round4 = (value: number) => Math.round(value * 10_000) / 10_000;
@@ -151,7 +149,7 @@ export function reduceDay(input: ReduceInput): ReducedDay {
     const stationsSwept = stationIds.filter((id) => !closedStationIds.has(id)).length;
     const pollsSucceeded = succeededPolls(tracker, expected, stationsSwept);
     const coverage = round4(pollsSucceeded / expected);
-    const verdicts = schedule === null ? null : verdictsFor(tracker, schedule, input.toleranceMinutes);
+    const verdicts = schedule === null ? null : verdictsFor(tracker, schedule, GHOST_TOLERANCE_MINUTES);
 
     let cause: DayCause | null = null;
     let faultLines: TrainRoute[] = [];
@@ -206,5 +204,5 @@ export function reduceDay(input: ReduceInput): ReducedDay {
             byDirection: summary?.platforms ?? [],
         });
     }
-    return { day, stations, verdicts };
+    return { day, stations };
 }

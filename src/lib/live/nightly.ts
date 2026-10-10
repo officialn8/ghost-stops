@@ -36,7 +36,6 @@ export interface NightlyDeps {
     /** The site to revalidate; null skips the call (a local run). */
     site: { url: string; secret: string } | null;
     healthchecks?: Healthchecks | null;
-    toleranceMinutes?: number;
     /** The city whose stations the rows are written for; "chicago" unless a test says otherwise. */
     cityCode?: string;
     now?: () => Date;
@@ -46,8 +45,8 @@ export interface NightlyDeps {
 }
 
 /** The schedule in force for a day: the newest version first seen before the day closed (KTD6). */
-export async function scheduleInForce(store: ObjectStore, serviceDate: string, toleranceMinutes = GHOST_TOLERANCE_MINUTES, hash?: string | null): Promise<DaySchedule | null> {
-    const chosen = hash ?? versionInForce(await readScheduleIndex(store), dayCloseInstant(serviceDate, toleranceMinutes))?.hash ?? null;
+export async function scheduleInForce(store: ObjectStore, serviceDate: string, hash?: string | null): Promise<DaySchedule | null> {
+    const chosen = hash ?? versionInForce(await readScheduleIndex(store), dayCloseInstant(serviceDate, GHOST_TOLERANCE_MINUTES))?.hash ?? null;
     if (chosen === null) return null;
     const schedule = await loadSchedule(store, chosen);
     return schedule === null ? null : scheduledStopsFor(schedule, serviceDate);
@@ -66,7 +65,7 @@ export function closedStationsOn(stationIds: readonly string[], serviceDate: str
 export async function reduceAndWrite(deps: NightlyDeps, tracker: TrackerState, options: { quotaStopped: boolean; scheduleHash?: string | null }): Promise<{ reduced: ReducedDay; written: boolean }> {
     const log = deps.log ?? (() => {});
     const now = deps.now ?? (() => new Date());
-    const schedule = await scheduleInForce(deps.store, tracker.serviceDate, deps.toleranceMinutes, options.scheduleHash);
+    const schedule = await scheduleInForce(deps.store, tracker.serviceDate, options.scheduleHash);
     const reduced = reduceDay({
         serviceDate: tracker.serviceDate,
         tracker,
@@ -74,7 +73,6 @@ export async function reduceAndWrite(deps: NightlyDeps, tracker: TrackerState, o
         stationIds: deps.stationIds,
         closedStationIds: closedStationsOn(deps.stationIds, tracker.serviceDate),
         quotaStopped: options.quotaStopped,
-        toleranceMinutes: deps.toleranceMinutes,
         reducedAt: now(),
     });
     const counted = reduced.stations.filter((s) => s.counted).length;
@@ -150,7 +148,7 @@ export async function fillGapDays(deps: NightlyDeps, nowEpochMs: number): Promis
     const latest = await deps.db.liveDay.findFirst({ orderBy: { serviceDate: "desc" }, select: { serviceDate: true } });
     const last = optionalDay(latest?.serviceDate);
     if (last === null) return [];
-    const through = latestClosedServiceDay(nowEpochMs, deps.toleranceMinutes ?? GHOST_TOLERANCE_MINUTES);
+    const through = latestClosedServiceDay(nowEpochMs, GHOST_TOLERANCE_MINUTES);
     const written: string[] = [];
     for (let date = addDays(last, 1); date <= through; date = addDays(date, 1)) {
         const existing = await deps.db.liveDay.findUnique({ where: { serviceDate: toUtcDate(date) }, select: { serviceDate: true } });

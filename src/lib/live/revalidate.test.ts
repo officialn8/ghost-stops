@@ -72,8 +72,10 @@ describe("siteFromEnv", () => {
         expect(siteFromEnv({})).toBeNull();
     });
 
-    it("refuses a site that is not https, since the secret travels as a bearer header", () => {
+    it("refuses a site that is not https when a secret would travel to it, and is null when no secret is set", () => {
         expect(() => siteFromEnv({ SITE_URL: "http://ghost-stops.vercel.app", WORKER_REVALIDATE_SECRET: SECRET })).toThrow("SITE_URL must be an https URL");
-        expect(() => siteFromEnv({ SITE_URL: "http://localhost:3000" })).toThrow(/https/);
+        expect(() => siteFromEnv({ SITE_URL: "http://localhost:3000", WORKER_REVALIDATE_SECRET: SECRET })).toThrow(/https/);
+        // A local run with a stray http SITE_URL and no secret simply does not refresh the site.
+        expect(siteFromEnv({ SITE_URL: "http://localhost:3000" })).toBeNull();
     });
 });
