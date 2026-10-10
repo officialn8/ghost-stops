@@ -358,10 +358,11 @@ function main() {
 
   // Normalize line arrays in case a tool serializes them unexpectedly.
   for (const feature of features) {
-    const lines = Array.isArray(feature.properties.lines)
-      ? feature.properties.lines
-      : typeof feature.properties.lines === "string"
-        ? feature.properties.lines.split(",").map((s) => s.trim()).filter(Boolean)
+    const raw: unknown = feature.properties.lines;
+    const lines = Array.isArray(raw)
+      ? (raw as string[])
+      : typeof raw === "string"
+        ? raw.split(",").map((s) => s.trim()).filter(Boolean)
         : [];
     feature.properties.lines = linesSorted(lines);
   }
