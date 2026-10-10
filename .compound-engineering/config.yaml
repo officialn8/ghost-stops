@@ -1,0 +1,4 @@
+# Compound Engineering artifact root. Plans, ideation, reviews, solutions, and
+# other generated planning documents are written under docs-private/, which is
+# gitignored: this repository is public and planning records stay local.
+docs_root: docs-private
