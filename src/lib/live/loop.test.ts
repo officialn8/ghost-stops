@@ -211,7 +211,7 @@ async function seedCheckpoint(overrides: Omit<Partial<Checkpoint<WorkerState>>, 
         fault: false,
         liveSameRunAt: null,
     };
-    tracker.minutes[String(minuteIndexOf("2026-10-14", T0 - 2 * MINUTE))] = { p: 1, f: [], t: null };
+    tracker.minutes[String(minuteIndexOf("2026-10-14", T0 - 2 * MINUTE))] = { p: 1, f: [], t: null, m: 0 };
     const state: WorkerState = {
         version: 1,
         trackers: [tracker],

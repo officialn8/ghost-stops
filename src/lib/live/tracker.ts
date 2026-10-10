@@ -76,6 +76,8 @@ export interface MinuteRecord {
     f: string[];
     /** Live trains per route in `TRAIN_ROUTES` order, from the positions call; null when it failed. */
     t: number[] | null;
+    /** Entries the parser could not read across the tick's responses (the feed-shape check, KTD7). */
+    m: number;
 }
 
 export interface TrackerState {
@@ -129,7 +131,8 @@ export function applyTick(sweep: SweepState, trackerFor: TrackerFor, tick: TickI
     const pollDay = serviceDateOf(tick.pollEpoch);
     const failed = tick.arrivals.filter((b) => b.response === null).flatMap((b) => b.stationIds).sort();
     const trains = tick.positions === null ? null : TRAIN_ROUTES.map((route) => tick.positions!.routes.find((r) => r.route === route)?.trains.length ?? 0);
-    const record: MinuteRecord = { p: tick.positions === null ? 0 : 1, f: failed, t: trains };
+    const malformed = (tick.positions?.malformed ?? 0) + tick.arrivals.reduce((sum, b) => sum + (b.response?.malformed ?? 0), 0);
+    const record: MinuteRecord = { p: tick.positions === null ? 0 : 1, f: failed, t: trains, m: malformed };
     const pollTracker = trackerFor(pollDay);
     if (pollTracker !== null) pollTracker.minutes[String(minuteIndexOf(pollDay, tick.pollEpoch))] = record;
     // The day that closes at 03:15 still sees the polls after 03:00, under indexes past its end.

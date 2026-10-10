@@ -196,8 +196,8 @@ describe("the ledger", () => {
         h.apply(tick(T0 + MINUTE, [], { stations: [JARVIS, "40900"], positions: null }));
 
         const index = minuteIndexOf("2026-10-14", T0);
-        expect(h.day().minutes[String(index)]).toEqual({ p: 1, f: ["40900"], t: [17, 0, 0, 0, 0, 1, 0, 0] });
-        expect(h.day().minutes[String(index + 1)]).toEqual({ p: 0, f: [], t: null });
+        expect(h.day().minutes[String(index)]).toEqual({ p: 1, f: ["40900"], t: [17, 0, 0, 0, 0, 1, 0, 0], m: 0 });
+        expect(h.day().minutes[String(index + 1)]).toEqual({ p: 0, f: [], t: null, m: 0 });
         expect(ledgerSummary(h.day(), 1_440)).toEqual({ polled: 2, positionsOk: 1 });
         expect(stationPolls(h.day(), "40900", 1_440)).toBe(1);
         expect(stationPolls(h.day(), JARVIS, 1_440)).toBe(2);
@@ -230,8 +230,8 @@ describe("the overlap around 03:00", () => {
         expect([...h.trackers.keys()].sort()).toEqual(["2026-10-14", "2026-10-15"]);
         expect(Object.keys(h.trackerFor("2026-10-14").slots)).toEqual([slotKey(JARVIS, SOUTH, "red", parseChicagoLocal("2026-10-15 02:58:00"))]);
         expect(Object.keys(h.trackerFor("2026-10-15").slots)).toEqual([slotKey(JARVIS, SOUTH, "red", parseChicagoLocal("2026-10-15 03:10:00"))]);
-        expect(h.trackerFor("2026-10-14").minutes["1445"]).toEqual({ p: 1, f: [], t: [3, 0, 0, 0, 0, 0, 0, 0] });
-        expect(h.trackerFor("2026-10-15").minutes["5"]).toEqual({ p: 1, f: [], t: [3, 0, 0, 0, 0, 0, 0, 0] });
+        expect(h.trackerFor("2026-10-14").minutes["1445"]).toEqual({ p: 1, f: [], t: [3, 0, 0, 0, 0, 0, 0, 0], m: 0 });
+        expect(h.trackerFor("2026-10-15").minutes["5"]).toEqual({ p: 1, f: [], t: [3, 0, 0, 0, 0, 0, 0, 0], m: 0 });
         expect(ledgerSummary(h.trackerFor("2026-10-14"), 1_440)).toEqual({ polled: 0, positionsOk: 0 });
     });
 
