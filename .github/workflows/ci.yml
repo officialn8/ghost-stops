@@ -31,6 +31,10 @@ jobs:
       - name: Type check
         run: npx tsc --noEmit
 
+      # The root config excludes scripts/; the worker entry and the operator scripts live there.
+      - name: Type check scripts
+        run: npx tsc --noEmit -p tsconfig.scripts.json
+
       - name: Lint
         run: npm run lint
 
@@ -77,6 +81,31 @@ jobs:
 
       - name: Database tests
         run: npm run test:db
+
+  worker-image:
+    name: Worker image
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Build the image
+        run: docker build --tag ghost-stops-worker:ci .
+
+      # The runtime stage must carry the bundle, no env file, and no dev dependency (plan U20).
+      - name: Check the image's contents
+        run: |
+          docker run --rm ghost-stops-worker:ci sh -c '
+            set -e
+            [ -f /app/dist/live-worker.mjs ] || { echo "::error::no bundle in the image"; exit 1; }
+            if find / -maxdepth 2 -name ".env*" 2>/dev/null | grep -q .; then echo "::error::an env file is in the image"; exit 1; fi
+            for dev in tsx prisma vitest eslint typescript esbuild; do
+              if [ -e "/app/node_modules/$dev" ]; then echo "::error::dev dependency $dev is in the image"; exit 1; fi
+            done
+            echo "bundle present, no env file, no dev dependency; node $(node --version)"
+          '
 
   secret-scan:
     name: Secret scan (full history)

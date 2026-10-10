@@ -35,6 +35,7 @@ export default defineConfig([
         {
           patterns: [
             serverOnly("lib/sync", "data sync"),
+            serverOnly("lib/live", "the live worker and the flip constant"),
             serverOnly("lib/scoring", "score computation"),
             serverOnly("lib/narratives/generate", "narrative generation"),
             serverOnly("lib/prisma", "database client"),

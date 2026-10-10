@@ -1,0 +1,33 @@
+# What the worker image never sees: .gitignore's entries, so .env.local can never reach a layer,
+# plus the repository itself and the directories the worker does not run.
+.git
+node_modules
+.pnp
+.pnp.*
+.yarn
+coverage
+.next
+out
+build
+.DS_Store
+*.pem
+*.log
+.env*
+!.env.example
+.vercel
+*.tsbuildinfo
+next-env.d.ts
+src/generated
+*.db
+*.db-journal
+*.sqlite
+*.sqlite3
+exports
+.compound-engineering
+.claude
+.impeccable
+docs
+docs-private
+public
+.github
+scripts/archive

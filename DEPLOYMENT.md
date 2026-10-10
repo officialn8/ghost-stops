@@ -1,17 +1,22 @@
 # Deploying Ghost Stops
 
 Ghost Stops runs on Vercel (Next.js app, API routes, and the daily sync as a Vercel Cron job)
-against a Neon Postgres database. Nothing else runs it: the Go ETL and its Railway service were
-retired on 2026-10-03 (revival plan U11).
+against a Neon Postgres database, plus one always-on worker on Fly.io that polls CTA Train
+Tracker for the live Ghost score and keeps its raw record in a Cloudflare R2 bucket. The Go ETL
+and its Railway service were retired on 2026-10-03 (revival plan U11).
 
 ```
 Socrata (CTA ridership) ──> /api/cron/sync-ridership ──> Neon Postgres <── API routes <── browser
                               (Vercel Cron, daily)         (pooled host at runtime,
                                                             direct host for migrations)
+CTA Train Tracker ──> worker on Fly.io (one Machine, every minute) ──> R2 bucket (raw polls, checkpoint)
+                                       │                              └── /api/health reads the checkpoint's age
+                                       └── nightly: LiveDay rows in Neon, then POST /api/internal/revalidate
 ```
 
 Operational history, rehearsals, and go-live records live in
-[`docs/runbooks/history-load.md`](docs/runbooks/history-load.md).
+[`docs/runbooks/history-load.md`](docs/runbooks/history-load.md); the worker's runbook is private
+(`docs-private/runbooks/live-worker.md`, gitignored).
 
 ## Vercel project
 
@@ -33,6 +38,8 @@ Operational history, rehearsals, and go-live records live in
 | `CRON_SECRET` | set (sensitive) | set (sensitive) | the bearer token Vercel Cron sends to the sync route |
 | `CHICAGO_DATA_APP_TOKEN` | set (sensitive) | set (sensitive) | Socrata requests, sent only in the `X-App-Token` header |
 | `NEXT_PUBLIC_MAPBOX_TOKEN` | set | set | the map |
+| `WORKER_REVALIDATE_SECRET` | set (sensitive) | not set | the bearer token the worker sends to `/api/internal/revalidate`; generated with the prefix `ghrv_`; never `CRON_SECRET` |
+| `R2_ACCOUNT_ID`, `R2_BUCKET`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY` | set (sensitive), the read-only token | not set | `/api/health` reads the worker's checkpoint age from the bucket |
 
 `.env.example` lists the same names. Prisma 7 does not read `.env`, so commands run from a shell
 need the variables exported in that shell.
@@ -75,6 +82,35 @@ Each run also records when CTA last updated the dataset: the portal's `rowsUpdat
 `SyncRun.upstreamUpdatedAt`. CTA publishes in roughly monthly batches with no announced schedule,
 so the rows show its real cadence. The read gets one 10-second try; if it fails, the column stays
 null and the run carries on.
+
+## The live worker
+
+`scripts/live-worker.ts` runs on one Fly.io Machine (`fly.toml`: shared-cpu-1x, 512 MB, region
+`ord`, no services, restart policy always, 30 seconds to finish on SIGTERM), built from the
+two-stage `Dockerfile` (the runtime stage carries the bundled entry and production dependencies
+only, never an env file or a dev tool; CI builds it and checks). Deploy with `fly deploy --ha=false`
+so exactly one Machine runs.
+
+Each minute it polls Train Tracker positions once and every open station's arrivals four to a
+call (37 calls; about 53,000 a day against the key's 100,000, with a hard stop at 90,000), keeps
+the open day's slot tracker in memory, writes every call's raw line to a part file uploaded to
+R2 hourly, checkpoints the day to R2 with a conditional put (the checkpoint doubles as the
+single-instance lease), and pings Healthchecks.io after each wholly successful cycle. At 03:15
+Chicago it closes the service day. Its nine secrets (`fly secrets set`): `DATABASE_URL` (the
+`ghost_stops_worker` role, which can read `City`, `Station`, `StationClosure` and write only
+`LiveDay` and `LiveStationDay`), `CTA_TRAIN_TRACKER_KEY`, the four `R2_*` variables (the
+read-write token, scoped to the one bucket), `WORKER_REVALIDATE_SECRET`, `SITE_URL`, and
+`HEALTHCHECKS_PING_URL`. The runbook (`docs-private/runbooks/live-worker.md`) has the account
+setup, the migration and role step, the pre-deploy checks, the first-day signals, planned stops,
+re-reducing a day, and secret rotation.
+
+From an operator shell, `npx tsx scripts/live-worker.ts --once` runs one real tick,
+`--gtfs-check` extracts the real static GTFS, and `--store-check` round-trips one object
+against the bucket; each needs its variables exported in that shell.
+
+New monthly spend (plan R14, against a $30 ceiling): Fly about $3.30 to $4, Neon compute about
+$1 to $3 for the nightly write, R2 $0 within its free tier for about a year, Healthchecks.io $0;
+about $5 to $7 in all.
 
 ## Health and alerting
 

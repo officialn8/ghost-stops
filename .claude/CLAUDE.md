@@ -10,8 +10,8 @@ The ranking is the **Ghost score**: a 0 to 100 percentile over the ranked statio
 - **Data:** Neon Postgres through Prisma 7 (`@prisma/adapter-pg` over one `pg` pool). The client is generated into `src/generated/prisma` and is not committed.
 - **Map:** Mapbox GL JS through `react-map-gl`, with stations as circle and symbol layers.
 - **Motion:** `motion` 14, imported from `motion/react`.
-- **Hosting:** Vercel, with Fluid compute and two Vercel Cron schedules for the ridership sync.
-- **Source data:** CTA daily station entries, Chicago Data Portal dataset `5neh-572f`, read over Socrata's SODA API.
+- **Hosting:** Vercel, with Fluid compute and two Vercel Cron schedules for the ridership sync. The live Ghost score worker runs on one Fly.io Machine (`Dockerfile`, `fly.toml`) with its raw record and checkpoint in a Cloudflare R2 bucket and a Healthchecks.io dead-man's switch.
+- **Source data:** CTA daily station entries, Chicago Data Portal dataset `5neh-572f`, read over Socrata's SODA API. CTA Train Tracker (positions and arrivals, polled every minute by the worker) and CTA's static GTFS (the rail schedule) for the live Ghost score.
 
 ## Commands
 
@@ -21,9 +21,11 @@ npm run dev          # dev server on :3000; needs DATABASE_URL and NEXT_PUBLIC_M
 npm run build        # production build
 npm run lint         # eslint ., including the server-only import rule
 npx tsc --noEmit     # type check
+npx tsc --noEmit -p tsconfig.scripts.json   # type check scripts/, which the root config excludes
 npm test             # unit (node) and components (jsdom) projects; no database
 npm run test:db      # database project; needs a local Postgres with migrations applied
 npx tsx scripts/run-sync.ts [--since YYYY-MM-DD] [--station-id ID] [--reconcile]   # sync from a shell
+npx tsx scripts/live-worker.ts [--once | --gtfs-check | --store-check]   # the live worker, or one of its checks
 ```
 
 Prisma 7 does not read `.env`. Next reads `.env.local` and `.env.development.local` for the dev server, but the Prisma CLI, `scripts/*`, and `npm run test:db` need the variables exported in the shell. `.env.example` lists them all.
@@ -61,6 +63,9 @@ src/
 │   │                closures, explodeAndStitchSegments (track drawing), normalizeStationLines
 │   ├── sync/        Socrata client, run, lease, upsert, reconcile, baseMetrics, status, health,
 │   │                freshness, schedule, window
+│   ├── live/        the live Ghost score (server-only): trainTracker (the CTA client), serviceDay,
+│   │                gtfs, schedule, scheduleArchive, objectStore (R2), rawStore, tracker, loop,
+│   │                healthchecks; __fixtures__/ holds the GTFS rail slice
 │   ├── scoring/     score (v2), components, peers, availability, windows, percentile, whyCard
 │   ├── narratives/  archetypes, generate (the narrative job), renderer, formatters
 │   ├── stations/    list (the list payload), detail (the detail payload), ridership (series), metadata (page titles)
@@ -74,7 +79,9 @@ src/
 └── generated/       Prisma client (gitignored)
 prisma/              schema.prisma, migrations/ (Postgres)
 scripts/             run-sync, seed-reference-data, export-history, sample-upstream,
-                     extract-score-snapshot, reconcile-track-segments, ingest/ (facts), archive/
+                     extract-score-snapshot, reconcile-track-segments, ingest/ (facts), archive/,
+                     live-worker (the Fly worker entry), sample-train-tracker, cut-gtfs-slice
+Dockerfile, fly.toml the worker's image and Machine; tsconfig.scripts.json type-checks scripts/
 docs/                plans/ (the revival plan), runbooks/history-load.md, audit-2026-10-02/, archive/
 docs-private/        gitignored: plans, ideation, reviews, and new runbooks written by the planning tools
 ```
@@ -99,6 +106,10 @@ Each run:
 CTA publishes in roughly monthly batches, about two months behind, with no announced schedule. Data through 2026-07-31 was current in October 2026.
 
 `/api/health` answers 503 when no run has succeeded in 10 days (`stale`), a run has been running for over an hour (`stuck`), or no weekly reconciliation has succeeded in 15 days (`reconcile-stale`). `.github/workflows/health.yml` checks it daily at 12:30 UTC.
+
+### The live worker
+
+`scripts/live-worker.ts` (`src/lib/live/`) runs on one Fly.io Machine, deployed with `fly deploy --ha=false`. Every minute it polls Train Tracker positions once and every open station's arrivals four to a call (37 calls a tick), feeds the slot tracker (a slot per schedule-only prediction, a passage per live train that came), appends each call's raw line to an hourly part uploaded to R2 under `raw/v1/`, checkpoints the open day to `state/checkpoint.json.gz` with a conditional put (also the single-instance lease), and pings Healthchecks.io after a wholly successful cycle. It checks CTA's static GTFS daily and archives each version under `schedules/`. The service day runs 03:00 to 03:00 Chicago and closes at 03:15; a scheduled stop belongs to the day its instant falls in. The key, the R2 secrets, and the ping URL never appear in a log line, a URL in an error, or a fixture; `.gitleaks.toml` carries a rule for each shape. Setup and operation: `docs-private/runbooks/live-worker.md` (private); `DEPLOYMENT.md`, "The live worker".
 
 ## Ghost score v2
 
@@ -160,12 +171,12 @@ Migrations run only from an operator machine as `neondb_owner` over the direct h
 
 ## Conventions
 
-- **Server-only modules.** Components never import `lib/sync`, `lib/scoring`, `lib/narratives/generate`, `lib/prisma`, or `generated/prisma`; ESLint enforces it. UI gets data from the API routes or the server-rendered page.
+- **Server-only modules.** Components never import `lib/sync`, `lib/live`, `lib/scoring`, `lib/narratives/generate`, `lib/prisma`, or `generated/prisma`; ESLint enforces it. UI gets data from the API routes or the server-rendered page.
 - **One Prisma client.** Import `prisma` from `src/lib/prisma.ts`. Never construct another client or call `$disconnect()` in a route (`src/lib/prisma.test.ts` scans for both).
 - **Dates are calendar strings.** `YYYY-MM-DD` end to end, formatted with `timeZone: 'UTC'` (`src/lib/format.ts`).
 - **CTA station ids, never names.** The roster, sequences, closures, and Socrata matching all key on the five-digit CTA id.
 - **Planning records stay local.** The repo is public. Plans, ideation, review output, and new runbooks go under `docs-private/` (gitignored; `.compound-engineering/config.yaml` points the planning tools there), never under `docs/`.
-- **Secrets.** Never commit a connection string or token. `.env*` is gitignored except `.env.example`, and CI runs gitleaks over the full history.
+- **Secrets.** Never commit a connection string or token. `.env*` is gitignored except `.env.example`, and CI runs gitleaks over the full history with rules for the Neon, Socrata, Train Tracker, R2, Healthchecks, and revalidate-secret shapes; `src/test/fixtures/secret-shapes.txt` holds one fake sample of each, baselined, so CI fails if a rule stops matching. Recorded Train Tracker fixtures hold bodies only, with the key scrubbed.
 - **Tests sit next to their code.** `*.test.ts` runs in the unit project, `*.test.tsx` in components, and `*.db.test.ts` in db. The db project refuses a non-local `DATABASE_URL` (`src/test/db-guard.ts`).
 - **Retired dependencies stay retired.** `src/test/retired-deps.test.ts` keeps react-spring, use-gesture, recharts, and date-fns out.
 
