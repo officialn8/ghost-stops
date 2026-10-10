@@ -8,3 +8,5 @@ docs
 .vscode
 .DS_Store
 *.log
+# planning records kept out of the public repo and out of CLI uploads (see .gitignore)
+docs-private
