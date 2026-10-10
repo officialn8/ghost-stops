@@ -55,6 +55,12 @@ describe("GET /api/cron/sync-ridership", () => {
         expect(runSync).not.toHaveBeenCalled();
     });
 
+    it("rejects the worker's revalidate secret", async () => {
+        vi.stubEnv("WORKER_REVALIDATE_SECRET", "ghrv_worker-secret");
+        expect((await GET(request({ authorization: "Bearer ghrv_worker-secret" }))).status).toBe(401);
+        expect(runSync).not.toHaveBeenCalled();
+    });
+
     it("returns 401 for everyone when CRON_SECRET is unset", async () => {
         vi.stubEnv("CRON_SECRET", "");
         expect((await GET(request({ authorization: "Bearer " }))).status).toBe(401);

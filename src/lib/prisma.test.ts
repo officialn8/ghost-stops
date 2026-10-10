@@ -63,6 +63,7 @@ const liveRouteHandlers = [
     "app/api/chicago/stations/route.ts",
     "app/api/chicago/stations/[slug]/route.ts",
     "app/api/cron/sync-ridership/route.ts",
+    "app/api/internal/revalidate/route.ts",
     "app/api/health/route.ts",
 ].map((path) => join(srcDir, path));
 

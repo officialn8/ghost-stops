@@ -1,6 +1,6 @@
-import { createHash, timingSafeEqual } from "node:crypto";
 import { revalidateTag } from "next/cache";
 import { NextResponse, type NextRequest } from "next/server";
+import { bearerMatches } from "@/lib/bearerAuth";
 import { STATIONS_CACHE_TAG } from "@/lib/cacheTags";
 import { prisma } from "@/lib/prisma";
 import { runSync } from "@/lib/sync/run";
@@ -14,13 +14,9 @@ export const maxDuration = 300;
 /** Drift months stop after this long, leaving a minute for metrics and finalizing the run. */
 const DRIFT_BUDGET_MS = 240_000;
 
+/** Vercel Cron's bearer token; the worker's revalidate secret opens nothing here (KTD8). */
 function authorized(request: NextRequest): boolean {
-    const secret = process.env.CRON_SECRET;
-    const header = request.headers.get("authorization");
-    if (!secret || header === null) return false;
-    // Equal-length digests, so the comparison takes the same time however the header differs.
-    const digest = (value: string) => createHash("sha256").update(value).digest();
-    return timingSafeEqual(digest(header), digest(`Bearer ${secret}`));
+    return bearerMatches(request.headers.get("authorization"), process.env.CRON_SECRET);
 }
 
 export async function GET(request: NextRequest) {
