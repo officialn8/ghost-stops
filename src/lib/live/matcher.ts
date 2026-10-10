@@ -16,13 +16,15 @@
  * tolerance whether or not a slot preceded it (the normal case: a train live from its first
  * appearance opens no slot), unknown when its window had a gap, and otherwise unobserved. A
  * ghost whose slot maps to no scheduled stop counts as unmapped, kept apart and never scored.
+ * One train is one passage is one stop: each passage fulfils at most one scheduled stop.
+ *
+ * A day holds about 50,000 scheduled stops and as many passages, so every lookup goes through
+ * a per-platform bucket of instants (sorted, binary-searched) rather than a scan of the day.
  */
-import type { DaySchedule, ScheduledStop } from "./schedule";
-import { medianGapMinutes } from "./schedule";
-import { hasGap, type Passage, type Slot, type TrackerState } from "./tracker";
+import { medianGapMinutes, platformRouteKey, type DaySchedule, type ScheduledStop } from "./schedule";
+import { MINUTE_MS } from "./serviceDay";
+import { hasGap, platformKey, type Passage, type Slot, type TrackerState } from "./tracker";
 import type { TrainRoute } from "./trainTracker";
-
-const MINUTE_MS = 60_000;
 
 /** The ghost tolerance in minutes, the default until the sensitivity table freezes it (KTD4, U7). */
 export const GHOST_TOLERANCE_MINUTES = 5;
@@ -57,29 +59,29 @@ export interface StopVerdict {
     passage: Passage | null;
 }
 
-export interface PlatformSummary {
-    stopId: string;
-    /** Null for the platform pooled across its routes (what a rider at the platform sees). */
-    route: TrainRoute | null;
+/** The verdict counts every summary carries; the five outcomes sum to `scheduled`. */
+export interface VerdictCounts {
     scheduled: number;
     fulfilled: number;
     cancelled: number;
     ghosts: number;
     unknown: number;
     unobserved: number;
+}
+
+export const zeroCounts = (): VerdictCounts => ({ scheduled: 0, fulfilled: 0, cancelled: 0, ghosts: 0, unknown: 0, unobserved: 0 });
+
+export interface PlatformSummary extends VerdictCounts {
+    stopId: string;
+    /** Null for the platform pooled across its routes (what a rider at the platform sees). */
+    route: TrainRoute | null;
     /** The median gap between consecutive passages, and between consecutive scheduled stops, in minutes. */
     observedGapMin: number | null;
     scheduledGapMin: number | null;
 }
 
-export interface StationSummary {
+export interface StationSummary extends VerdictCounts {
     stationId: string;
-    scheduled: number;
-    fulfilled: number;
-    cancelled: number;
-    ghosts: number;
-    unknown: number;
-    unobserved: number;
     /** Ghost slots at the station that map to no scheduled stop. */
     unmapped: number;
     /** Per platform (pooled) and per platform and route. */
@@ -96,28 +98,73 @@ export interface DayVerdicts {
     byStation: Map<string, StationSummary>;
 }
 
-const sameKey = (a: { stationId: string; stopId: string; route: TrainRoute }, b: { stationId: string; stopId: string; route: TrainRoute }) =>
-    a.stationId === b.stationId && a.stopId === b.stopId && a.route === b.route;
+const runKey = (route: TrainRoute, run: string) => `${route}|${run}`;
+
+/** Items bucketed by key; each bucket keeps the items' order, which callers keep sorted by time. */
+function bucket<T>(items: readonly T[], keyOf: (item: T) => string): Map<string, T[]> {
+    const buckets = new Map<string, T[]>();
+    for (const item of items) {
+        const key = keyOf(item);
+        const list = buckets.get(key);
+        if (list === undefined) buckets.set(key, [item]);
+        else list.push(item);
+    }
+    return buckets;
+}
+
+/** The first index whose time is at or after `from`, in a list sorted by `timeOf`. */
+function lowerBound<T>(sorted: readonly T[], timeOf: (item: T) => number, from: number): number {
+    let low = 0;
+    let high = sorted.length;
+    while (low < high) {
+        const mid = (low + high) >>> 1;
+        if (timeOf(sorted[mid]) < from) low = mid + 1;
+        else high = mid;
+    }
+    return low;
+}
+
+/**
+ * The nearest item within `window` of `at` that `free` admits, earlier items winning ties
+ * (only a strictly closer one replaces). The list is sorted by `timeOf`.
+ */
+function nearest<T>(sorted: readonly T[], timeOf: (item: T) => number, at: number, window: number, free: (item: T) => boolean): T | null {
+    let best: T | null = null;
+    for (let i = lowerBound(sorted, timeOf, at - window); i < sorted.length; i++) {
+        const item = sorted[i];
+        const time = timeOf(item);
+        if (time > at + window) break;
+        if (!free(item)) continue;
+        if (best === null || Math.abs(time - at) < Math.abs(timeOf(best) - at)) best = item;
+    }
+    return best;
+}
+
+/** The first item in time order within `window` of `at`, or null. */
+function firstWithin<T>(sorted: readonly T[], timeOf: (item: T) => number, at: number, window: number): T | null {
+    const i = lowerBound(sorted, timeOf, at - window);
+    return i < sorted.length && timeOf(sorted[i]) <= at + window ? sorted[i] : null;
+}
+
+const stopInstant = (stop: ScheduledStop) => stop.instant;
+const passageTime = (p: Passage) => p.arrivedAt;
 
 /** The verdict of every slot and every scheduled stop of a closed day. */
 export function verdictsFor(tracker: TrackerState, schedule: DaySchedule, toleranceMinutes: number = GHOST_TOLERANCE_MINUTES): DayVerdicts {
     const tol = toleranceMinutes * MINUTE_MS;
     const passages = [...tracker.passages].sort((a, b) => a.arrivedAt - b.arrivedAt);
-    const passagesByRun = new Map<string, Passage[]>();
-    for (const p of passages) passagesByRun.set(`${p.route}|${p.run}`, [...(passagesByRun.get(`${p.route}|${p.run}`) ?? []), p]);
+    const passagesByRun = bucket(passages, (p) => runKey(p.route, p.run));
+    const passagesByPlatform = bucket(passages, (p) => platformKey(p.stationId, p.stopId, p.route));
+    // schedule.stops is sorted by instant, so each bucket is too.
+    const stopsByPlatformRoute = bucket(schedule.stops, (s) => platformRouteKey(s.stopId, s.route));
     const slots = Object.values(tracker.slots).sort((a, b) => a.scheduledAt - b.scheduledAt);
 
     // 1. Each slot maps to the nearest scheduled stop on its platform and route within the window, each stop once.
     const stopOfSlot = new Map<Slot, ScheduledStop>();
     const slotOfStop = new Map<ScheduledStop, Slot>();
     for (const slot of slots) {
-        let best: ScheduledStop | null = null;
-        for (const stop of schedule.stops) {
-            if (stop.stopId !== slot.stopId || stop.route !== slot.route || slotOfStop.has(stop)) continue;
-            const distance = Math.abs(stop.instant - slot.scheduledAt);
-            if (distance > SLOT_MAP_WINDOW_MS) continue;
-            if (best === null || distance < Math.abs(best.instant - slot.scheduledAt)) best = stop;
-        }
+        const candidates = stopsByPlatformRoute.get(platformRouteKey(slot.stopId, slot.route)) ?? [];
+        const best = nearest(candidates, stopInstant, slot.scheduledAt, SLOT_MAP_WINDOW_MS, (stop) => !slotOfStop.has(stop));
         if (best !== null) {
             stopOfSlot.set(slot, best);
             slotOfStop.set(best, slot);
@@ -125,46 +172,50 @@ export function verdictsFor(tracker: TrackerState, schedule: DaySchedule, tolera
     }
 
     // 2. Each passage fulfils at most one scheduled stop: the nearest unassigned one on its platform
-    //    and route within the tolerance. One train is one passage is one stop.
+    //    and route within the tolerance.
     const passageOfStop = new Map<ScheduledStop, Passage>();
     for (const p of passages) {
-        let nearest: ScheduledStop | null = null;
-        for (const stop of schedule.stops) {
-            if (stop.stopId !== p.stopId || stop.route !== p.route || passageOfStop.has(stop)) continue;
-            const distance = Math.abs(p.arrivedAt - stop.instant);
-            if (distance > tol) continue;
-            if (nearest === null || distance < Math.abs(nearest.instant - p.arrivedAt)) nearest = stop;
-        }
-        if (nearest !== null) passageOfStop.set(nearest, p);
+        const candidates = stopsByPlatformRoute.get(platformRouteKey(p.stopId, p.route)) ?? [];
+        const stop = nearest(candidates, stopInstant, p.arrivedAt, tol, (s) => !passageOfStop.has(s));
+        if (stop !== null) passageOfStop.set(stop, p);
     }
 
     // 3. Slot verdicts. A mapped slot's passage is the one its stop was assigned; an unmapped slot
-    //    takes any passage on its platform and route within the tolerance.
+    //    takes any passage on its platform and route within the tolerance. The lookups run only
+    //    as far down the chain as the verdict needs.
     const slotVerdicts: SlotVerdict[] = [];
     for (const slot of slots) {
         const windowStart = slot.scheduledAt - tol;
         const windowEnd = slot.scheduledAt + tol;
         const stop = stopOfSlot.get(slot) ?? null;
-        const platformPassage =
-            stop !== null ? (passageOfStop.get(stop) ?? null) : (passages.find((p) => sameKey(p, slot) && Math.abs(p.arrivedAt - slot.scheduledAt) <= tol) ?? null);
-        const runPassage =
-            slot.runs
-                .flatMap((run) => passagesByRun.get(`${slot.route}|${run}`) ?? [])
-                .find((p) => p.stationId !== slot.stationId && p.arrivedAt >= windowStart && p.arrivedAt <= windowEnd + NEXT_STATION_TRAVEL_MS) ?? null;
+        const platformPassage = (): Passage | null =>
+            stop !== null
+                ? (passageOfStop.get(stop) ?? null)
+                : firstWithin(passagesByPlatform.get(platformKey(slot.stationId, slot.stopId, slot.route)) ?? [], passageTime, slot.scheduledAt, tol);
+        const runPassage = (): Passage | null => {
+            for (const run of slot.runs) {
+                const found = (passagesByRun.get(runKey(slot.route, run)) ?? []).find(
+                    (p) => p.stationId !== slot.stationId && p.arrivedAt >= windowStart && p.arrivedAt <= windowEnd + NEXT_STATION_TRAVEL_MS,
+                );
+                if (found !== undefined) return found;
+            }
+            return null;
+        };
         let verdict: SlotOutcome;
         let by: FulfilledBy | null = null;
         let late = false;
+        let passage: Passage | null;
         if (slot.liveSameRunAt !== null) {
             verdict = "fulfilled";
             by = "same-run";
             late = slot.liveSameRunAt > windowEnd;
-        } else if (platformPassage !== null) {
+        } else if ((passage = platformPassage()) !== null) {
             verdict = "fulfilled";
             by = "passage";
-        } else if (runPassage !== null) {
+        } else if ((passage = runPassage()) !== null) {
             verdict = "fulfilled";
             by = "next-station";
-            late = runPassage.arrivedAt > windowEnd;
+            late = passage.arrivedAt > windowEnd;
         } else if (hasGap(tracker, slot.stationId, windowStart, windowEnd)) {
             verdict = "unknown";
         } else if (slot.lastSeen + MINUTE_MS < windowStart) {
@@ -193,11 +244,7 @@ export function verdictsFor(tracker: TrackerState, schedule: DaySchedule, tolera
     return { tolerance: toleranceMinutes, slots: slotVerdicts, stops: stopVerdicts, byStation: summarize(stopVerdicts, slotVerdicts, passages, schedule) };
 }
 
-function emptyPlatform(stopId: string, route: TrainRoute | null): PlatformSummary {
-    return { stopId, route, scheduled: 0, fulfilled: 0, cancelled: 0, ghosts: 0, unknown: 0, unobserved: 0, observedGapMin: null, scheduledGapMin: null };
-}
-
-function count(summary: { fulfilled: number; cancelled: number; ghosts: number; unknown: number; unobserved: number; scheduled: number }, verdict: StopOutcome): void {
+function count(summary: VerdictCounts, verdict: StopOutcome): void {
     summary.scheduled += 1;
     if (verdict === "fulfilled") summary.fulfilled += 1;
     else if (verdict === "cancelled") summary.cancelled += 1;
@@ -206,20 +253,27 @@ function count(summary: { fulfilled: number; cancelled: number; ghosts: number; 
     else summary.unobserved += 1;
 }
 
+const platformSummaryKey = (stopId: string, route: TrainRoute | null) => `${stopId}|${route ?? ""}`;
+
 function summarize(stops: StopVerdict[], slots: SlotVerdict[], passages: Passage[], schedule: DaySchedule): Map<string, StationSummary> {
     const stations = new Map<string, StationSummary>();
+    const platformsByStation = new Map<string, Map<string, PlatformSummary>>();
     const station = (id: string): StationSummary => {
         let s = stations.get(id);
         if (!s) {
-            s = { stationId: id, scheduled: 0, fulfilled: 0, cancelled: 0, ghosts: 0, unknown: 0, unobserved: 0, unmapped: 0, platforms: [], observedGapMin: null, scheduledGapMin: null };
+            s = { ...zeroCounts(), stationId: id, unmapped: 0, platforms: [], observedGapMin: null, scheduledGapMin: null };
             stations.set(id, s);
+            platformsByStation.set(id, new Map());
         }
         return s;
     };
     const platform = (s: StationSummary, stopId: string, route: TrainRoute | null): PlatformSummary => {
-        let p = s.platforms.find((x) => x.stopId === stopId && x.route === route);
+        const platforms = platformsByStation.get(s.stationId)!;
+        const key = platformSummaryKey(stopId, route);
+        let p = platforms.get(key);
         if (!p) {
-            p = emptyPlatform(stopId, route);
+            p = { ...zeroCounts(), stopId, route, observedGapMin: null, scheduledGapMin: null };
+            platforms.set(key, p);
             s.platforms.push(p);
         }
         return p;
@@ -235,13 +289,18 @@ function summarize(stops: StopVerdict[], slots: SlotVerdict[], passages: Passage
         if (sv.verdict === "ghost" && sv.stop === null) station(sv.slot.stationId).unmapped += 1;
     }
 
-    // Gaps: passages per platform (pooled and per route), scheduled stops likewise.
+    // Gaps: passages per platform (pooled and per route) and scheduled stops likewise, each grouped once.
+    const passagesByPlatform = bucket(passages, (p) => platformSummaryKey(p.stopId, null));
+    const passagesByPlatformRoute = bucket(passages, (p) => platformSummaryKey(p.stopId, p.route));
+    const stopsByPlatform = bucket(schedule.stops, (s) => platformSummaryKey(s.stopId, null));
     for (const s of stations.values()) {
         for (const p of s.platforms) {
-            const arrivals = passages.filter((x) => x.stationId === s.stationId && x.stopId === p.stopId && (p.route === null || x.route === p.route)).map((x) => x.arrivedAt);
-            p.observedGapMin = medianGapMinutes(arrivals);
-            const scheduled = schedule.stops.filter((x) => x.stationId === s.stationId && x.stopId === p.stopId && (p.route === null || x.route === p.route)).map((x) => x.instant);
-            p.scheduledGapMin = medianGapMinutes(scheduled);
+            const arrivals = (p.route === null ? passagesByPlatform : passagesByPlatformRoute).get(platformSummaryKey(p.stopId, p.route)) ?? [];
+            p.observedGapMin = medianGapMinutes(arrivals.filter((x) => x.stationId === s.stationId).map((x) => x.arrivedAt));
+            p.scheduledGapMin =
+                p.route === null
+                    ? medianGapMinutes((stopsByPlatform.get(platformSummaryKey(p.stopId, null)) ?? []).map((x) => x.instant))
+                    : (schedule.platformRoutes.get(platformRouteKey(p.stopId, p.route))?.scheduledGapMin ?? null);
         }
         const pooled = s.platforms.filter((p) => p.route === null && p.scheduled > 0);
         const weighted = (pick: (p: PlatformSummary) => number | null): number | null => {

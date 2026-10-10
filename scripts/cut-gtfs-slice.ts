@@ -15,7 +15,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { parseArgs } from "node:util";
-import { GTFS_RAIL_ROUTES, readEntryRows, zipEntrySource, type CsvRow, type GtfsEntry } from "../src/lib/live/gtfs";
+import { GTFS_ENTRIES, GTFS_RAIL_ROUTES, readEntryRows, zipEntrySource, type CsvRow, type GtfsEntry } from "../src/lib/live/gtfs";
 import { parseGtfsTime } from "../src/lib/live/serviceDay";
 import { isCliEntry } from "./cli";
 
@@ -38,14 +38,7 @@ async function main(): Promise<void> {
     fs.mkdirSync(out, { recursive: true });
 
     const columns: Partial<Record<GtfsEntry, string[]>> = {};
-    const kept: Record<GtfsEntry, CsvRow[]> = {
-        "routes.txt": [],
-        "trips.txt": [],
-        "stops.txt": [],
-        "stop_times.txt": [],
-        "calendar.txt": [],
-        "calendar_dates.txt": [],
-    };
+    const kept = Object.fromEntries(GTFS_ENTRIES.map((entry) => [entry, [] as CsvRow[]])) as Record<GtfsEntry, CsvRow[]>;
     const remember = (entry: GtfsEntry, row: CsvRow) => {
         columns[entry] ??= Object.keys(row);
         kept[entry].push(row);
@@ -65,9 +58,11 @@ async function main(): Promise<void> {
     const candidates = new Map<string, CsvRow[]>();
     let busTrip: string | null = null;
     for await (const row of readEntryRows(source, "trips.txt")) {
-        if (GTFS_RAIL_ROUTES[row.route_id] && Object.values(SLICE_SERVICES).includes(row.service_id as never)) {
+        if (GTFS_RAIL_ROUTES[row.route_id] && (Object.values(SLICE_SERVICES) as string[]).includes(row.service_id)) {
             const key = `${row.route_id}|${row.service_id}|${row.direction_id}`;
-            candidates.set(key, [...(candidates.get(key) ?? []), row]);
+            const group = candidates.get(key);
+            if (group === undefined) candidates.set(key, [row]);
+            else group.push(row);
         } else if (busTrip === null && row.route_id === busRoute) {
             busTrip = row.trip_id;
             remember("trips.txt", row);
@@ -84,7 +79,9 @@ async function main(): Promise<void> {
             const seconds = parseGtfsTime(row.arrival_time || row.departure_time);
             const t = times.get(row.trip_id) ?? { first: Infinity, last: -Infinity };
             times.set(row.trip_id, { first: Math.min(t.first, seconds), last: Math.max(t.last, seconds) });
-            stopTimes.set(row.trip_id, [...(stopTimes.get(row.trip_id) ?? []), row]);
+            const rows = stopTimes.get(row.trip_id);
+            if (rows === undefined) stopTimes.set(row.trip_id, [row]);
+            else rows.push(row);
         } else if (row.trip_id === busTrip && busRows < 3) {
             busRows += 1;
             remember("stop_times.txt", row);
@@ -93,7 +90,7 @@ async function main(): Promise<void> {
 
     // Pick the trips.
     const picked: CsvRow[] = [];
-    for (const [key, trips] of [...candidates.entries()].sort()) {
+    for (const [key, trips] of [...candidates.entries()].sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))) {
         const [, service] = key.split("|");
         const withTimes = trips.filter((t) => times.has(t.trip_id)).sort((a, b) => times.get(a.trip_id)!.first - times.get(b.trip_id)!.first);
         if (withTimes.length === 0) continue;
@@ -123,7 +120,7 @@ async function main(): Promise<void> {
     for await (const row of readEntryRows(source, "calendar_dates.txt")) if (services.has(row.service_id)) remember("calendar_dates.txt", row);
     await source.close();
 
-    for (const entry of Object.keys(kept) as GtfsEntry[]) {
+    for (const entry of GTFS_ENTRIES) {
         const cols = columns[entry];
         if (!cols) throw new Error(`nothing kept from ${entry}`);
         const text = [cols.join(","), ...kept[entry].map((row) => csvLine(cols, row))].join("\n") + "\n";

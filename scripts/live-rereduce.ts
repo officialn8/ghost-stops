@@ -15,17 +15,17 @@
  * not visible in the raw record; its minutes are missing, so the day reads as a site gap.
  */
 import { parseArgs } from "node:util";
-import { CTA_ROSTER } from "../src/lib/cta/roster";
 import { GHOST_TOLERANCE_MINUTES } from "../src/lib/live/matcher";
 import { finishDay, reduceAndWrite, type NightlyDeps } from "../src/lib/live/nightly";
-import { createR2Store } from "../src/lib/live/objectStore";
+import { createR2Store, readR2Env } from "../src/lib/live/objectStore";
 import { compactDay, readRawDay } from "../src/lib/live/rawStore";
 import { replayRawLines } from "../src/lib/live/replay";
+import { siteFromEnv } from "../src/lib/live/revalidate";
 import { dayCloseInstant } from "../src/lib/live/serviceDay";
 import { prisma } from "../src/lib/prisma";
 import { isCalendarDate, toUtcDate } from "../src/lib/sync/window";
 import { isCliEntry, requireDatabaseUrl } from "./cli";
-import { readR2Env } from "./live-worker";
+import { ROSTER_IDS, workerLog as log } from "./live-worker";
 
 export interface RereduceArgs {
     date: string;
@@ -48,10 +48,9 @@ async function main(): Promise<void> {
     requireDatabaseUrl();
     if (!isClosed(date, Date.now())) throw new Error(`${date} is still open; a day can be re-reduced once it has closed`);
     const store = createR2Store(readR2Env(process.env));
-    const log = (message: string) => console.error(`${new Date().toISOString()} ${message}`);
 
+    // compactDay reports no-parts only after finding no day object either, so the read below says so.
     const compaction = await compactDay(store, date);
-    if (compaction.status === "no-parts" && (await store.head(compaction.key)) === null) throw new Error(`${date} has no raw day in the bucket`);
     if (compaction.status === "compacted") log(`${date} raw parts compacted first: ${compaction.parts} part(s), ${compaction.bytes} bytes`);
     const lines = await readRawDay(store, date);
     if (lines === null) throw new Error(`${date} has no raw day in the bucket`);
@@ -61,15 +60,7 @@ async function main(): Promise<void> {
     log(`${date}: ${lines.length} lines, ${replay.ticks} ticks, ${Object.keys(tracker.slots).length} slots, ${tracker.passages.length} passages${replay.unparsed ? `, ${replay.unparsed} unparsed` : ""}`);
 
     const existing = await prisma.liveDay.findUnique({ where: { serviceDate: toUtcDate(date) }, select: { scheduleVersion: true, reducerVersion: true } });
-    const secret = process.env.WORKER_REVALIDATE_SECRET?.trim();
-    const siteUrl = process.env.SITE_URL?.trim();
-    const deps: NightlyDeps = {
-        db: prisma,
-        store,
-        stationIds: CTA_ROSTER.map((s) => s.ctaStationId),
-        site: secret && siteUrl ? { url: siteUrl, secret } : null,
-        log,
-    };
+    const deps: NightlyDeps = { db: prisma, store, stationIds: ROSTER_IDS, site: siteFromEnv(process.env), log };
     if (deps.site === null) log("WORKER_REVALIDATE_SECRET or SITE_URL not set; the site will not be asked to refresh");
 
     const { reduced, written } = await reduceAndWrite(deps, tracker, { quotaStopped: false, scheduleHash: existing?.scheduleVersion ?? null });

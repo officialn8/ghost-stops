@@ -20,6 +20,7 @@ import {
     ARRIVALS_BATCH_SIZE,
     createTrainTracker,
     CTA_STATION_ID,
+    readTrainTrackerKey,
     scrubKey,
     type RawCall,
 } from "../src/lib/live/trainTracker";
@@ -59,8 +60,7 @@ export function fixtureText(body: string, key: string): string {
 
 async function main(): Promise<void> {
     const args = parseSampleArgs(process.argv.slice(2));
-    const key = process.env.CTA_TRAIN_TRACKER_KEY?.trim();
-    if (!key) throw new Error("CTA_TRAIN_TRACKER_KEY must be set in this shell; it is not read from .env.local.");
+    const key = readTrainTrackerKey(process.env);
 
     const calls: RawCall[] = [];
     const tracker = createTrainTracker({ key, onCall: (call) => calls.push(call) });

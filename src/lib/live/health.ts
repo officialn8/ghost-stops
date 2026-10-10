@@ -54,19 +54,21 @@ export async function readTrainFreshness(db: Db): Promise<TrainFreshness> {
 
 /** The database and bucket facts the assessment needs; a failed bucket read is a fact, not an error. */
 export async function readTrainHealthInputs(db: Db, store: ObjectStore | null, now: Date): Promise<TrainHealthInputs> {
-    const [latest, freshness] = await Promise.all([
-        db.liveDay.findFirst({ orderBy: { serviceDate: "desc" }, select: { serviceDate: true } }),
-        readTrainFreshness(db),
-    ]);
-    let checkpointAgeMs: TrainHealthInputs["checkpointAgeMs"] = "unreadable";
-    if (store !== null) {
+    const checkpointAge = async (): Promise<TrainHealthInputs["checkpointAgeMs"]> => {
+        if (store === null) return "unreadable";
         try {
             const head = await headCheckpoint(store, now.getTime());
-            checkpointAgeMs = head === null ? null : head.ageMs === null ? "unreadable" : head.ageMs;
+            return head === null ? null : (head.ageMs ?? "unreadable");
         } catch {
-            checkpointAgeMs = "unreadable";
+            return "unreadable";
         }
-    }
+    };
+    // The two database reads and the bucket read are independent; the request waits for the slowest.
+    const [latest, freshness, checkpointAgeMs] = await Promise.all([
+        db.liveDay.findFirst({ orderBy: { serviceDate: "desc" }, select: { serviceDate: true } }),
+        readTrainFreshness(db),
+        checkpointAge(),
+    ]);
     return { latestDay: optionalDay(latest?.serviceDate), observedThrough: freshness.observedThrough, checkpointAgeMs };
 }
 

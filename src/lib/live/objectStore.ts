@@ -8,7 +8,9 @@
  * single-instance lease and the loser must exit rather than overwrite.
  */
 import { createHash } from "node:crypto";
+import { gunzipSync, gzipSync } from "node:zlib";
 import { AwsClient } from "aws4fetch";
+import { retryableStatus, sleep } from "./retry";
 
 export interface ObjectHead {
     etag: string | null;
@@ -84,7 +86,17 @@ export interface R2StoreOptions {
 const DEFAULT_RETRY_DELAYS_MS = [1_000, 2_000, 4_000] as const;
 const DEFAULT_TIMEOUT_MS = 30_000;
 
-const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
+/** Code-unit order, as S3 lists keys; the store's keys are its own ASCII paths. */
+const byKey = <T extends { key: string }>(a: T, b: T) => (a.key < b.key ? -1 : a.key > b.key ? 1 : 0);
+
+/** A value as gzip JSON, the shape of every small object the store holds: checkpoint, schedules, day states. */
+export function gzipJson(value: unknown, level = 6): Buffer {
+    return gzipSync(Buffer.from(JSON.stringify(value), "utf8"), { level });
+}
+
+export function gunzipJson<T>(body: Buffer): T {
+    return JSON.parse(gunzipSync(body).toString("utf8")) as T;
+}
 
 function parseLastModified(value: string | null): number | null {
     if (!value) return null;
@@ -140,7 +152,7 @@ export function createR2Store(options: R2StoreOptions): ObjectStore {
             } catch {
                 // The failure's own text may carry the hostname; only the fact survives.
             }
-            if (response !== null && response.status < 500 && response.status !== 429) return response;
+            if (response !== null && !retryableStatus(response.status)) return response;
             if (attempt >= retryDelaysMs.length) {
                 throw new ObjectStoreError(operation, key, response?.status ?? null);
             }
@@ -157,7 +169,8 @@ export function createR2Store(options: R2StoreOptions): ObjectStore {
             const condition = putOptions.condition;
             if (condition && "ifMatch" in condition) headers["If-Match"] = condition.ifMatch;
             if (condition && "ifNoneMatch" in condition) headers["If-None-Match"] = condition.ifNoneMatch;
-            const response = await request("put", key, objectUrl(key), { method: "PUT", headers, body: new Uint8Array(body) });
+            // A view over the Buffer's memory, not a copy: a day object is tens of megabytes.
+            const response = await request("put", key, objectUrl(key), { method: "PUT", headers, body: new Uint8Array(body.buffer as ArrayBuffer, body.byteOffset, body.byteLength) });
             if (response.status === 412) throw new PreconditionFailedError(key);
             if (!response.ok) throw new ObjectStoreError("put", key, response.status);
             return { etag: response.headers.get("etag") };
@@ -205,7 +218,7 @@ export function createR2Store(options: R2StoreOptions): ObjectStore {
                 objects.push(...page.objects);
                 token = page.continuationToken;
             } while (token !== null);
-            return objects.sort((a, b) => (a.key < b.key ? -1 : a.key > b.key ? 1 : 0));
+            return objects.sort(byKey);
         },
     };
 }
@@ -280,7 +293,7 @@ export function createMemoryObjectStore(options: { now?: () => number } = {}): M
             return [...objects.entries()]
                 .filter(([key]) => key.startsWith(prefix))
                 .map(([key, stored]) => ({ key, size: stored.body.byteLength }))
-                .sort((a, b) => (a.key < b.key ? -1 : a.key > b.key ? 1 : 0));
+                .sort(byKey);
         },
 
         objects() {
@@ -294,15 +307,37 @@ export function createMemoryObjectStore(options: { now?: () => number } = {}): M
     };
 }
 
+const R2_ENV_NAMES = ["R2_ACCOUNT_ID", "R2_BUCKET", "R2_ACCESS_KEY_ID", "R2_SECRET_ACCESS_KEY"] as const;
+
+export type R2Env = Pick<R2StoreOptions, "accountId" | "bucket" | "accessKeyId" | "secretAccessKey">;
+
+/** The four R2 variables, trimmed, or the names of the missing ones. */
+export function r2EnvOf(env: Record<string, string | undefined>): { ok: true; env: R2Env } | { ok: false; missing: string[] } {
+    const missing = R2_ENV_NAMES.filter((name) => !env[name]?.trim());
+    if (missing.length > 0) return { ok: false, missing };
+    return {
+        ok: true,
+        env: {
+            accountId: env.R2_ACCOUNT_ID!.trim(),
+            bucket: env.R2_BUCKET!.trim(),
+            accessKeyId: env.R2_ACCESS_KEY_ID!.trim(),
+            secretAccessKey: env.R2_SECRET_ACCESS_KEY!.trim(),
+        },
+    };
+}
+
+/** The four R2 variables for a script that cannot run without them; the error names the missing ones. */
+export function readR2Env(env: Record<string, string | undefined>): R2Env {
+    const read = r2EnvOf(env);
+    if (!read.ok) throw new Error(`${read.missing.join(", ")} must be set`);
+    return read.env;
+}
+
 /**
  * The R2 store from the environment, or null when any of the four variables is unset (a preview
  * deployment, a shell without them). The site's token is read-only and scoped to the one bucket.
  */
-export function r2StoreFromEnv(env: Record<string, string | undefined>): ObjectStore | null {
-    const accountId = env.R2_ACCOUNT_ID?.trim();
-    const bucket = env.R2_BUCKET?.trim();
-    const accessKeyId = env.R2_ACCESS_KEY_ID?.trim();
-    const secretAccessKey = env.R2_SECRET_ACCESS_KEY?.trim();
-    if (!accountId || !bucket || !accessKeyId || !secretAccessKey) return null;
-    return createR2Store({ accountId, bucket, accessKeyId, secretAccessKey });
+export function r2StoreFromEnv(env: Record<string, string | undefined>, options: Pick<R2StoreOptions, "retryDelaysMs" | "timeoutMs"> = {}): ObjectStore | null {
+    const read = r2EnvOf(env);
+    return read.ok ? createR2Store({ ...read.env, ...options }) : null;
 }

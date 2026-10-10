@@ -12,7 +12,6 @@ import {
     dayPartsPrefix,
     getCheckpoint,
     headCheckpoint,
-    hourIndexOf,
     isCheckpointHeld,
     LEASE_HOLD_MS,
     partFileName,
@@ -24,7 +23,7 @@ import {
     type RawLine,
     type RawWriter,
 } from "./rawStore";
-import { parseChicagoLocal, serviceDayStart } from "./serviceDay";
+import { hourIndexOf, parseChicagoLocal, serviceDayStart } from "./serviceDay";
 
 const DAY = "2026-10-14";
 const DAY_START = serviceDayStart(DAY); // 03:00 CDT

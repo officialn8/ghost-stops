@@ -7,6 +7,10 @@
  * twelve hours" of a trip's service date, and raw files bucket at the 03:00 boundary; every
  * conversion goes through `Intl.DateTimeFormat` with the `America/Chicago` zone. Nothing here does
  * `new Date()` arithmetic on a local string, which would read the string in the server's zone.
+ *
+ * Chicago's UTC offset changes only at 02:00 local, which is 07:00 or 08:00 UTC, on the hour, so
+ * one Intl reading per UTC hour gives the exact offset for every instant in that hour. The
+ * reading is cached, which keeps the matcher's and the schedule's millions of conversions cheap.
  */
 import { addDays, isCalendarDate } from "@/lib/sync/window";
 
@@ -18,8 +22,10 @@ export const SERVICE_DAY_START_HOUR = 3;
 /** Minutes past 03:00 plus the tolerance before a day is reduced, so the last slots have verdicts. */
 export const DAY_CLOSE_MARGIN_MINUTES = 10;
 
-const MINUTE_MS = 60_000;
-const HOUR_MS = 60 * MINUTE_MS;
+export const MINUTE_MS = 60_000;
+export const HOUR_MS = 60 * MINUTE_MS;
+
+export const pad2 = (n: number) => String(n).padStart(2, "0");
 
 /** A Chicago wall-clock reading: the calendar date and the time of day. */
 export interface WallClock {
@@ -44,32 +50,51 @@ function assertCalendarDate(date: string): void {
     if (!isCalendarDate(date)) throw new Error(`Expected a YYYY-MM-DD calendar date, got "${date}"`);
 }
 
-/** The Chicago wall clock at an instant. */
-export function chicagoWallClock(epochMs: number): WallClock {
-    const parts = wallClockFormat.formatToParts(new Date(epochMs));
-    const field = (type: Intl.DateTimeFormatPartTypes) => {
-        const part = parts.find((p) => p.type === type);
-        if (!part) throw new Error(`Intl gave no ${type} part`);
-        return part.value;
-    };
-    return {
-        date: `${field("year")}-${field("month")}-${field("day")}`,
-        hour: Number(field("hour")) % 24,
-        minute: Number(field("minute")),
-        second: Number(field("second")),
-    };
-}
-
 /** The wall clock read as if it were UTC: the number `Date.UTC` gives for its fields. */
 function wallClockAsUtc(wall: WallClock): number {
     const [year, month, day] = wall.date.split("-").map(Number);
     return Date.UTC(year, month - 1, day, wall.hour, wall.minute, wall.second);
 }
 
+/** The Intl reading itself, once per UTC hour. */
+function offsetFromIntl(epochMs: number): number {
+    const parts = wallClockFormat.formatToParts(new Date(epochMs));
+    const field = (type: Intl.DateTimeFormatPartTypes) => {
+        const part = parts.find((p) => p.type === type);
+        if (!part) throw new Error(`Intl gave no ${type} part`);
+        return part.value;
+    };
+    const wall: WallClock = {
+        date: `${field("year")}-${field("month")}-${field("day")}`,
+        hour: Number(field("hour")) % 24,
+        minute: Number(field("minute")),
+        second: Number(field("second")),
+    };
+    return wallClockAsUtc(wall) - epochMs;
+}
+
+const offsetByUtcHour = new Map<number, number>();
+
 /** Chicago's UTC offset at an instant, in milliseconds (negative: -5 h in summer, -6 h in winter). */
 export function chicagoOffsetMs(epochMs: number): number {
-    const whole = Math.floor(epochMs / 1000) * 1000;
-    return wallClockAsUtc(chicagoWallClock(whole)) - whole;
+    const hour = Math.floor(epochMs / HOUR_MS);
+    let offset = offsetByUtcHour.get(hour);
+    if (offset === undefined) {
+        offset = offsetFromIntl(hour * HOUR_MS);
+        offsetByUtcHour.set(hour, offset);
+    }
+    return offset;
+}
+
+/** The Chicago wall clock at an instant. */
+export function chicagoWallClock(epochMs: number): WallClock {
+    const local = new Date(Math.floor(epochMs) + chicagoOffsetMs(epochMs));
+    return {
+        date: `${local.getUTCFullYear()}-${pad2(local.getUTCMonth() + 1)}-${pad2(local.getUTCDate())}`,
+        hour: local.getUTCHours(),
+        minute: local.getUTCMinutes(),
+        second: local.getUTCSeconds(),
+    };
 }
 
 const sameWallClock = (a: WallClock, b: WallClock) =>
@@ -123,8 +148,17 @@ export function serviceDateOf(epochMs: number): string {
 
 /** The instant a service day starts: 03:00 Chicago on its date (never inside a transition). */
 export function serviceDayStart(serviceDate: string): number {
-    assertCalendarDate(serviceDate);
     return instantOfChicagoLocal({ date: serviceDate, hour: SERVICE_DAY_START_HOUR, minute: 0, second: 0 });
+}
+
+/** The minute of a service day an instant falls in: 0 at 03:00 Chicago, past the day's end for the overlap. */
+export function minuteIndexOf(serviceDate: string, epochMs: number): number {
+    return Math.floor((epochMs - serviceDayStart(serviceDate)) / MINUTE_MS);
+}
+
+/** The hour of a service day an instant falls in: 0 at 03:00 Chicago, up to 24 on a fall-back day. */
+export function hourIndexOf(serviceDate: string, epochMs: number): number {
+    return Math.floor((epochMs - serviceDayStart(serviceDate)) / HOUR_MS);
 }
 
 const GTFS_TIME = /^(\d{1,2}):(\d{2}):(\d{2})$/;
@@ -141,7 +175,6 @@ export function parseGtfsTime(text: string): number {
  * seconds (the GTFS rule, which keeps times past 24:00 on their trip's service date, AE11).
  */
 export function instantOfGtfsTime(serviceDate: string, seconds: number): number {
-    assertCalendarDate(serviceDate);
     const noon = instantOfChicagoLocal({ date: serviceDate, hour: 12, minute: 0, second: 0 });
     return noon - 12 * HOUR_MS + seconds * 1000;
 }
@@ -171,10 +204,8 @@ export function latestClosedServiceDay(nowEpochMs: number, toleranceMinutes: num
     return day;
 }
 
-const pad = (n: number) => String(n).padStart(2, "0");
-
-/** The Chicago wall clock as "YYYY-MM-DD HH:mm:ss", for keys and log lines. */
+/** The Chicago wall clock as "YYYY-MM-DD HH:mm:ss". */
 export function formatChicagoLocal(epochMs: number): string {
     const wall = chicagoWallClock(epochMs);
-    return `${wall.date} ${pad(wall.hour)}:${pad(wall.minute)}:${pad(wall.second)}`;
+    return `${wall.date} ${pad2(wall.hour)}:${pad2(wall.minute)}:${pad2(wall.second)}`;
 }

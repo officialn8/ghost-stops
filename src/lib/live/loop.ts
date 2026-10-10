@@ -20,16 +20,18 @@
  * CTA's error 102, calls stop until the day resets, the fail URL is posted once, and every later
  * minute stays missed. A revoked key (101) is treated the same way, so the alert reaches Nate.
  */
+import { setTimeout as wait } from "node:timers/promises";
 import { todayInChicago } from "@/lib/cta/closures";
-import { addDays } from "@/lib/sync/window";
-import { gzipSync } from "node:zlib";
 import type { Healthchecks } from "./healthchecks";
-import { PreconditionFailedError, type ObjectStore } from "./objectStore";
+import { GHOST_TOLERANCE_MINUTES } from "./matcher";
+import { gzipJson, PreconditionFailedError, type ObjectStore } from "./objectStore";
 import { getCheckpoint, isCheckpointHeld, putCheckpoint, type Checkpoint, type RawWriter } from "./rawStore";
-import { dayCloseInstant, expectedPolls, serviceDateOf, serviceDayStart } from "./serviceDay";
+import { dayCloseInstant, MINUTE_MS } from "./serviceDay";
 import { applyTick, createDayTracker, createSweepState, type SweepState, type TickInput, type TrackerState } from "./tracker";
 import {
     ARRIVALS_BATCH_SIZE,
+    bodyBytes,
+    STALE_STATION_ERROR_CODES,
     TrainTrackerError,
     TrainTrackerKeyError,
     TrainTrackerQuotaError,
@@ -39,13 +41,8 @@ import {
     type TrainSource,
 } from "./trainTracker";
 
-const MINUTE_MS = 60_000;
-
 /** Calls per Chicago day after which the worker stops calling until the reset (KTD14). */
 export const QUOTA_HARD_STOP = 90_000;
-
-/** The default ghost tolerance until U7 freezes it from the sensitivity table (KTD4). */
-export const DEFAULT_TOLERANCE_MINUTES = 5;
 
 export const DEFAULT_CONCURRENCY = 4;
 export const DEFAULT_JITTER_MS = 200;
@@ -54,6 +51,11 @@ export const DEFAULT_TICK_BUDGET_MS = 55_000;
 /** Open live predictions unseen for this long are forgotten (a board that stopped answering). */
 const OPEN_LIVE_TTL_MS = 2 * 60 * MINUTE_MS;
 
+/** Raw parts left on disk by a failed upload are retried this often. */
+const UPLOAD_PASS_EVERY_TICKS = 60;
+
+export type StopReason = "quota" | "key";
+
 export interface Quota {
     /** The Chicago calendar date the count belongs to; CTA resets at midnight. */
     chicagoDate: string;
@@ -61,10 +63,10 @@ export interface Quota {
     /** Set at the hard stop or on error 102 or 101; cleared when the date changes. */
     stopped: boolean;
     /** Why calls stopped, for the log and the day's record. */
-    stopReason: "quota" | "key" | null;
+    stopReason: StopReason | null;
 }
 
-/** How far a closed day got: U8 fills these in; before it, a closed day is serialized only. */
+/** How far a closed day got: reduced and written, the site refreshed, the raw day compacted (U8). */
 export interface DayReduction {
     serviceDate: string;
     reduced: boolean;
@@ -83,7 +85,7 @@ export interface WorkerState {
 }
 
 export interface LoopHooks {
-    /** A day has closed: reduce, write, revalidate, compact (U8). The default serializes it to the store. */
+    /** A day has closed: reduce, write, revalidate, compact (U8). The default only serializes it to the store. */
     onDayClose(tracker: TrackerState, context: { closedAt: number; quota: Quota }): Promise<DayReduction>;
     /** At startup, finish a day left reduced but not revalidated or compacted (U8). */
     finishDay(day: DayReduction): Promise<DayReduction>;
@@ -106,7 +108,7 @@ export function createCallSink(rawWriter: RawWriter): CallSink {
         onCall(call) {
             rawWriter.append(call);
             calls += 1;
-            bytes += call.body === null ? 0 : Buffer.byteLength(call.body, "utf8");
+            bytes += bodyBytes(call);
             if (call.failure !== null) failures += 1;
         },
         take() {
@@ -152,10 +154,9 @@ export interface LoopResult {
 
 export const dayStateKey = (serviceDate: string) => `days/v1/${serviceDate}.json.gz`;
 
-/** The default close: the day's tracker, serialized whole, so nothing is lost before U8 reduces it. */
+/** A closed day's tracker, serialized whole beside its raw record. */
 export async function serializeClosedDay(store: ObjectStore, tracker: TrackerState): Promise<void> {
-    const body = gzipSync(Buffer.from(JSON.stringify(tracker), "utf8"), { level: 6 });
-    await store.put(dayStateKey(tracker.serviceDate), body, { contentType: "application/gzip" });
+    await store.put(dayStateKey(tracker.serviceDate), gzipJson(tracker), { contentType: "application/gzip" });
 }
 
 export function freshQuota(chicagoDate: string): Quota {
@@ -176,7 +177,7 @@ export async function runLoop(options: LoopOptions): Promise<LoopResult> {
     const now = options.now ?? Date.now;
     const sleep = options.sleep ?? defaultSleep;
     const log = options.log ?? (() => {});
-    const tolerance = options.toleranceMinutes ?? DEFAULT_TOLERANCE_MINUTES;
+    const tolerance = options.toleranceMinutes ?? GHOST_TOLERANCE_MINUTES;
     const concurrency = options.concurrency ?? DEFAULT_CONCURRENCY;
     const jitterMs = options.jitterMs ?? DEFAULT_JITTER_MS;
     const tickBudgetMs = options.tickBudgetMs ?? DEFAULT_TICK_BUDGET_MS;
@@ -222,7 +223,7 @@ export async function runLoop(options: LoopOptions): Promise<LoopResult> {
     };
 
     async function closeDaysBefore(epochMs: number): Promise<void> {
-        for (const [serviceDate, tracker] of [...trackers.entries()].sort()) {
+        for (const [serviceDate, tracker] of [...trackers.entries()].sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))) {
             if (closeOf(serviceDate) > epochMs) continue;
             trackers.delete(serviceDate);
             log(`service day ${serviceDate} closed: ${Object.keys(tracker.slots).length} slots, ${tracker.passages.length} passages, ${Object.keys(tracker.minutes).length} minutes`);
@@ -300,31 +301,30 @@ export async function runLoop(options: LoopOptions): Promise<LoopResult> {
         ticks += 1;
         state.ticks += 1;
 
-        if (tick.stop !== null && !state.quota.stopped) {
-            state.quota.stopped = true;
-            state.quota.stopReason = tick.stop;
-            log(`${tick.stop === "quota" ? "daily quota exhausted" : "key refused"}; calls stop until the Chicago day resets`);
-            await options.healthchecks?.fail();
-        } else if (!state.quota.stopped && state.quota.calls >= QUOTA_HARD_STOP) {
-            state.quota.stopped = true;
-            state.quota.stopReason = "quota";
-            log(`${QUOTA_HARD_STOP} calls today; calls stop until the Chicago day resets`);
-            await options.healthchecks?.fail();
-        }
+        if (tick.stop !== null) await stopCalls(tick.stop, tick.stop === "quota" ? "daily quota exhausted" : "key refused");
+        else if (state.quota.calls >= QUOTA_HARD_STOP) await stopCalls("quota", `${QUOTA_HARD_STOP} calls today`);
 
         if (!(await writeCheckpoint(false))) return { ticks, exit: "lost-lease" };
         if (tick.success) await options.healthchecks?.ping();
-        if (ticks % 60 === 1) await options.rawWriter.uploadPending();
+        if (ticks % UPLOAD_PASS_EVERY_TICKS === 1) await options.rawWriter.uploadPending();
         log(`tick ${state.ticks}: ${taken.calls} calls, ${taken.failures} failed, ${Math.round(taken.bytes / 1024)} KB, ${now() - pollEpoch} ms${tick.success ? "" : ", no ping"}`);
     }
     await shutdown(true);
     return { ticks, exit: "stopped" };
 
+    /** Stops the calls until the Chicago day resets and posts the fail URL once (KTD13, KTD14). */
+    async function stopCalls(reason: StopReason, why: string): Promise<void> {
+        state.quota.stopped = true;
+        state.quota.stopReason = reason;
+        log(`${why}; calls stop until the Chicago day resets`);
+        await options.healthchecks?.fail();
+    }
+
     /** One tick's calls: positions, then the sweep at bounded concurrency with jitter. */
-    async function poll(pollEpoch: number): Promise<{ input: TickInput; success: boolean; stop: "quota" | "key" | null }> {
+    async function poll(pollEpoch: number): Promise<{ input: TickInput; success: boolean; stop: StopReason | null }> {
         const deadline = pollEpoch + tickBudgetMs;
         const batches = chunk(options.stations(), ARRIVALS_BATCH_SIZE);
-        let stop: "quota" | "key" | null = null;
+        let stop: StopReason | null = null;
         const stopped = () => state.quota.stopped || stop !== null;
         const classify = (error: unknown): void => {
             if (error instanceof TrainTrackerQuotaError) stop = "quota";
@@ -358,9 +358,8 @@ export async function runLoop(options: LoopOptions): Promise<LoopResult> {
                     results[index].response = await options.source.arrivals(batches[index]);
                 } catch (error) {
                     classify(error);
-                    // 103 and 108: CTA no longer knows a station in the batch (a closure not yet in
-                    // the closure table); the whole batch is lost until the table is updated.
-                    if (error instanceof TrainTrackerError && (error.code === 103 || error.code === 108)) {
+                    // The whole batch is lost until the closure table names the station.
+                    if (error instanceof TrainTrackerError && error.code !== null && STALE_STATION_ERROR_CODES.includes(error.code)) {
                         log(`stale station id in arrivals batch ${batches[index].join(",")}: ${error.message}`);
                     }
                 }
@@ -395,13 +394,5 @@ function pruneOpenLive(sweep: SweepState, nowEpochMs: number): void {
 }
 
 async function defaultSleep(ms: number, signal: AbortSignal): Promise<void> {
-    const { setTimeout: wait } = await import("node:timers/promises");
     await wait(ms, undefined, { signal });
 }
-
-/** The next service day's start after `epochMs`, for logs and tests. */
-export function nextDayStart(epochMs: number): number {
-    return serviceDayStart(addDays(serviceDateOf(epochMs), 1));
-}
-
-export { expectedPolls };

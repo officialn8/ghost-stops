@@ -150,3 +150,26 @@ describe("formatChicagoLocal", () => {
         expect(formatChicagoLocal(utc("2026-10-14T06:05:09"))).toBe("2026-10-14 01:05:09");
     });
 });
+
+describe("the cached offset", () => {
+    const intl = new Intl.DateTimeFormat("en-US", { timeZone: "America/Chicago", hourCycle: "h23", year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", second: "2-digit" });
+    const direct = (epochMs: number) => {
+        const parts = intl.formatToParts(new Date(epochMs));
+        const f = (type: Intl.DateTimeFormatPartTypes) => parts.find((p) => p.type === type)!.value;
+        return { date: `${f("year")}-${f("month")}-${f("day")}`, hour: Number(f("hour")) % 24, minute: Number(f("minute")), second: Number(f("second")) };
+    };
+
+    it("reads the same wall clock as Intl every seven minutes across both 2026 transitions", () => {
+        for (const [from, to] of [["2026-03-07T00:00:00Z", "2026-03-09T00:00:00Z"], ["2026-10-31T00:00:00Z", "2026-11-02T00:00:00Z"]]) {
+            for (let t = Date.parse(from); t < Date.parse(to); t += 7 * 60_000 + 13_000) {
+                expect(chicagoWallClock(t)).toEqual(direct(t));
+            }
+        }
+    });
+
+    it("round-trips every instant it reads back through instantOfChicagoLocal, outside the fall-back hour", () => {
+        for (let t = Date.parse("2026-03-08T00:00:00Z"); t < Date.parse("2026-03-09T00:00:00Z"); t += 11 * 60_000) {
+            expect(instantOfChicagoLocal(chicagoWallClock(t), t)).toBe(t);
+        }
+    });
+});

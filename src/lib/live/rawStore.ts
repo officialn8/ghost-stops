@@ -16,16 +16,19 @@
  */
 import fs from "node:fs";
 import path from "node:path";
-import { gunzipSync, gzipSync } from "node:zlib";
-import { ObjectStoreError, type ObjectStore, type PutCondition } from "./objectStore";
-import { serviceDateOf, serviceDayStart } from "./serviceDay";
+import { Readable } from "node:stream";
+import { createGunzip, gzipSync } from "node:zlib";
+import { gunzipJson, gzipJson, ObjectStoreError, type ObjectStore, type PutCondition } from "./objectStore";
+import { hourIndexOf, pad2, serviceDateOf } from "./serviceDay";
 import type { RawCall } from "./trainTracker";
 
 export const RAW_PREFIX = "raw/v1";
 export const CHECKPOINT_KEY = "state/checkpoint.json.gz";
 export const LEASE_HOLD_MS = 3 * 60_000;
-const HOUR_MS = 60 * 60_000;
 const PART_FILE = /^(\d{4}-\d{2}-\d{2})\.(\d{2})\.(\d{13})\.ndjson$/;
+const NEWLINE = 0x0a;
+/** Parts fetched or deleted at once during compaction; the concatenation keeps the key order. */
+const COMPACTION_CONCURRENCY = 4;
 
 const monthPrefix = (serviceDate: string) => `${RAW_PREFIX}/${serviceDate.slice(0, 4)}/${serviceDate.slice(5, 7)}`;
 
@@ -38,13 +41,6 @@ export function dayObjectKey(serviceDate: string): string {
 export function dayPartsPrefix(serviceDate: string): string {
     return `${monthPrefix(serviceDate)}/${serviceDate}/`;
 }
-
-/** The hour of a service day an instant falls in: 0 at 03:00 Chicago, up to 24 on a fall-back day. */
-export function hourIndexOf(serviceDate: string, epochMs: number): number {
-    return Math.floor((epochMs - serviceDayStart(serviceDate)) / HOUR_MS);
-}
-
-const pad2 = (n: number) => String(n).padStart(2, "0");
 
 export function partKey(serviceDate: string, hourIndex: number, startEpoch: number): string {
     return `${dayPartsPrefix(serviceDate)}${pad2(hourIndex)}.${String(startEpoch).padStart(13, "0")}.ndjson.gz`;
@@ -88,12 +84,14 @@ interface OpenPart {
     file: string;
 }
 
-/** The complete lines of a part file; a final fragment with no newline (a cut-off write) is dropped. */
-export function readPartLines(file: string): string[] {
-    const lines = fs.readFileSync(file, "utf8").split("\n");
-    // The last element is "" after a complete final line, or a cut-off write, which is dropped.
-    lines.pop();
-    return lines;
+/**
+ * A part file's complete lines as one buffer, up to and including the last newline; a final
+ * fragment with no newline (a cut-off write) is dropped. Null when the file holds no complete line.
+ */
+export function readPartBody(file: string): Buffer | null {
+    const bytes = fs.readFileSync(file);
+    const end = bytes.lastIndexOf(NEWLINE);
+    return end < 0 ? null : bytes.subarray(0, end + 1);
 }
 
 export function createRawWriter(options: RawWriterOptions): RawWriter {
@@ -102,24 +100,24 @@ export function createRawWriter(options: RawWriterOptions): RawWriter {
     fs.mkdirSync(dir, { recursive: true });
     let open: OpenPart | null = null;
 
-    async function upload(file: string): Promise<boolean> {
+    /** Uploads one part file and removes it; the key on success, null when it stays on disk. */
+    async function upload(file: string): Promise<string | null> {
         const key = partKeyOfFile(path.basename(file));
-        if (key === null) return false;
-        const lines = readPartLines(file);
-        if (lines.length === 0) {
+        if (key === null) return null;
+        const body = readPartBody(file);
+        if (body === null) {
             fs.rmSync(file, { force: true });
-            return true;
+            return key;
         }
-        const body = gzipSync(Buffer.from(`${lines.join("\n")}\n`, "utf8"), { level: 6 });
         try {
-            await store.put(key, body, { contentType: "application/gzip" });
+            await store.put(key, gzipSync(body, { level: 6 }), { contentType: "application/gzip" });
         } catch (error) {
-            // The file stays for uploadLeftovers; the message carries the key and status only.
+            // The file stays for the next pass; the message carries the key and status only.
             log(`raw part not uploaded, kept on disk: ${error instanceof ObjectStoreError ? error.message : key}`);
-            return false;
+            return null;
         }
         fs.rmSync(file, { force: true });
-        return true;
+        return key;
     }
 
     function pendingFiles(): string[] {
@@ -150,13 +148,29 @@ export function createRawWriter(options: RawWriterOptions): RawWriter {
         async uploadPending() {
             const uploaded: string[] = [];
             for (const file of pendingFiles()) {
-                if (await upload(file)) uploaded.push(partKeyOfFile(path.basename(file)) as string);
+                const key = await upload(file);
+                if (key !== null) uploaded.push(key);
             }
             return uploaded;
         },
 
         pendingFiles,
     };
+}
+
+/** Runs `work` over `items` a few at a time, returning the results in the items' order. */
+async function mapConcurrent<T, R>(items: readonly T[], concurrency: number, work: (item: T) => Promise<R>): Promise<R[]> {
+    const results = new Array<R>(items.length);
+    let next = 0;
+    const worker = async (): Promise<void> => {
+        for (;;) {
+            const index = next++;
+            if (index >= items.length) return;
+            results[index] = await work(items[index]);
+        }
+    };
+    await Promise.all(Array.from({ length: Math.min(concurrency, items.length) }, worker));
+    return results;
 }
 
 export type CompactionResult =
@@ -174,38 +188,50 @@ export async function compactDay(store: ObjectStore, serviceDate: string): Promi
     if (existing !== null) return { status: "exists", key, bytes: existing.size };
     const parts = await store.list(dayPartsPrefix(serviceDate));
     if (parts.length === 0) return { status: "no-parts", key };
-    const buffers: Buffer[] = [];
-    for (const part of parts) {
+    const buffers = await mapConcurrent(parts, COMPACTION_CONCURRENCY, async (part) => {
         const object = await store.get(part.key);
         if (object === null) throw new ObjectStoreError("get", part.key, 404, "part vanished during compaction");
-        buffers.push(object.body);
-    }
+        return object.body;
+    });
     const body = Buffer.concat(buffers);
     await store.put(key, body, { contentType: "application/gzip" });
-    for (const part of parts) await store.delete(part.key);
+    await mapConcurrent(parts, COMPACTION_CONCURRENCY, (part) => store.delete(part.key));
     return { status: "compacted", key, bytes: body.byteLength, parts: parts.length };
+}
+
+/** Every line of one or more concatenated gzip members, decoded one line at a time, never as one string. */
+async function* gunzipLines(members: readonly Buffer[]): AsyncGenerator<string> {
+    const source = Readable.from(members).pipe(createGunzip());
+    let carry: Buffer = Buffer.alloc(0);
+    for await (const chunk of source as AsyncIterable<Buffer>) {
+        const data = carry.byteLength === 0 ? chunk : Buffer.concat([carry, chunk]);
+        let start = 0;
+        for (;;) {
+            const end = data.indexOf(NEWLINE, start);
+            if (end < 0) break;
+            if (end > start) yield data.toString("utf8", start, end);
+            start = end + 1;
+        }
+        carry = data.subarray(start);
+    }
+    if (carry.byteLength > 0) yield carry.toString("utf8");
 }
 
 /** The lines of a compacted day object, or of the parts still under its prefix when it has none. */
 export async function readRawDay(store: ObjectStore, serviceDate: string): Promise<RawLine[] | null> {
     const day = await store.get(dayObjectKey(serviceDate));
-    let buffers: Buffer[];
+    let members: Buffer[];
     if (day !== null) {
-        buffers = [day.body];
+        members = [day.body];
     } else {
         const parts = await store.list(dayPartsPrefix(serviceDate));
         if (parts.length === 0) return null;
-        buffers = [];
-        for (const part of parts) {
-            const object = await store.get(part.key);
-            if (object !== null) buffers.push(object.body);
-        }
+        const objects = await mapConcurrent(parts, COMPACTION_CONCURRENCY, (part) => store.get(part.key));
+        members = objects.flatMap((object) => (object === null ? [] : [object.body]));
     }
-    return gunzipSync(Buffer.concat(buffers))
-        .toString("utf8")
-        .split("\n")
-        .filter((line) => line !== "")
-        .map((line) => JSON.parse(line) as RawLine);
+    const lines: RawLine[] = [];
+    for await (const line of gunzipLines(members)) lines.push(JSON.parse(line) as RawLine);
+    return lines;
 }
 
 /** The checkpoint envelope: who wrote it, when, whether they let go, and the worker's state. */
@@ -227,8 +253,7 @@ export interface CheckpointRead<T> {
 export async function getCheckpoint<T>(store: ObjectStore): Promise<CheckpointRead<T> | null> {
     const object = await store.get(CHECKPOINT_KEY);
     if (object === null) return null;
-    const checkpoint = JSON.parse(gunzipSync(object.body).toString("utf8")) as Checkpoint<T>;
-    return { checkpoint, etag: object.etag };
+    return { checkpoint: gunzipJson<Checkpoint<T>>(object.body), etag: object.etag };
 }
 
 /**
@@ -236,8 +261,7 @@ export async function getCheckpoint<T>(store: ObjectStore): Promise<CheckpointRe
  * throws `PreconditionFailedError`, which the worker treats as another instance holding the day.
  */
 export async function putCheckpoint<T>(store: ObjectStore, checkpoint: Checkpoint<T>, condition?: PutCondition): Promise<{ etag: string | null }> {
-    const body = gzipSync(Buffer.from(JSON.stringify(checkpoint), "utf8"), { level: 6 });
-    return store.put(CHECKPOINT_KEY, body, { contentType: "application/gzip", condition });
+    return store.put(CHECKPOINT_KEY, gzipJson(checkpoint), { contentType: "application/gzip", condition });
 }
 
 export interface CheckpointAge {

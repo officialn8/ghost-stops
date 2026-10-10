@@ -6,7 +6,7 @@
  *
  * The worker's gap filling uses the same write with a set-aside day and no station rows.
  */
-import type { PrismaClient } from "@/generated/prisma/client";
+import type { Prisma, PrismaClient } from "@/generated/prisma/client";
 import { toUtcDate } from "@/lib/sync/window";
 import { REDUCER_VERSION, type LiveDayRow, type LiveStationDayRow } from "./reduce";
 import { expectedPolls } from "./serviceDay";
@@ -32,7 +32,7 @@ export interface WriteDayResult {
 
 type Db = Pick<PrismaClient, "$transaction" | "city">;
 
-/** KTD10's rule for the sync applies here too: the writes are a handful of statements. */
+/** The sync's transaction settings (src/lib/sync/run.ts): a handful of set-based statements, never Prisma's 5-second default. */
 const TRANSACTION_OPTIONS = { timeout: 60_000, maxWait: 10_000 };
 
 export async function writeDay(
@@ -94,7 +94,8 @@ export async function writeDay(
                     notCountedCause: row.notCountedCause,
                     observedGapMin: row.observedGapMin,
                     scheduledGapMin: row.scheduledGapMin,
-                    byDirection: JSON.parse(JSON.stringify(row.byDirection)) as object[],
+                    // Plain numbers, strings, and nulls; Prisma's Json input type has no index signature for the interface.
+                    byDirection: row.byDirection as unknown as Prisma.InputJsonValue,
                 })),
             });
         }

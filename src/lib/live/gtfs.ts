@@ -106,14 +106,15 @@ export function directoryEntrySource(dir: string): EntrySource {
     };
 }
 
-/** Passes bytes through until the cap, then fails the stream. */
-function byteCap(entry: GtfsEntry, cap: number): Transform {
+/** Passes bytes through until the cap, then fails the stream; `onChunk` sees every byte passed. */
+function byteCap(label: string, cap: number, onChunk?: (chunk: Buffer) => void): Transform {
     let total = 0;
     return new Transform({
         transform(chunk: Buffer, _encoding, callback) {
             total += chunk.byteLength;
-            if (total > cap) callback(new GtfsError("oversize", `${entry} runs past ${cap} bytes`));
-            else callback(null, chunk);
+            if (total > cap) return callback(new GtfsError("oversize", `${label} runs past ${cap} bytes`));
+            onChunk?.(chunk);
+            callback(null, chunk);
         },
     });
 }
@@ -377,13 +378,9 @@ export async function downloadFeed(options: FeedDownloadOptions): Promise<FeedDo
     const temp = `${options.toFile}.part`;
     const hash = createHash("sha256");
     let total = 0;
-    const counting = new Transform({
-        transform(chunk: Buffer, _encoding, callback) {
-            total += chunk.byteLength;
-            if (total > maxBytes) return callback(new GtfsError("oversize", `the feed runs past ${maxBytes} bytes`));
-            hash.update(chunk);
-            callback(null, chunk);
-        },
+    const counting = byteCap("the feed", maxBytes, (chunk) => {
+        total += chunk.byteLength;
+        hash.update(chunk);
     });
     try {
         if (response.body === null) throw new GtfsError("download", "the feed answered with no body");
@@ -397,7 +394,7 @@ export async function downloadFeed(options: FeedDownloadOptions): Promise<FeedDo
     return { status: "downloaded", file: options.toFile, bytes: total, hash: hash.digest("hex"), lastModified: response.headers.get("last-modified") };
 }
 
-/** The Train Tracker route ids the feed covers, in canonical order, for reports. */
+/** The Train Tracker route ids the feed covers, in canonical order. */
 export function routesIn(schedule: RailSchedule): TrainRoute[] {
     const present = new Set(schedule.trips.map((t) => t.route));
     return TRAIN_ROUTES.filter((r) => present.has(r));

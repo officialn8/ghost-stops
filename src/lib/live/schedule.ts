@@ -11,10 +11,13 @@
  * Dropped from a trip: its last stop, the terminal arrival (Train Tracker has no prediction
  * there), and any stop riders cannot board (`pickup_type` 1, the exit-only platforms).
  */
-import { addDays } from "@/lib/sync/window";
+import { median } from "@/lib/scoring/components";
+import { addDays, toUtcDate } from "@/lib/sync/window";
 import type { RailSchedule, RailTrip } from "./gtfs";
-import { instantOfGtfsTime, serviceDayStart } from "./serviceDay";
+import { instantOfGtfsTime, MINUTE_MS, serviceDayStart } from "./serviceDay";
 import type { TrainRoute } from "./trainTracker";
+
+export { median };
 
 export interface ScheduledStop {
     /** The platform (3xxxx) and the roster's station id (4xxxx). */
@@ -59,16 +62,13 @@ export interface DaySchedule {
 
 export const platformRouteKey = (stopId: string, route: TrainRoute) => `${stopId}|${route}`;
 
-const WEEKDAY_INDEX = (date: string): number => {
-    // Monday 0 .. Sunday 6, as calendar.txt lists them; the date is a calendar string, so UTC is safe.
-    const day = new Date(`${date}T00:00:00Z`).getUTCDay();
-    return (day + 6) % 7;
-};
+/** Monday 0 to Sunday 6, as calendar.txt lists the days. */
+const weekdayIndex = (date: string): number => (toUtcDate(date).getUTCDay() + 6) % 7;
 
 /** The service ids running on a calendar date: the calendar's day bit, then the exceptions. */
 export function activeServices(schedule: Pick<RailSchedule, "services" | "exceptions">, calendarDate: string): Set<string> {
     const active = new Set<string>();
-    const weekday = WEEKDAY_INDEX(calendarDate);
+    const weekday = weekdayIndex(calendarDate);
     for (const [id, calendar] of Object.entries(schedule.services)) {
         if (calendar.start <= calendarDate && calendarDate <= calendar.end && calendar.days[weekday] === 1) active.add(id);
     }
@@ -85,18 +85,11 @@ export function boardingStops(trip: RailTrip): RailTrip["stops"] {
     return trip.stops.slice(0, -1).filter(([, , pickupType]) => pickupType !== 1);
 }
 
-export function median(values: readonly number[]): number | null {
-    if (values.length === 0) return null;
-    const sorted = [...values].sort((a, b) => a - b);
-    const mid = Math.floor(sorted.length / 2);
-    return sorted.length % 2 === 1 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
-}
-
 /** The median gap between consecutive instants, in minutes, rounded to a tenth; null under two. */
 export function medianGapMinutes(instants: readonly number[]): number | null {
     if (instants.length < 2) return null;
     const sorted = [...instants].sort((a, b) => a - b);
-    const gaps = sorted.slice(1).map((t, i) => (t - sorted[i]) / 60_000);
+    const gaps = sorted.slice(1).map((t, i) => (t - sorted[i]) / MINUTE_MS);
     const value = median(gaps);
     return value === null ? null : Math.round(value * 10) / 10;
 }
@@ -108,10 +101,12 @@ export function scheduledStopsFor(schedule: RailSchedule, serviceDate: string): 
     const stops: ScheduledStop[] = [];
     for (const calendarDate of [serviceDate, addDays(serviceDate, 1)]) {
         const active = activeServices(schedule, calendarDate);
+        // Noon minus twelve hours of the calendar date; every stop is that plus its seconds.
+        const base = instantOfGtfsTime(calendarDate, 0);
         for (const trip of schedule.trips) {
             if (!active.has(trip.service)) continue;
             for (const [stopId, seconds] of boardingStops(trip)) {
-                const instant = instantOfGtfsTime(calendarDate, seconds);
+                const instant = base + seconds * 1000;
                 if (instant < start || instant >= end) continue;
                 const stationId = schedule.platforms[stopId];
                 if (stationId === undefined) continue; // the extractor refuses such a feed; belt and braces
@@ -124,11 +119,13 @@ export function scheduledStopsFor(schedule: RailSchedule, serviceDate: string): 
     const byStation = new Map<string, ScheduledStop[]>();
     const platformRoutes = new Map<string, PlatformRoute>();
     for (const stop of stops) {
-        byStation.set(stop.stationId, [...(byStation.get(stop.stationId) ?? []), stop]);
+        const atStation = byStation.get(stop.stationId);
+        if (atStation === undefined) byStation.set(stop.stationId, [stop]);
+        else atStation.push(stop);
         const key = platformRouteKey(stop.stopId, stop.route);
-        const entry = platformRoutes.get(key) ?? { stopId: stop.stopId, stationId: stop.stationId, route: stop.route, instants: [], scheduledGapMin: null };
-        entry.instants.push(stop.instant);
-        platformRoutes.set(key, entry);
+        const entry = platformRoutes.get(key);
+        if (entry === undefined) platformRoutes.set(key, { stopId: stop.stopId, stationId: stop.stationId, route: stop.route, instants: [stop.instant], scheduledGapMin: null });
+        else entry.instants.push(stop.instant);
     }
     for (const entry of platformRoutes.values()) entry.scheduledGapMin = medianGapMinutes(entry.instants);
 

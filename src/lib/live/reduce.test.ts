@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { lineFaults, malformedShare, reduceDay, REDUCER_VERSION, succeededPolls, type ReduceInput } from "./reduce";
 import { medianGapMinutes, platformRouteKey, type DaySchedule, type ScheduledStop } from "./schedule";
-import { expectedPolls, parseChicagoLocal, serviceDayStart } from "./serviceDay";
-import { createDayTracker, minuteIndexOf, slotKey, type MinuteRecord, type TrackerState } from "./tracker";
+import { expectedPolls, minuteIndexOf, parseChicagoLocal, serviceDayStart } from "./serviceDay";
+import { createDayTracker, slotKey, type MinuteRecord, type TrackerState } from "./tracker";
 import { TRAIN_ROUTES, type TrainRoute } from "./trainTracker";
 
 const MINUTE = 60_000;

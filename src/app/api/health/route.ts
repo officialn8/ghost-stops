@@ -15,12 +15,15 @@ export const dynamic = "force-dynamic";
 
 const NO_STORE = { "Cache-Control": "no-store" };
 
+/** One quick HEAD: a request must not inherit the worker's retries when the bucket is down. */
+const SITE_R2 = { retryDelaysMs: [], timeoutMs: 5_000 } as const;
+
 export async function GET() {
     const now = new Date();
     try {
         const [ridership, trains] = await Promise.all([
             readHealthInputs(prisma, now),
-            readTrainHealthInputs(prisma, r2StoreFromEnv(process.env), now),
+            readTrainHealthInputs(prisma, r2StoreFromEnv(process.env, SITE_R2), now),
         ]);
         const { httpStatus, report } = assessHealth(ridership, now);
         const trainReport = assessTrains(trains, now);

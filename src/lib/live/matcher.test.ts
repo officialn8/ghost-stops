@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { GHOST_TOLERANCE_MINUTES, verdictsFor } from "./matcher";
 import { medianGapMinutes, platformRouteKey, type DaySchedule, type ScheduledStop } from "./schedule";
-import { parseChicagoLocal, serviceDayStart } from "./serviceDay";
-import { createDayTracker, minuteIndexOf, slotKey, type Passage, type Slot, type TrackerState } from "./tracker";
+import { minuteIndexOf, parseChicagoLocal, serviceDayStart } from "./serviceDay";
+import { createDayTracker, hasGap, slotKey, type Passage, type Slot, type TrackerState } from "./tracker";
 import type { TrainRoute } from "./trainTracker";
 
 const MINUTE = 60_000;
@@ -230,5 +230,136 @@ describe("scheduled stop verdicts", () => {
         expect(station.platforms.find((p) => p.stopId === SOUTH && p.route === null)).toMatchObject({ observedGapMin: 5, scheduledGapMin: 5 });
         expect(station.observedGapMin).toBe(5);
         expect(station.scheduledGapMin).toBe(5);
+    });
+});
+
+/**
+ * The indexed matcher against a plain scan: the same four rules written as the loops over every
+ * stop and passage, on random days, so the bucketing and binary searches can never drift from
+ * the rule they implement.
+ */
+describe("the indexed matcher equals a plain scan", () => {
+    function reference(tracker: TrackerState, sched: DaySchedule, toleranceMinutes: number) {
+        const tol = toleranceMinutes * MINUTE;
+        const passages = [...tracker.passages].sort((a, b) => a.arrivedAt - b.arrivedAt);
+        const slots = Object.values(tracker.slots).sort((a, b) => a.scheduledAt - b.scheduledAt);
+        const stopOfSlot = new Map<Slot, ScheduledStop>();
+        const slotOfStop = new Map<ScheduledStop, Slot>();
+        for (const slot of slots) {
+            let best: ScheduledStop | null = null;
+            for (const stop of sched.stops) {
+                if (stop.stopId !== slot.stopId || stop.route !== slot.route || slotOfStop.has(stop)) continue;
+                const d = Math.abs(stop.instant - slot.scheduledAt);
+                if (d > 2 * MINUTE) continue;
+                if (best === null || d < Math.abs(best.instant - slot.scheduledAt)) best = stop;
+            }
+            if (best !== null) {
+                stopOfSlot.set(slot, best);
+                slotOfStop.set(best, slot);
+            }
+        }
+        const passageOfStop = new Map<ScheduledStop, Passage>();
+        for (const p of passages) {
+            let nearestStop: ScheduledStop | null = null;
+            for (const stop of sched.stops) {
+                if (stop.stopId !== p.stopId || stop.route !== p.route || passageOfStop.has(stop)) continue;
+                const d = Math.abs(p.arrivedAt - stop.instant);
+                if (d > tol) continue;
+                if (nearestStop === null || d < Math.abs(nearestStop.instant - p.arrivedAt)) nearestStop = stop;
+            }
+            if (nearestStop !== null) passageOfStop.set(nearestStop, p);
+        }
+        const slotVerdicts = slots.map((slot) => {
+            const stop = stopOfSlot.get(slot) ?? null;
+            const windowStart = slot.scheduledAt - tol;
+            const windowEnd = slot.scheduledAt + tol;
+            const platformPassage =
+                stop !== null
+                    ? (passageOfStop.get(stop) ?? null)
+                    : (passages.find((p) => p.stationId === slot.stationId && p.stopId === slot.stopId && p.route === slot.route && Math.abs(p.arrivedAt - slot.scheduledAt) <= tol) ?? null);
+            const runPassage =
+                passages.find((p) => p.route === slot.route && slot.runs.includes(p.run) && p.stationId !== slot.stationId && p.arrivedAt >= windowStart && p.arrivedAt <= windowEnd + 3 * MINUTE) ?? null;
+            let verdict: string;
+            let by: string | null = null;
+            let late = false;
+            if (slot.liveSameRunAt !== null) {
+                verdict = "fulfilled";
+                by = "same-run";
+                late = slot.liveSameRunAt > windowEnd;
+            } else if (platformPassage !== null) {
+                verdict = "fulfilled";
+                by = "passage";
+            } else if (runPassage !== null) {
+                verdict = "fulfilled";
+                by = "next-station";
+                late = runPassage.arrivedAt > windowEnd;
+            } else if (hasGap(tracker, slot.stationId, windowStart, windowEnd)) verdict = "unknown";
+            else if (slot.lastSeen + MINUTE < windowStart) verdict = "cancelled";
+            else verdict = "ghost";
+            return { key: slot.key, verdict, by, late, stop: stop?.tripId ?? null };
+        });
+        const stopVerdicts = sched.stops.map((stop) => {
+            const slot = slotOfStop.get(stop);
+            if (slot !== undefined) return { trip: stop.tripId, verdict: slotVerdicts.find((v) => v.key === slot.key)!.verdict, slot: slot.key, passage: passageOfStop.get(stop)?.run ?? null };
+            const passage = passageOfStop.get(stop);
+            if (passage !== undefined) return { trip: stop.tripId, verdict: "fulfilled", slot: null, passage: passage.run };
+            if (hasGap(tracker, stop.stationId, stop.instant - tol, stop.instant + tol)) return { trip: stop.tripId, verdict: "unknown", slot: null, passage: null };
+            return { trip: stop.tripId, verdict: "unobserved", slot: null, passage: null };
+        });
+        return { slotVerdicts, stopVerdicts };
+    }
+
+    /** A small deterministic generator (mulberry32). */
+    function rng(seed: number): () => number {
+        let state = seed >>> 0;
+        return () => {
+            state = (state + 0x6d2b79f5) >>> 0;
+            let t = state;
+            t = Math.imul(t ^ (t >>> 15), t | 1);
+            t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+            return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+        };
+    }
+
+    it.each([1, 2, 3, 4, 5, 6, 7, 8])("agrees on random day %i at every tolerance", (seed) => {
+        const random = rng(seed);
+        const pick = <T,>(items: readonly T[]): T => items[Math.floor(random() * items.length)];
+        const platforms: { stationId: string; stopId: string; route: TrainRoute }[] = [
+            { stationId: JARVIS, stopId: SOUTH, route: "red" },
+            { stationId: JARVIS, stopId: NORTH, route: "red" },
+            { stationId: JARVIS, stopId: SOUTH, route: "p" },
+            { stationId: HOWARD, stopId: HOWARD_SOUTH, route: "red" },
+        ];
+        const stopList = Array.from({ length: 60 }, () => {
+            const p = pick(platforms);
+            return { ...p, instant: at("06:00") + Math.floor(random() * 600) * MINUTE };
+        });
+        const sched = schedule(stopList);
+        const slotList: Slot[] = Array.from({ length: 25 }, () => {
+            const p = pick(platforms);
+            const scheduledAt = at("06:00") + Math.floor(random() * 600) * MINUTE + (random() < 0.5 ? 0 : 30_000);
+            return slot({
+                ...p,
+                scheduledAt,
+                runs: [String(700 + Math.floor(random() * 20))],
+                firstSeen: scheduledAt - Math.floor(random() * 20) * MINUTE,
+                lastSeen: scheduledAt - 10 * MINUTE + Math.floor(random() * 20) * MINUTE,
+                liveSameRunAt: random() < 0.3 ? scheduledAt + Math.floor(random() * 12 - 2) * MINUTE : null,
+            });
+        });
+        const passageList: Passage[] = Array.from({ length: 60 }, (_, i) => {
+            const p = pick(platforms);
+            return passage({ ...p, run: String(700 + Math.floor(random() * 20)), arrivedAt: at("06:00") + Math.floor(random() * 600) * MINUTE + i * 7 });
+        });
+        const missed = Array.from({ length: 6 }, () => at("06:00") + Math.floor(random() * 600) * MINUTE);
+        const t = tracker({ slots: slotList, passages: passageList, missed });
+
+        for (const tolerance of [2, 5, 8]) {
+            const actual = verdictsFor(t, sched, tolerance);
+            const expected = reference(t, sched, tolerance);
+            expect(actual.slots.map((v) => ({ key: v.slot.key, verdict: v.verdict, by: v.by, late: v.late, stop: v.stop?.tripId ?? null }))).toEqual(expected.slotVerdicts);
+            expect(actual.stops.map((v) => ({ trip: v.stop.tripId, verdict: v.verdict, slot: v.slot?.key ?? null, passage: v.passage?.run ?? null }))).toEqual(expected.stopVerdicts);
+            for (const s of actual.byStation.values()) expect(s.scheduled).toBe(s.fulfilled + s.cancelled + s.ghosts + s.unknown + s.unobserved);
+        }
     });
 });

@@ -16,11 +16,11 @@
  * a set-aside day every open station's row names the site's gap (or the tracker's fault), and a
  * closed station's row stays `closed`.
  */
-import { verdictsFor, type DayVerdicts, type PlatformSummary } from "./matcher";
+import type { LiveDayVerdict } from "@/generated/prisma/client";
+import { verdictsFor, zeroCounts, type DayVerdicts, type PlatformSummary, type VerdictCounts } from "./matcher";
 import type { DaySchedule } from "./schedule";
-import { expectedPolls } from "./serviceDay";
-import { hourIndexOf } from "./rawStore";
-import { stationPolls, type TrackerState } from "./tracker";
+import { expectedPolls, HOUR_MS, serviceDayStart } from "./serviceDay";
+import { minutesWithin, stationPolls, type TrackerState } from "./tracker";
 import { ARRIVALS_BATCH_SIZE, TRAIN_ROUTES, type TrainRoute } from "./trainTracker";
 
 /** Bumped when the matching rule changes meaning; a re-reduce rewrites a day under it (KTD6). */
@@ -43,7 +43,7 @@ export type StationCause = "site-gap" | "tracker-fault" | "unobserved" | "closed
 
 export interface LiveDayRow {
     serviceDate: string;
-    verdict: "COUNTED" | "SET_ASIDE";
+    verdict: LiveDayVerdict;
     cause: DayCause | null;
     pollsExpected: number;
     pollsSucceeded: number;
@@ -54,14 +54,8 @@ export interface LiveDayRow {
     reducedAt: Date;
 }
 
-export interface LiveStationDayRow {
+export interface LiveStationDayRow extends VerdictCounts {
     ctaStationId: string;
-    scheduled: number;
-    fulfilled: number;
-    cancelled: number;
-    ghosts: number;
-    unknown: number;
-    unobserved: number;
     unmapped: number;
     coverage: number;
     counted: boolean;
@@ -97,50 +91,43 @@ const round4 = (value: number) => Math.round(value * 10_000) / 10_000;
 export function succeededPolls(tracker: TrackerState, expected: number, stationsSwept: number): number {
     const batches = Math.ceil(stationsSwept / ARRIVALS_BATCH_SIZE);
     const allowedFailedStations = Math.floor((1 - MINUTE_BATCH_FLOOR) * batches) * ARRIVALS_BATCH_SIZE;
-    let count = 0;
-    for (const [index, record] of Object.entries(tracker.minutes)) {
-        if (Number(index) < 0 || Number(index) >= expected) continue;
-        if (record.p === 1 && record.f.length <= allowedFailedStations) count += 1;
-    }
-    return count;
+    return minutesWithin(tracker, expected).filter((r) => r.p === 1 && r.f.length <= allowedFailedStations).length;
 }
 
 /** The share of responses the parser could not fully read, over the day's polled minutes. */
 export function malformedShare(tracker: TrackerState, expected: number, stationsSwept: number): number {
     const callsPerMinute = 1 + Math.ceil(stationsSwept / ARRIVALS_BATCH_SIZE);
-    let minutes = 0;
-    let malformed = 0;
-    for (const [index, record] of Object.entries(tracker.minutes)) {
-        if (Number(index) < 0 || Number(index) >= expected) continue;
-        minutes += 1;
-        malformed += record.m;
-    }
-    return minutes === 0 ? 0 : malformed / (minutes * callsPerMinute);
+    const records = minutesWithin(tracker, expected);
+    const malformed = records.reduce((sum, r) => sum + r.m, 0);
+    return records.length === 0 ? 0 : malformed / (records.length * callsPerMinute);
 }
 
 /** The lines in fault for the day (KTD7): too few live trains for the scheduled trips, three hours running. */
 export function lineFaults(tracker: TrackerState, schedule: DaySchedule, expected: number): TrainRoute[] {
     const hours = Math.ceil(expected / 60);
+    const dayStart = serviceDayStart(schedule.serviceDate);
+    // Distinct trips per route per hour, and live trains seen per route per hour, each in one pass.
+    const trips = new Map<TrainRoute, Set<string>[]>(TRAIN_ROUTES.map((route) => [route, Array.from({ length: hours }, () => new Set<string>())]));
+    for (const stop of schedule.stops) {
+        const hour = Math.floor((stop.instant - dayStart) / HOUR_MS);
+        if (hour >= 0 && hour < hours) trips.get(stop.route)![hour].add(stop.tripId);
+    }
+    const live = TRAIN_ROUTES.map(() => Array.from({ length: hours }, () => ({ sum: 0, n: 0 })));
+    for (const [index, record] of Object.entries(tracker.minutes)) {
+        const hour = Math.floor(Number(index) / 60);
+        if (hour < 0 || hour >= hours || record.t === null) continue;
+        for (const [routeIndex] of TRAIN_ROUTES.entries()) {
+            live[routeIndex][hour].sum += record.t[routeIndex] ?? 0;
+            live[routeIndex][hour].n += 1;
+        }
+    }
     const faults: TrainRoute[] = [];
     for (const [routeIndex, route] of TRAIN_ROUTES.entries()) {
-        const trips: Set<string>[] = Array.from({ length: hours }, () => new Set<string>());
-        for (const stop of schedule.stops) {
-            if (stop.route !== route) continue;
-            const hour = hourIndexOf(schedule.serviceDate, stop.instant);
-            if (hour >= 0 && hour < hours) trips[hour].add(stop.tripId);
-        }
-        const live: { sum: number; n: number }[] = Array.from({ length: hours }, () => ({ sum: 0, n: 0 }));
-        for (const [index, record] of Object.entries(tracker.minutes)) {
-            const hour = Math.floor(Number(index) / 60);
-            if (hour < 0 || hour >= hours || record.t === null) continue;
-            live[hour].sum += record.t[routeIndex] ?? 0;
-            live[hour].n += 1;
-        }
         let run = 0;
         for (let hour = 0; hour < hours; hour++) {
-            const scheduled = trips[hour].size;
-            const observed = live[hour].n === 0 ? null : live[hour].sum / live[hour].n;
-            const fault = scheduled >= FAULT_MIN_SCHEDULED_TRIPS && observed !== null && observed < scheduled * FAULT_LIVE_SHARE;
+            const scheduled = trips.get(route)![hour].size;
+            const { sum, n } = live[routeIndex][hour];
+            const fault = scheduled >= FAULT_MIN_SCHEDULED_TRIPS && n > 0 && sum / n < scheduled * FAULT_LIVE_SHARE;
             run = fault ? run + 1 : 0;
             if (run >= FAULT_CONSECUTIVE_HOURS) {
                 faults.push(route);
@@ -156,7 +143,7 @@ export function routesServing(schedule: DaySchedule, stationId: string): Set<Tra
     return new Set((schedule.byStation.get(stationId) ?? []).map((s) => s.route));
 }
 
-const emptyCounts = () => ({ scheduled: 0, fulfilled: 0, cancelled: 0, ghosts: 0, unknown: 0, unobserved: 0, unmapped: 0, observedGapMin: null, scheduledGapMin: null, byDirection: [] as PlatformSummary[] });
+const emptyCounts = () => ({ ...zeroCounts(), unmapped: 0, observedGapMin: null, scheduledGapMin: null });
 
 export function reduceDay(input: ReduceInput): ReducedDay {
     const { serviceDate, tracker, schedule, stationIds, closedStationIds } = input;

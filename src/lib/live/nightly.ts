@@ -9,14 +9,14 @@
  */
 import type { PrismaClient } from "@/generated/prisma/client";
 import { closuresFor, deriveStatus } from "@/lib/cta/closures";
-import { addDays, optionalDay } from "@/lib/sync/window";
+import { addDays, optionalDay, toUtcDate } from "@/lib/sync/window";
 import type { Healthchecks } from "./healthchecks";
 import type { DayReduction } from "./loop";
 import { GHOST_TOLERANCE_MINUTES } from "./matcher";
 import type { ObjectStore } from "./objectStore";
 import { compactDay } from "./rawStore";
 import { reduceDay, type ReducedDay } from "./reduce";
-import { postRevalidate } from "./revalidate";
+import { postRevalidate, type RevalidateFetch } from "./revalidate";
 import { scheduledStopsFor, type DaySchedule } from "./schedule";
 import { loadSchedule, readScheduleIndex, versionInForce } from "./scheduleArchive";
 import { dayCloseInstant, latestClosedServiceDay } from "./serviceDay";
@@ -38,7 +38,7 @@ export interface NightlyDeps {
     cityCode?: string;
     now?: () => Date;
     log?: (message: string) => void;
-    fetch?: Parameters<typeof postRevalidate>[0]["fetch"];
+    fetch?: RevalidateFetch;
     sleep?: (ms: number) => Promise<void>;
 }
 
@@ -50,8 +50,13 @@ export async function scheduleInForce(store: ObjectStore, serviceDate: string, t
     return schedule === null ? null : scheduledStopsFor(schedule, serviceDate);
 }
 
+/** Whether a roster station is open on a calendar date, by the closure table (R18). */
+export function isOpenOn(ctaStationId: string, date: string): boolean {
+    return deriveStatus(closuresFor(ctaStationId), date).status === "ACTIVE";
+}
+
 export function closedStationsOn(stationIds: readonly string[], serviceDate: string): Set<string> {
-    return new Set(stationIds.filter((id) => deriveStatus(closuresFor(id), serviceDate).status !== "ACTIVE"));
+    return new Set(stationIds.filter((id) => !isOpenOn(id, serviceDate)));
 }
 
 /** Reduces a closed day and writes it; returns the rows and whether the write landed. */
@@ -85,28 +90,26 @@ export async function reduceAndWrite(deps: NightlyDeps, tracker: TrackerState, o
     return { reduced, written: true };
 }
 
-/** The steps after the write: the cache refresh and the compaction, each recorded on the result. */
+/** The steps after the write, the cache refresh and the compaction, run side by side and recorded on the result. */
 export async function finishDay(deps: NightlyDeps, day: DayReduction): Promise<DayReduction> {
     const log = deps.log ?? (() => {});
-    let { revalidated, compacted } = day;
-    if (!revalidated) {
-        if (deps.site === null) revalidated = true;
-        else {
-            const result = await postRevalidate({ siteUrl: deps.site.url, secret: deps.site.secret, fetch: deps.fetch, sleep: deps.sleep, log });
-            revalidated = result.ok;
-        }
-    }
-    if (!compacted) {
+    const revalidate = async (): Promise<boolean> => {
+        if (day.revalidated || deps.site === null) return true;
+        const result = await postRevalidate({ siteUrl: deps.site.url, secret: deps.site.secret, fetch: deps.fetch, sleep: deps.sleep, log });
+        return result.ok;
+    };
+    const compact = async (): Promise<boolean> => {
+        if (day.compacted) return true;
         const result = await compactDay(deps.store, day.serviceDate);
-        if (result.status === "compacted" || result.status === "exists") {
-            await recordRawPath(deps.db, day.serviceDate, result.key, result.bytes);
-            compacted = true;
-            log(`${day.serviceDate} raw day ${result.status}: ${result.key}, ${result.bytes} bytes`);
-        } else {
+        if (result.status === "no-parts") {
             log(`${day.serviceDate} has no raw parts to compact`);
-            compacted = true;
+        } else {
+            await recordRawPath(deps.db, day.serviceDate, result.key, result.bytes);
+            log(`${day.serviceDate} raw day ${result.status}: ${result.key}, ${result.bytes} bytes`);
         }
-    }
+        return true;
+    };
+    const [revalidated, compacted] = await Promise.all([revalidate(), compact()]);
     return { ...day, revalidated, compacted };
 }
 
@@ -126,7 +129,7 @@ export async function fillGapDays(deps: NightlyDeps, nowEpochMs: number): Promis
     const through = latestClosedServiceDay(nowEpochMs, deps.toleranceMinutes ?? GHOST_TOLERANCE_MINUTES);
     const written: string[] = [];
     for (let date = addDays(last, 1); date <= through; date = addDays(date, 1)) {
-        const existing = await deps.db.liveDay.findUnique({ where: { serviceDate: new Date(`${date}T00:00:00Z`) }, select: { serviceDate: true } });
+        const existing = await deps.db.liveDay.findUnique({ where: { serviceDate: toUtcDate(date) }, select: { serviceDate: true } });
         if (existing !== null) continue;
         await writeDay(deps.db, gapDay(date, (deps.now ?? (() => new Date()))()), null, { cityCode: deps.cityCode });
         written.push(date);

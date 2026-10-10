@@ -8,8 +8,8 @@ import type { Healthchecks } from "./healthchecks";
 import { createCallSink, dayStateKey, QUOTA_HARD_STOP, runLoop, type DayReduction, type LoopHooks, type LoopOptions, type WorkerState } from "./loop";
 import { createMemoryObjectStore, type MemoryObjectStore } from "./objectStore";
 import { CHECKPOINT_KEY, createRawWriter, dayPartsPrefix, getCheckpoint, putCheckpoint, type Checkpoint, type RawWriter } from "./rawStore";
-import { parseChicagoLocal } from "./serviceDay";
-import { createDayTracker, minuteIndexOf, type TrackerState } from "./tracker";
+import { minuteIndexOf, parseChicagoLocal } from "./serviceDay";
+import { createDayTracker, type TrackerState } from "./tracker";
 import {
     TRAIN_ROUTES,
     TrainTrackerError,

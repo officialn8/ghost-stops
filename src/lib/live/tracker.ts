@@ -15,13 +15,12 @@
  * A prediction belongs to the day of the time it names, so the minutes around 03:00 feed two
  * open days. Live predictions still on a board are held across ticks in `SweepState`, which is
  * shared by every open day. Each day also keeps a poll ledger: per minute of the day, whether the
- * positions call succeeded, the stations whose arrivals batch failed, and the live trains seen
- * per route. A minute with no record is a minute the worker did not poll.
+ * positions call succeeded, the stations whose arrivals batch failed, the live trains seen per
+ * route, and the entries the parser could not read. A minute with no record is a minute the
+ * worker did not poll.
  */
-import { serviceDateOf, serviceDayStart } from "./serviceDay";
+import { MINUTE_MS, minuteIndexOf, serviceDateOf } from "./serviceDay";
 import { TRAIN_ROUTES, type ArrivalsResponse, type PositionsResponse, type TrainRoute } from "./trainTracker";
-
-const MINUTE_MS = 60_000;
 
 /** A live prediction counts as "about to arrive" within this many ms of the poll. */
 export const PASSAGE_WINDOW_MS = 2 * MINUTE_MS;
@@ -103,10 +102,34 @@ export function createSweepState(): SweepState {
 export const slotKey = (stationId: string, stopId: string, route: TrainRoute, scheduledAt: number) =>
     `${stationId}|${stopId}|${route}|${Math.floor(scheduledAt / MINUTE_MS)}`;
 
-const liveKey = (stationId: string, stopId: string, route: TrainRoute, run: string) => `${stationId}|${stopId}|${route}|${run}`;
+/** One platform and route at a station: where a live train and a slot can be the same train. */
+export const platformKey = (stationId: string, stopId: string, route: TrainRoute) => `${stationId}|${stopId}|${route}`;
 
-export function minuteIndexOf(serviceDate: string, epochMs: number): number {
-    return Math.floor((epochMs - serviceDayStart(serviceDate)) / MINUTE_MS);
+const liveKey = (stationId: string, stopId: string, route: TrainRoute, run: string) => `${platformKey(stationId, stopId, route)}|${run}`;
+
+/**
+ * A day's slots by platform, so a live prediction checks only the slots at its own platform
+ * rather than every slot of the day, every minute. Built once per tracker object from its slots
+ * (a tracker restored from a checkpoint builds its own) and kept beside the state, outside what
+ * is serialized.
+ */
+const slotsByPlatform = new WeakMap<TrackerState, Map<string, Slot[]>>();
+
+function platformSlots(tracker: TrackerState): Map<string, Slot[]> {
+    let index = slotsByPlatform.get(tracker);
+    if (index === undefined) {
+        index = new Map();
+        for (const slot of Object.values(tracker.slots)) indexSlot(index, slot);
+        slotsByPlatform.set(tracker, index);
+    }
+    return index;
+}
+
+function indexSlot(index: Map<string, Slot[]>, slot: Slot): void {
+    const key = platformKey(slot.stationId, slot.stopId, slot.route);
+    const list = index.get(key);
+    if (list === undefined) index.set(key, [slot]);
+    else list.push(slot);
 }
 
 /** One tick's results as the loop hands them over; a null response is a failed call. */
@@ -128,11 +151,12 @@ export type TrackerFor = (serviceDate: string) => TrackerState | null;
  * prediction's time names, and the open live predictions for the next tick.
  */
 export function applyTick(sweep: SweepState, trackerFor: TrackerFor, tick: TickInput): void {
+    const { positions } = tick;
     const pollDay = serviceDateOf(tick.pollEpoch);
     const failed = tick.arrivals.filter((b) => b.response === null).flatMap((b) => b.stationIds).sort();
-    const trains = tick.positions === null ? null : TRAIN_ROUTES.map((route) => tick.positions!.routes.find((r) => r.route === route)?.trains.length ?? 0);
-    const malformed = (tick.positions?.malformed ?? 0) + tick.arrivals.reduce((sum, b) => sum + (b.response?.malformed ?? 0), 0);
-    const record: MinuteRecord = { p: tick.positions === null ? 0 : 1, f: failed, t: trains, m: malformed };
+    const trains = positions === null ? null : TRAIN_ROUTES.map((route) => positions.routes.find((r) => r.route === route)?.trains.length ?? 0);
+    const malformed = (positions?.malformed ?? 0) + tick.arrivals.reduce((sum, b) => sum + (b.response?.malformed ?? 0), 0);
+    const record: MinuteRecord = { p: positions === null ? 0 : 1, f: failed, t: trains, m: malformed };
     const pollTracker = trackerFor(pollDay);
     if (pollTracker !== null) pollTracker.minutes[String(minuteIndexOf(pollDay, tick.pollEpoch))] = record;
     // The day that closes at 03:15 still sees the polls after 03:00, under indexes past its end.
@@ -153,7 +177,7 @@ export function applyTick(sweep: SweepState, trackerFor: TrackerFor, tick: TickI
                 const key = slotKey(stationId, stopId, route, prediction.arrivalAt);
                 const slot = day.slots[key];
                 if (slot === undefined) {
-                    day.slots[key] = {
+                    const created: Slot = {
                         key,
                         stationId,
                         stopId,
@@ -166,6 +190,8 @@ export function applyTick(sweep: SweepState, trackerFor: TrackerFor, tick: TickI
                         fault: prediction.fault,
                         liveSameRunAt: null,
                     };
+                    day.slots[key] = created;
+                    indexSlot(platformSlots(day), created);
                 } else {
                     slot.lastSeen = tick.pollEpoch;
                     if (!slot.runs.includes(run)) slot.runs.push(run);
@@ -188,10 +214,8 @@ export function applyTick(sweep: SweepState, trackerFor: TrackerFor, tick: TickI
             // A live train with a run an open slot carried, at the slot's platform: the slot was replaced.
             for (const day of new Set([trackerFor(serviceDateOf(prediction.arrivalAt)), pollTracker])) {
                 if (day === null) continue;
-                for (const slot of Object.values(day.slots)) {
-                    if (slot.liveSameRunAt === null && slot.stationId === stationId && slot.stopId === stopId && slot.route === route && slot.runs.includes(run)) {
-                        slot.liveSameRunAt = tick.pollEpoch;
-                    }
+                for (const slot of platformSlots(day).get(platformKey(stationId, stopId, route)) ?? []) {
+                    if (slot.liveSameRunAt === null && slot.runs.includes(run)) slot.liveSameRunAt = tick.pollEpoch;
                 }
             }
         }
@@ -217,26 +241,25 @@ export function applyTick(sweep: SweepState, trackerFor: TrackerFor, tick: TickI
     }
 }
 
+/** The minute records inside the day's expected count, the overlap past its end left out. */
+export function minutesWithin(tracker: TrackerState, expectedPolls: number): MinuteRecord[] {
+    const records: MinuteRecord[] = [];
+    for (const [index, record] of Object.entries(tracker.minutes)) {
+        const minute = Number(index);
+        if (minute >= 0 && minute < expectedPolls) records.push(record);
+    }
+    return records;
+}
+
 /** Minutes of the day (under its expected count) with a record, and how many had a working positions call. */
 export function ledgerSummary(tracker: TrackerState, expectedPolls: number): { polled: number; positionsOk: number } {
-    let polled = 0;
-    let positionsOk = 0;
-    for (const [index, record] of Object.entries(tracker.minutes)) {
-        if (Number(index) < 0 || Number(index) >= expectedPolls) continue;
-        polled += 1;
-        if (record.p === 1) positionsOk += 1;
-    }
-    return { polled, positionsOk };
+    const records = minutesWithin(tracker, expectedPolls);
+    return { polled: records.length, positionsOk: records.filter((r) => r.p === 1).length };
 }
 
 /** The minutes (under the expected count) a station's arrivals batch succeeded in. */
 export function stationPolls(tracker: TrackerState, stationId: string, expectedPolls: number): number {
-    let count = 0;
-    for (const [index, record] of Object.entries(tracker.minutes)) {
-        if (Number(index) < 0 || Number(index) >= expectedPolls) continue;
-        if (!record.f.includes(stationId)) count += 1;
-    }
-    return count;
+    return minutesWithin(tracker, expectedPolls).filter((r) => !r.f.includes(stationId)).length;
 }
 
 /** True when any minute from `fromEpoch` to `toEpoch` (inclusive, by minute index) has no record or lists the station as failed. */

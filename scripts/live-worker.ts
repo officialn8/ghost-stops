@@ -20,18 +20,19 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { parseArgs } from "node:util";
-import { closuresFor, deriveStatus, todayInChicago } from "../src/lib/cta/closures";
+import { todayInChicago } from "../src/lib/cta/closures";
 import { CTA_ROSTER } from "../src/lib/cta/roster";
 import { createHealthchecks } from "../src/lib/live/healthchecks";
 import { createCallSink, runLoop, serializeClosedDay } from "../src/lib/live/loop";
 import { GHOST_TOLERANCE_MINUTES } from "../src/lib/live/matcher";
-import { closeDay, fillGapDays, finishDay, type NightlyDeps } from "../src/lib/live/nightly";
-import { createMemoryObjectStore, createR2Store, type ObjectStore } from "../src/lib/live/objectStore";
-import { createRawWriter } from "../src/lib/live/rawStore";
+import { closeDay, fillGapDays, finishDay, isOpenOn, type NightlyDeps } from "../src/lib/live/nightly";
+import { createMemoryObjectStore, createR2Store, readR2Env, type ObjectStore } from "../src/lib/live/objectStore";
+import { createRawWriter, RAW_PREFIX } from "../src/lib/live/rawStore";
+import { siteFromEnv } from "../src/lib/live/revalidate";
 import { countByRoute, scheduledStopsFor } from "../src/lib/live/schedule";
 import { readScheduleIndex, refreshSchedule, versionInForce } from "../src/lib/live/scheduleArchive";
-import { serviceDateOf } from "../src/lib/live/serviceDay";
-import { createTrainTracker, type RawCall } from "../src/lib/live/trainTracker";
+import { pad2, serviceDateOf } from "../src/lib/live/serviceDay";
+import { bodyBytes, createTrainTracker, readTrainTrackerKey, type RawCall } from "../src/lib/live/trainTracker";
 import { isCliEntry, requireDatabaseUrl } from "./cli";
 
 export type WorkerMode = "run" | "once" | "gtfs-check" | "store-check";
@@ -56,27 +57,6 @@ export function parseWorkerArgs(argv: string[]): WorkerArgs {
     return { mode: chosen[0] ?? "run" };
 }
 
-export interface R2Env {
-    accountId: string;
-    bucket: string;
-    accessKeyId: string;
-    secretAccessKey: string;
-}
-
-/** The R2 variables, all four or an error naming the missing ones. */
-export function readR2Env(env: Record<string, string | undefined>): R2Env {
-    const names = ["R2_ACCOUNT_ID", "R2_BUCKET", "R2_ACCESS_KEY_ID", "R2_SECRET_ACCESS_KEY"] as const;
-    const missing = names.filter((name) => !env[name]?.trim());
-    if (missing.length > 0) throw new Error(`${missing.join(", ")} must be set`);
-    return { accountId: env.R2_ACCOUNT_ID!.trim(), bucket: env.R2_BUCKET!.trim(), accessKeyId: env.R2_ACCESS_KEY_ID!.trim(), secretAccessKey: env.R2_SECRET_ACCESS_KEY!.trim() };
-}
-
-export function readTrainTrackerKey(env: Record<string, string | undefined>): string {
-    const key = env.CTA_TRAIN_TRACKER_KEY?.trim();
-    if (!key) throw new Error("CTA_TRAIN_TRACKER_KEY must be set in this shell; it is not read from .env.local.");
-    return key;
-}
-
 export function dataDir(env: Record<string, string | undefined>): string {
     return env.LIVE_WORKER_DATA_DIR?.trim() || path.join(os.tmpdir(), "ghost-stops-live");
 }
@@ -85,8 +65,12 @@ export function machineId(env: Record<string, string | undefined>): string {
     return env.FLY_MACHINE_ID?.trim() || `${os.hostname()}-${process.pid}`;
 }
 
-const ROSTER_IDS = CTA_ROSTER.map((s) => s.ctaStationId);
-const log = (message: string) => console.error(`${new Date().toISOString()} ${message}`);
+/** Every roster station's CTA id, open or closed. */
+export const ROSTER_IDS: readonly string[] = CTA_ROSTER.map((s) => s.ctaStationId);
+
+/** The worker's log line: a UTC timestamp and the message, to stderr. */
+export const workerLog = (message: string): void => console.error(`${new Date().toISOString()} ${message}`);
+const log = workerLog;
 
 /**
  * The stations to sweep: the roster minus the stations closed today (R18). Train Tracker answers
@@ -94,7 +78,7 @@ const log = (message: string) => console.error(`${new Date().toISOString()} ${me
  * batch of four, and a closed station has no scheduled stops to score anyway.
  */
 export function openStationIds(asOf = todayInChicago()): string[] {
-    return ROSTER_IDS.filter((id) => deriveStatus(closuresFor(id), asOf).status === "ACTIVE");
+    return ROSTER_IDS.filter((id) => isOpenOn(id, asOf));
 }
 
 /** Call counts and body sizes for the --once report, from the same records the raw file gets. */
@@ -103,7 +87,7 @@ export function summarizeCalls(calls: readonly RawCall[]): string[] {
     for (const endpoint of ["positions", "arrivals"] as const) {
         const of = calls.filter((c) => c.endpoint === endpoint);
         if (of.length === 0) continue;
-        const sizes = of.map((c) => (c.body === null ? 0 : Buffer.byteLength(c.body, "utf8")));
+        const sizes = of.map(bodyBytes);
         const ok = of.filter((c) => c.errorCode === 0).length;
         lines.push(
             `${endpoint}: ${of.length} call(s), ${ok} answered errCd 0, bodies ${Math.min(...sizes)} to ${Math.max(...sizes)} bytes ` +
@@ -130,7 +114,7 @@ async function gtfsCheck(): Promise<number> {
     const minutes = Math.floor((schedule.latestStopSeconds % 3600) / 60);
     console.log(`version ${version.hash} (${version.bytes} bytes, Last-Modified ${version.lastModified ?? "unknown"})`);
     console.log(`${schedule.trips.length} rail trips, ${Object.keys(schedule.platforms).length} platforms, ${new Set(Object.values(schedule.platforms)).size} stations, 0 unmapped parents`);
-    console.log(`latest scheduled stop ${String(hours).padStart(2, "0")}:${String(minutes).padStart(2, "0")} (${schedule.latestStopSeconds} s)`);
+    console.log(`latest scheduled stop ${pad2(hours)}:${pad2(minutes)} (${schedule.latestStopSeconds} s)`);
     console.log(`scheduled stops on service day ${today}: ${day.stops.length}`);
     for (const [route, count] of Object.entries(countByRoute(day))) console.log(`  ${route}: ${count}`);
     return 0;
@@ -166,7 +150,7 @@ async function once(): Promise<number> {
     });
     const result = await runLoop({ source, sink, store, rawWriter, stations: openStationIds, machineId: machineId(process.env), signal: new AbortController().signal, maxTicks: 1, log });
     // The memory store holds the uploaded part; write it beside the data dir for inspection.
-    for (const part of await store.list("raw/")) {
+    for (const part of await store.list(`${RAW_PREFIX}/`)) {
         const file = path.join(dir, path.basename(part.key));
         fs.mkdirSync(dir, { recursive: true });
         fs.writeFileSync(file, (await store.get(part.key))!.body);
@@ -202,14 +186,13 @@ async function run(): Promise<number> {
     // The nightly steps (U8): reduce and write the closed day, refresh the site, compact the raw
     // day; finish a day the checkpoint left half done; record gap days as set aside.
     const { prisma } = await import("../src/lib/prisma");
-    const secret = process.env.WORKER_REVALIDATE_SECRET?.trim();
-    const siteUrl = process.env.SITE_URL?.trim();
-    if (!secret || !siteUrl) log("WORKER_REVALIDATE_SECRET or SITE_URL is not set; the site will not be asked to refresh");
+    const site = siteFromEnv(process.env);
+    if (site === null) log("WORKER_REVALIDATE_SECRET or SITE_URL is not set; the site will not be asked to refresh");
     const nightly: NightlyDeps = {
         db: prisma,
         store,
         stationIds: ROSTER_IDS,
-        site: secret && siteUrl ? { url: siteUrl, secret } : null,
+        site,
         healthchecks,
         toleranceMinutes: GHOST_TOLERANCE_MINUTES,
         log,
@@ -256,10 +239,11 @@ async function run(): Promise<number> {
     return result.exit === "lost-lease" ? 1 : 0;
 }
 
+const RUNS: Record<WorkerMode, () => Promise<number>> = { run, once, "gtfs-check": gtfsCheck, "store-check": storeCheck };
+
 async function main(): Promise<void> {
     const { mode } = parseWorkerArgs(process.argv.slice(2));
-    const code = mode === "gtfs-check" ? await gtfsCheck() : mode === "store-check" ? await storeCheck() : mode === "once" ? await once() : await run();
-    process.exitCode = code;
+    process.exitCode = await RUNS[mode]();
     if (mode === "run") {
         const { prisma } = await import("../src/lib/prisma");
         await prisma.$disconnect();

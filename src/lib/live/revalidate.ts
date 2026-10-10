@@ -5,10 +5,18 @@
  * failure is reported, never thrown: the day is already written, and the one-hour cache
  * fallback bounds the staleness. Neither the secret nor the response text is logged.
  */
+import { retryableStatus, sleep as defaultSleep } from "./retry";
+
+/** The subset of `fetch` the call uses, so tests can answer without the network. */
+export type RevalidateFetch = (
+    url: string,
+    init: { method: string; headers: Record<string, string>; signal: AbortSignal },
+) => Promise<{ ok: boolean; status: number; json(): Promise<unknown> }>;
+
 export interface RevalidateOptions {
     siteUrl: string;
     secret: string;
-    fetch?: (url: string, init: { method: string; headers: Record<string, string>; signal: AbortSignal }) => Promise<{ ok: boolean; status: number; json(): Promise<unknown> }>;
+    fetch?: RevalidateFetch;
     sleep?: (ms: number) => Promise<void>;
     retryDelaysMs?: readonly number[];
     timeoutMs?: number;
@@ -25,9 +33,16 @@ export interface RevalidateResult {
 
 const DEFAULT_RETRY_DELAYS_MS = [2_000, 8_000, 30_000] as const;
 
+/** The site the worker refreshes, from WORKER_REVALIDATE_SECRET and SITE_URL; null when either is unset. */
+export function siteFromEnv(env: Record<string, string | undefined>): { url: string; secret: string } | null {
+    const secret = env.WORKER_REVALIDATE_SECRET?.trim();
+    const url = env.SITE_URL?.trim();
+    return secret && url ? { url, secret } : null;
+}
+
 export async function postRevalidate(options: RevalidateOptions): Promise<RevalidateResult> {
-    const http = options.fetch ?? ((url: string, init: { method: string; headers: Record<string, string>; signal: AbortSignal }) => fetch(url, init));
-    const sleep = options.sleep ?? ((ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms)));
+    const http: RevalidateFetch = options.fetch ?? ((url, init) => fetch(url, init));
+    const sleep = options.sleep ?? defaultSleep;
     const delays = options.retryDelaysMs ?? DEFAULT_RETRY_DELAYS_MS;
     const log = options.log ?? (() => {});
     const url = `${options.siteUrl.replace(/\/+$/, "")}/api/internal/revalidate`;
@@ -50,7 +65,7 @@ export async function postRevalidate(options: RevalidateOptions): Promise<Revali
                 log(`revalidate refused: HTTP ${status}; the secret differs at the two ends`);
                 return { ok: false, outcome: "refused", status, attempts: attempt };
             }
-            if (status < 500 && status !== 429) {
+            if (!retryableStatus(status)) {
                 log(`revalidate failed: HTTP ${status}`);
                 return { ok: false, outcome: "failed", status, attempts: attempt };
             }

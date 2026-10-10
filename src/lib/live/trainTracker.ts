@@ -33,6 +33,8 @@ export const DEFAULT_MAX_BODY_BYTES = 4 * 1024 * 1024;
 
 export const QUOTA_ERROR_CODE = 102;
 export const KEY_ERROR_CODE = 101;
+/** 103 and 108: CTA no longer knows a station or platform id in the batch (a closure not yet in the table). */
+export const STALE_STATION_ERROR_CODES: readonly number[] = [103, 108];
 
 export type Endpoint = "positions" | "arrivals";
 
@@ -343,8 +345,18 @@ export function parseArrivalsBody(body: unknown, pollEpoch: number, stationIds: 
 
 /** Every occurrence of the key in a body replaced, so neither the recorder nor a log sees it. */
 export function scrubKey(body: string, key: string): string {
-    return key === "" ? body : body.split(key).join("[key]");
+    return key === "" ? body : body.replaceAll(key, "[key]");
 }
+
+/** The key from the shell; nothing reads .env.local for it, so a script says so when it is missing. */
+export function readTrainTrackerKey(env: Record<string, string | undefined>): string {
+    const key = env.CTA_TRAIN_TRACKER_KEY?.trim();
+    if (!key) throw new Error("CTA_TRAIN_TRACKER_KEY must be set in this shell; it is not read from .env.local.");
+    return key;
+}
+
+/** A recorded call's body size in bytes, 0 when nothing was read. */
+export const bodyBytes = (call: RawCall): number => (call.body === null ? 0 : Buffer.byteLength(call.body, "utf8"));
 
 /** Reads a body up to `maxBytes`; "oversize" when it runs past, before the rest is read. */
 async function readBody(response: HttpResponse, maxBytes: number): Promise<string | "oversize"> {
@@ -398,13 +410,15 @@ export function createTrainTracker(options: TrainTrackerOptions): TrainSource {
             failure: null,
             durationMs: 0,
         };
-        const fail = (failure: TrainTrackerFailure, message: string, code: number | null = null): never => {
+        /** Completes the record, success or failure, and hands it to the recorder. */
+        const finish = (failure: TrainTrackerFailure | null): void => {
             record.failure = failure;
             record.durationMs = now() - pollEpoch;
             options.onCall?.(record);
-            if (failure === "quota") throw new TrainTrackerQuotaError(endpoint);
-            if (failure === "key") throw new TrainTrackerKeyError(endpoint);
-            throw new TrainTrackerError(endpoint, failure, message, code);
+        };
+        const fail = (error: TrainTrackerError): never => {
+            finish(error.failure);
+            throw error;
         };
 
         let response: HttpResponse;
@@ -413,7 +427,7 @@ export function createTrainTracker(options: TrainTrackerOptions): TrainSource {
         } catch (error) {
             // The error's own text may carry the URL, so only its kind survives.
             const timedOut = error instanceof Error && error.name === "TimeoutError";
-            return fail(timedOut ? "timeout" : "network", `Train Tracker ${endpoint}: ${timedOut ? `timed out after ${timeoutMs} ms` : "network error"}`);
+            return fail(new TrainTrackerError(endpoint, timedOut ? "timeout" : "network", `Train Tracker ${endpoint}: ${timedOut ? `timed out after ${timeoutMs} ms` : "network error"}`));
         }
         record.httpStatus = response.status;
 
@@ -422,29 +436,29 @@ export function createTrainTracker(options: TrainTrackerOptions): TrainSource {
             body = await readBody(response, maxBodyBytes);
         } catch (error) {
             const timedOut = error instanceof Error && error.name === "TimeoutError";
-            return fail(timedOut ? "timeout" : "network", `Train Tracker ${endpoint}: body ${timedOut ? "timed out" : "could not be read"}`);
+            return fail(new TrainTrackerError(endpoint, timedOut ? "timeout" : "network", `Train Tracker ${endpoint}: body ${timedOut ? "timed out" : "could not be read"}`));
         }
-        if (body === "oversize") return fail("oversize", `Train Tracker ${endpoint}: body over ${maxBodyBytes} bytes`);
+        if (body === "oversize") return fail(new TrainTrackerError(endpoint, "oversize", `Train Tracker ${endpoint}: body over ${maxBodyBytes} bytes`));
         record.body = scrubKey(body, key);
-        if (!response.ok) return fail("http", `Train Tracker ${endpoint}: HTTP ${response.status}`);
+        if (!response.ok) return fail(new TrainTrackerError(endpoint, "http", `Train Tracker ${endpoint}: HTTP ${response.status}`));
 
         let parsed: unknown;
+        let ctatt: RawRecord;
         let errorCode: number;
         try {
             parsed = JSON.parse(record.body);
-            errorCode = envelope(parsed).errorCode;
+            ({ ctatt, errorCode } = envelope(parsed));
         } catch {
-            return fail("parse", `Train Tracker ${endpoint}: body is not a Train Tracker JSON document`);
+            return fail(new TrainTrackerError(endpoint, "parse", `Train Tracker ${endpoint}: body is not a Train Tracker JSON document`));
         }
         record.errorCode = errorCode;
-        if (errorCode === QUOTA_ERROR_CODE) return fail("quota", "", errorCode);
-        if (errorCode === KEY_ERROR_CODE) return fail("key", "", errorCode);
+        if (errorCode === QUOTA_ERROR_CODE) return fail(new TrainTrackerQuotaError(endpoint));
+        if (errorCode === KEY_ERROR_CODE) return fail(new TrainTrackerKeyError(endpoint));
         if (errorCode !== 0) {
-            const name = isRecord(parsed) && isRecord(parsed.ctatt) && typeof parsed.ctatt.errNm === "string" ? parsed.ctatt.errNm : "error";
-            return fail("api", `Train Tracker ${endpoint}: error ${errorCode} (${name})`, errorCode);
+            const name = typeof ctatt.errNm === "string" ? ctatt.errNm : "error";
+            return fail(new TrainTrackerError(endpoint, "api", `Train Tracker ${endpoint}: error ${errorCode} (${name})`, errorCode));
         }
-        record.durationMs = now() - pollEpoch;
-        options.onCall?.(record);
+        finish(null);
         return { body: parsed, pollEpoch };
     }
 

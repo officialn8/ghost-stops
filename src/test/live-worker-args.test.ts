@@ -1,8 +1,9 @@
 import os from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
-import { dataDir, machineId, openStationIds, parseWorkerArgs, readR2Env, readTrainTrackerKey, summarizeCalls } from "../../scripts/live-worker";
-import type { RawCall } from "@/lib/live/trainTracker";
+import { dataDir, machineId, openStationIds, parseWorkerArgs, summarizeCalls } from "../../scripts/live-worker";
+import { readR2Env } from "@/lib/live/objectStore";
+import { readTrainTrackerKey, type RawCall } from "@/lib/live/trainTracker";
 
 describe("parseWorkerArgs", () => {
     it("runs the worker with no arguments and one check per flag", () => {

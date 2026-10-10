@@ -15,16 +15,16 @@
  */
 import { parseArgs } from "node:util";
 import { addDays, isCalendarDate } from "../src/lib/sync/window";
+import type { RailSchedule } from "../src/lib/live/gtfs";
 import { GHOST_TOLERANCE_MINUTES } from "../src/lib/live/matcher";
-import { createR2Store, type ObjectStore } from "../src/lib/live/objectStore";
+import { createR2Store, readR2Env } from "../src/lib/live/objectStore";
 import { readRawDay } from "../src/lib/live/rawStore";
 import { replayRawLines } from "../src/lib/live/replay";
-import { scheduledStopsFor, type DaySchedule } from "../src/lib/live/schedule";
+import { scheduledStopsFor } from "../src/lib/live/schedule";
 import { loadSchedule, readScheduleIndex, versionInForce } from "../src/lib/live/scheduleArchive";
 import { formatSensitivityTable, sensitivityTable, type SensitivityDay } from "../src/lib/live/sensitivity";
 import { dayCloseInstant } from "../src/lib/live/serviceDay";
 import { isCliEntry } from "./cli";
-import { readR2Env } from "./live-worker";
 
 export interface SensitivityArgs {
     from: string;
@@ -40,21 +40,12 @@ export function parseSensitivityArgs(argv: string[]): SensitivityArgs {
     return { from, to };
 }
 
-/** The schedule in force for a day: the newest version first seen before the day closed (KTD6). */
-export async function scheduleForDay(store: ObjectStore, serviceDate: string, cache = new Map<string, DaySchedule | null>()): Promise<DaySchedule | null> {
-    const index = await readScheduleIndex(store);
-    const version = versionInForce(index, dayCloseInstant(serviceDate, GHOST_TOLERANCE_MINUTES));
-    if (version === null) return null;
-    const cached = cache.get(version.hash);
-    if (cached !== undefined) return cached === null ? null : scheduledStopsFor({ ...(await loadSchedule(store, version.hash))!, hash: version.hash }, serviceDate);
-    const schedule = await loadSchedule(store, version.hash);
-    if (schedule === null) return null;
-    return scheduledStopsFor(schedule, serviceDate);
-}
-
 async function main(): Promise<void> {
     const { from, to } = parseSensitivityArgs(process.argv.slice(2));
     const store = createR2Store(readR2Env(process.env));
+    // The index once, each feed version once: the version in force for a day is the newest first seen before it closed (KTD6).
+    const index = await readScheduleIndex(store);
+    const archived = new Map<string, RailSchedule | null>();
     const days: SensitivityDay[] = [];
     for (let date = from; date <= to; date = addDays(date, 1)) {
         const lines = await readRawDay(store, date);
@@ -62,11 +53,14 @@ async function main(): Promise<void> {
             console.error(`${date}: no raw file in the bucket; skipped`);
             continue;
         }
-        const schedule = await scheduleForDay(store, date);
-        if (schedule === null) {
+        const version = versionInForce(index, dayCloseInstant(date, GHOST_TOLERANCE_MINUTES));
+        if (version !== null && !archived.has(version.hash)) archived.set(version.hash, await loadSchedule(store, version.hash));
+        const rail = version === null ? null : (archived.get(version.hash) ?? null);
+        if (rail === null) {
             console.error(`${date}: no schedule version in force; skipped`);
             continue;
         }
+        const schedule = scheduledStopsFor(rail, date);
         const replay = replayRawLines(lines);
         const tracker = replay.trackers.get(date);
         if (!tracker) {

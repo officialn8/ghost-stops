@@ -5,9 +5,8 @@
  * changes a closed day (R16).
  */
 import fs from "node:fs";
-import { gunzipSync, gzipSync } from "node:zlib";
-import { downloadFeed, extractRailSchedule, zipEntrySource, GtfsError, type EntrySource, type FeedFetch, type RailSchedule } from "./gtfs";
-import type { ObjectStore } from "./objectStore";
+import { downloadFeed, extractRailSchedule, zipEntrySource, GtfsError, type EntrySource, type FeedDownload, type FeedFetch, type RailSchedule } from "./gtfs";
+import { gunzipJson, gzipJson, type ObjectStore } from "./objectStore";
 
 export const SCHEDULE_PREFIX = "schedules";
 export const SCHEDULE_INDEX_KEY = `${SCHEDULE_PREFIX}/index.json`;
@@ -41,24 +40,18 @@ export async function writeScheduleIndex(store: ObjectStore, index: ScheduleInde
     await store.put(SCHEDULE_INDEX_KEY, Buffer.from(JSON.stringify(index, null, 2), "utf8"), { contentType: "application/json" });
 }
 
-/** The newest archived version first seen at or before `instant`; null before the first. */
+/** The newest archived version first seen at or before `epochMs`; null before the first. */
 export function versionInForce(index: ScheduleIndex, epochMs: number): ScheduleVersion | null {
-    let chosen: ScheduleVersion | null = null;
-    for (const version of index.versions) {
-        if (Date.parse(version.firstSeen) <= epochMs) chosen = version;
-    }
-    return chosen;
+    return index.versions.findLast((version) => Date.parse(version.firstSeen) <= epochMs) ?? null;
 }
 
 export async function archiveSchedule(store: ObjectStore, schedule: RailSchedule): Promise<void> {
-    const body = gzipSync(Buffer.from(JSON.stringify(schedule), "utf8"), { level: 9 });
-    await store.put(scheduleKey(schedule.hash), body, { contentType: "application/gzip" });
+    await store.put(scheduleKey(schedule.hash), gzipJson(schedule, 9), { contentType: "application/gzip" });
 }
 
 export async function loadSchedule(store: ObjectStore, hash: string): Promise<RailSchedule | null> {
     const object = await store.get(scheduleKey(hash));
-    if (object === null) return null;
-    return JSON.parse(gunzipSync(object.body).toString("utf8")) as RailSchedule;
+    return object === null ? null : gunzipJson<RailSchedule>(object.body);
 }
 
 export interface RefreshOptions {
@@ -87,7 +80,7 @@ export async function refreshSchedule(options: RefreshOptions): Promise<RefreshR
     const log = options.log ?? (() => {});
     const index = await readScheduleIndex(options.store);
     const newest = index.versions.at(-1) ?? null;
-    let download: Awaited<ReturnType<typeof downloadFeed>>;
+    let download: FeedDownload;
     try {
         download = await downloadFeed({ toFile: options.feedFile, fetch: options.fetch, url: options.url, ifModifiedSince: newest?.lastModified ?? null });
     } catch (error) {

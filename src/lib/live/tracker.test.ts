@@ -1,12 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { parseChicagoLocal } from "./serviceDay";
+import { minuteIndexOf, parseChicagoLocal } from "./serviceDay";
 import {
     applyTick,
     createDayTracker,
     createSweepState,
     hasGap,
     ledgerSummary,
-    minuteIndexOf,
     slotKey,
     stationPolls,
     type TickInput,
