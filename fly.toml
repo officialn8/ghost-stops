@@ -1,0 +1,24 @@
+# The live Ghost score worker on Fly.io (plan U20, KTD1): one shared-cpu-1x Machine with 512 MB
+# in Chicago, no services (so it is private and never auto-stops), restarted on any exit, and
+# given 30 seconds after SIGTERM to finish its tick, upload the open raw part, and release the
+# checkpoint. Deploy with `fly deploy --ha=false` so exactly one Machine runs; two would both
+# believe they held the day. Secrets are set with `fly secrets set`, never here
+# (docs-private/runbooks/live-worker.md).
+app = "ghost-stops-worker"
+primary_region = "ord"
+kill_signal = "SIGTERM"
+kill_timeout = "30s"
+
+[build]
+  dockerfile = "Dockerfile"
+
+[env]
+  NODE_ENV = "production"
+  LIVE_WORKER_DATA_DIR = "/var/lib/ghost-stops"
+
+[[restart]]
+  policy = "always"
+
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "512mb"

@@ -74,6 +74,7 @@ model Station {
   narrative      StationNarrative?
   closures       StationClosure[]
   lineSequences  StationLineSequence[]
+  liveDays       LiveStationDay[]
 
   @@unique([cityId, ctaStationId])
   @@unique([cityId, slug])
@@ -186,6 +187,66 @@ model SyncRun {
   durationMs          Int?
 
   @@index([status, startedAt])
+}
+
+// ═══════════════════════════════════════════════════════════════
+// LIVE GHOST SCORE: one aggregate per station per service day
+// (docs-private/plans/2026-10-09-1935-feat-live-ghost-score-plan.md, KTD7)
+// ═══════════════════════════════════════════════════════════════
+
+enum LiveDayVerdict {
+  COUNTED
+  SET_ASIDE
+}
+
+// One service day of Train Tracker collection, written once by the worker's nightly reduction.
+// The migration adds the checks Prisma cannot express: SET_ASIDE carries a cause and COUNTED
+// none; pollsSucceeded never exceeds pollsExpected; cause is one of site-gap, no-schedule,
+// tracker-fault, quota, feed-shape.
+model LiveDay {
+  serviceDate     DateTime       @id @db.Date
+  verdict         LiveDayVerdict
+  cause           String? // why the whole day is set aside; null when counted
+  pollsExpected   Int // the service day's minutes (1,500 on a fall-back day)
+  pollsSucceeded  Int
+  coverage        Float // pollsSucceeded / pollsExpected
+  faultLines      Json           @default("[]") // route ids whose stations lose the day to a tracker fault
+  scheduleVersion String? // the static GTFS version (content hash) in force for the day
+  rawPath         String? // the day's compacted raw object key in R2; null until compaction
+  rawBytes        Int?
+  reducerVersion  Int // the matching rule the rows were reduced under
+  reducedAt       DateTime
+
+  stations LiveStationDay[]
+
+  @@index([reducedAt]) // the revalidate route reads the most recently reduced day
+}
+
+// One station on one service day. The migration adds the checks: counted rows carry no cause and
+// set-aside rows one of site-gap, tracker-fault, unobserved, closed; and scheduled equals
+// fulfilled + cancelled + ghosts + unknown + unobserved.
+model LiveStationDay {
+  stationId       String
+  serviceDate     DateTime @db.Date
+  scheduled       Int // GTFS scheduled stops that day (zero for a closed station)
+  fulfilled       Int
+  cancelled       Int
+  ghosts          Int
+  unknown         Int
+  unobserved      Int
+  unmapped        Int // ghosts with no GTFS stop within two minutes; stated on the method page, never scored
+  coverage        Float // the station's own successful polls over the day's expected polls
+  counted         Boolean
+  notCountedCause String?
+  observedGapMin  Float? // median gap between consecutive passages, scheduled-weighted across directions
+  scheduledGapMin Float?
+  byDirection     Json     @default("[]") // per platform: scheduled, fulfilled, cancelled, ghosts, unknown, unobserved, gaps
+
+  station Station @relation(fields: [stationId], references: [id])
+  day     LiveDay @relation(fields: [serviceDate], references: [serviceDate], onDelete: Cascade)
+
+  @@id([stationId, serviceDate])
+  @@index([serviceDate])
 }
 
 // ═══════════════════════════════════════════════════════════════

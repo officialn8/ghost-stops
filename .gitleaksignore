@@ -16,3 +16,17 @@ b8067acdd4c7dbda9e0b0dd17b90321bf0f00d3e:sync_chicago_data.sh:socrata-app-token:
 # False positives (not credentials).
 # generic-api-key matches the FactKey type name; the value is the fact key "ridership_2001_avg".
 44e704ed52c26336337967e21d1f4b158316ca03:src/lib/narratives/renderer.ts:generic-api-key:54
+
+# The four fake secret shapes in src/test/fixtures/secret-shapes.txt (live Ghost score plan U20):
+# CI's positive control requires every rule to keep reporting them. The file never changes.
+fbb43f54f2bd35d3221c0198a6b98c46549ac76d:src/test/fixtures/secret-shapes.txt:cta-train-tracker-key:6
+fbb43f54f2bd35d3221c0198a6b98c46549ac76d:src/test/fixtures/secret-shapes.txt:cloudflare-r2-key:7
+fbb43f54f2bd35d3221c0198a6b98c46549ac76d:src/test/fixtures/secret-shapes.txt:healthchecks-ping-url:8
+fbb43f54f2bd35d3221c0198a6b98c46549ac76d:src/test/fixtures/secret-shapes.txt:ghost-stops-revalidate-secret:9
+
+# False positives: fixed hex strings the live tests use as a stand-in key and R2 key pair
+# ("0123456789abcdef..." and the like); generic-api-key reads the assignment as a credential.
+2d3c721810f8358ccb0a6975be067563eced9864:src/lib/live/trainTracker.test.ts:generic-api-key:23
+2d3c721810f8358ccb0a6975be067563eced9864:src/test/sample-train-tracker.test.ts:generic-api-key:22
+4a2b6f69a92c35fc7d39021823d5fbe35a130b47:src/lib/live/objectStore.test.ts:generic-api-key:13
+4a2b6f69a92c35fc7d39021823d5fbe35a130b47:src/lib/live/objectStore.test.ts:generic-api-key:14

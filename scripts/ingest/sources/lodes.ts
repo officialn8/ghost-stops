@@ -9,6 +9,7 @@ import { buffer, area, intersect, booleanIntersects, point, featureCollection } 
 import type { Feature, Polygon, MultiPolygon } from "geojson";
 import * as shapefile from "shapefile";
 import * as unzipper from "unzipper";
+import type { Prisma } from "../../../src/generated/prisma/client";
 import type { IngestionResult } from "../types";
 import { prisma } from "../utils";
 
@@ -342,7 +343,7 @@ const upsertFact = async (data: {
   timeframeEnd?: number;
   quality: "HIGH" | "MEDIUM" | "LOW";
   qualityNote?: string;
-  evidenceMeta?: Record<string, unknown>;
+  evidenceMeta?: Prisma.InputJsonValue;
 }) => {
   await prisma.stationFact.upsert({
     where: {

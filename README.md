@@ -84,9 +84,10 @@ Open http://localhost:3000.
 ## Tests
 
 ```bash
-npx tsc --noEmit     # type check
-npm run lint         # lint, including the rule that keeps server code out of components
-npm test             # unit and component tests; no database needed
+npx tsc --noEmit                            # type check
+npx tsc --noEmit -p tsconfig.scripts.json   # type check scripts/, which the root config excludes
+npm run lint                                # lint, including the rule that keeps server code out of components
+npm test                                    # unit and component tests; no database needed
 ```
 
 The database tests run against an empty local Postgres that they fill and clear themselves. They refuse any `DATABASE_URL` that is not local:
@@ -99,7 +100,12 @@ npx prisma migrate deploy
 npm run test:db
 ```
 
-CI runs all of these, plus a gitleaks scan of the full history, on every push.
+CI runs all of these, plus a gitleaks scan of the full history and a build of the live worker's
+image (`Dockerfile`), on every push.
+
+The live Ghost score worker, which polls CTA Train Tracker from one Fly.io Machine, is described in
+[`DEPLOYMENT.md`](DEPLOYMENT.md#the-live-worker); `npx tsx scripts/live-worker.ts --once` runs one
+real tick from a shell that exports `CTA_TRAIN_TRACKER_KEY`.
 
 ## Pages and API
 
@@ -115,6 +121,7 @@ CI runs all of these, plus a gitleaks scan of the full history, on every push.
 - `.claude/CLAUDE.md`: architecture, conventions, and common tasks.
 - `DEPLOYMENT.md`: Vercel, Neon, migrations, the sync, health checks, rollback.
 - `docs/plans/2026-10-02-2208-feat-ghost-stops-revival-plan.md`: the October 2026 revival plan, whose requirement and decision IDs the code cites.
+- `docs-private/plans/2026-10-09-1935-feat-live-ghost-score-plan.md` (not in the repository): the live Ghost score plan, whose IDs the live worker's files cite (`src/lib/live/`, `scripts/live-*.ts`, the worker's `Dockerfile` and `fly.toml`). Its numbering restarts at 1, so a bare ID in those files means this plan, and anywhere else it means the revival plan.
 - `docs/runbooks/history-load.md`: the record of every production data change.
 - `docs/audit-2026-10-02/`: the audit that started the revival.
 - `docs/archive/`: documents from before the revival, kept as history.

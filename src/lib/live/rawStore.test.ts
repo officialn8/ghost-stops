@@ -1,0 +1,316 @@
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
+import { gunzipSync, gzipSync } from "node:zlib";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { createMemoryObjectStore, PreconditionFailedError, type MemoryObjectStore } from "./objectStore";
+import {
+    CHECKPOINT_KEY,
+    compactDay,
+    createRawWriter,
+    dayObjectKey,
+    dayPartsPrefix,
+    getCheckpoint,
+    headCheckpoint,
+    isCheckpointHeld,
+    LEASE_HOLD_MS,
+    partFileName,
+    partKey,
+    partKeyOfFile,
+    putCheckpoint,
+    readRawDay,
+    readRawDayWithOverlap,
+    type Checkpoint,
+    type RawLine,
+    type RawWriter,
+} from "./rawStore";
+import { dayCloseInstant, hourIndexOf, parseChicagoLocal, serviceDayStart } from "./serviceDay";
+
+const DAY = "2026-10-14";
+const DAY_START = serviceDayStart(DAY); // 03:00 CDT
+const MINUTE = 60_000;
+
+const line = (pollEpoch: number, n: number): RawLine => ({
+    endpoint: n % 37 === 0 ? "positions" : "arrivals",
+    pollEpoch,
+    stationIds: n % 37 === 0 ? [] : ["40830"],
+    httpStatus: 200,
+    body: `{"ctatt":{"n":${n}}}`,
+    errorCode: 0,
+    failure: null,
+    durationMs: 100,
+});
+
+let dir: string;
+let store: MemoryObjectStore;
+let clock: number;
+let logged: string[];
+
+function writer(): RawWriter {
+    return createRawWriter({ dir, store, log: (m) => logged.push(m) });
+}
+
+const storedLines = (key: string) =>
+    gunzipSync(store.objects().get(key)!.body)
+        .toString("utf8")
+        .split("\n")
+        .filter((l) => l !== "")
+        .map((l) => JSON.parse(l) as RawLine);
+
+beforeEach(() => {
+    dir = fs.mkdtempSync(path.join(os.tmpdir(), "raw-store-"));
+    store = createMemoryObjectStore({ now: () => clock });
+    clock = DAY_START;
+    logged = [];
+});
+
+afterEach(() => {
+    fs.rmSync(dir, { recursive: true, force: true });
+});
+
+describe("keys", () => {
+    it("names parts by service day, hour index, and start epoch, and the day object beside them", () => {
+        expect(dayObjectKey(DAY)).toBe("raw/v1/2026/10/2026-10-14.ndjson.gz");
+        expect(dayPartsPrefix(DAY)).toBe("raw/v1/2026/10/2026-10-14/");
+        expect(partKey(DAY, 0, DAY_START)).toBe(`raw/v1/2026/10/2026-10-14/00.${DAY_START}.ndjson.gz`);
+        expect(partFileName(DAY, 21, DAY_START)).toBe(`2026-10-14.21.${DAY_START}.ndjson`);
+        expect(partKeyOfFile(partFileName(DAY, 21, DAY_START))).toBe(partKey(DAY, 21, DAY_START));
+        expect(partKeyOfFile("notes.txt")).toBeNull();
+    });
+
+    it("counts hours from 03:00, so midnight is hour 21 and key order is time order", () => {
+        expect(hourIndexOf(DAY, DAY_START)).toBe(0);
+        expect(hourIndexOf(DAY, parseChicagoLocal("2026-10-15 00:30:00"))).toBe(21);
+        expect(hourIndexOf(DAY, parseChicagoLocal("2026-10-15 02:59:00"))).toBe(23);
+        // The fall-back day has 25 hours.
+        expect(hourIndexOf("2026-10-31", parseChicagoLocal("2026-11-01 02:30:00"))).toBe(24);
+        expect(partKey(DAY, 21, 1) < partKey(DAY, 23, 1)).toBe(true);
+    });
+});
+
+describe("the raw writer", () => {
+    it("writes 120 lines over two hours into two parts and compacts them into one object in order", async () => {
+        const w = writer();
+        for (let n = 0; n < 120; n++) {
+            clock = DAY_START + n * MINUTE;
+            w.append(line(clock, n));
+        }
+        w.closeOpenPart();
+        await w.uploadPending();
+
+        const keys = [...store.objects().keys()].sort();
+        expect(keys).toEqual([partKey(DAY, 0, DAY_START), partKey(DAY, 1, DAY_START + 60 * MINUTE)]);
+        expect(storedLines(keys[0])).toHaveLength(60);
+        expect(w.pendingFiles()).toEqual([]);
+
+        const result = await compactDay(store, DAY);
+        expect(result).toMatchObject({ status: "compacted", key: dayObjectKey(DAY), parts: 2 });
+        const lines = storedLines(dayObjectKey(DAY));
+        expect(lines.map((l) => JSON.parse(l.body as string).ctatt.n)).toEqual(Array.from({ length: 120 }, (_, i) => i));
+        expect([...store.objects().keys()]).toEqual([dayObjectKey(DAY)]);
+        expect(await readRawDay(store, DAY)).toHaveLength(120);
+    });
+
+    it("keeps every completed line on disk, dropping only a write that was cut off", async () => {
+        const w = writer();
+        w.append(line(clock, 1));
+        w.append(line(clock + MINUTE, 2));
+        const [file] = fs.readdirSync(dir);
+        // A crash mid-write leaves a partial last line with no newline.
+        fs.appendFileSync(path.join(dir, file), '{"endpoint":"arrivals","pollEpoch":');
+
+        const successor = writer();
+        expect(successor.pendingFiles()).toEqual([path.join(dir, file)]);
+        expect(await successor.uploadPending()).toEqual([partKey(DAY, 0, DAY_START)]);
+        expect(storedLines(partKey(DAY, 0, DAY_START)).map((l) => JSON.parse(l.body as string).ctatt.n)).toEqual([1, 2]);
+        expect(fs.readdirSync(dir)).toEqual([]);
+    });
+
+    it("uploads a part twice as an idempotent overwrite", async () => {
+        const w = writer();
+        w.append(line(clock, 1));
+        w.closeOpenPart();
+        await w.uploadPending();
+        const first = store.objects().get(partKey(DAY, 0, DAY_START));
+
+        const again = writer();
+        clock = DAY_START;
+        again.append(line(clock, 1));
+        again.closeOpenPart();
+        await again.uploadPending();
+        expect(store.objects().get(partKey(DAY, 0, DAY_START))?.etag).toBe(first?.etag);
+        expect(store.objects().size).toBe(1);
+    });
+
+    it("compacts a predecessor's and a successor's parts for one hour in key order with no line lost", async () => {
+        const w = writer();
+        w.append(line(DAY_START, 1));
+        w.append(line(DAY_START + MINUTE, 2));
+        w.closeOpenPart(); // shutdown at 03:02
+        await w.uploadPending();
+
+        clock = DAY_START + 5 * MINUTE;
+        const successor = writer();
+        successor.append(line(clock, 3));
+        successor.append(line(clock + MINUTE, 4));
+        successor.closeOpenPart();
+        await successor.uploadPending();
+
+        expect([...store.objects().keys()].sort()).toEqual([partKey(DAY, 0, DAY_START), partKey(DAY, 0, DAY_START + 5 * MINUTE)]);
+        await compactDay(store, DAY);
+        expect(storedLines(dayObjectKey(DAY)).map((l) => JSON.parse(l.body as string).ctatt.n)).toEqual([1, 2, 3, 4]);
+    });
+
+    it("rolls to a new part when the service day changes", async () => {
+        const w = writer();
+        w.append(line(parseChicagoLocal("2026-10-15 02:59:00"), 1));
+        w.append(line(parseChicagoLocal("2026-10-15 03:00:00"), 2));
+        w.closeOpenPart();
+        await w.uploadPending();
+
+        expect([...store.objects().keys()].sort()).toEqual([
+            partKey(DAY, 23, parseChicagoLocal("2026-10-15 02:59:00")),
+            partKey("2026-10-15", 0, parseChicagoLocal("2026-10-15 03:00:00")),
+        ]);
+    });
+
+    it("leaves a day whose object already exists untouched, parts and all", async () => {
+        await store.put(dayObjectKey(DAY), gzipSync(Buffer.from("already\n")));
+        await store.put(partKey(DAY, 0, DAY_START), gzipSync(Buffer.from("part\n")));
+
+        expect(await compactDay(store, DAY)).toEqual({ status: "exists", key: dayObjectKey(DAY), bytes: store.objects().get(dayObjectKey(DAY))!.body.byteLength });
+        expect(store.objects().size).toBe(2);
+        expect(await compactDay(store, "2026-10-13")).toEqual({ status: "no-parts", key: dayObjectKey("2026-10-13") });
+    });
+
+    it("keeps writing locally while uploads fail, retrying the part later", async () => {
+        const w = writer();
+        w.append(line(DAY_START, 1));
+        // One surfaced failure: the R2 client's own three retries are tested with it.
+        store.failNext(1, 503);
+        w.append(line(DAY_START + 60 * MINUTE, 2)); // the hour rolls
+        expect(await w.uploadPending()).toEqual([]); // the upload fails
+        expect(logged).toEqual([`raw part not uploaded, kept on disk: put ${partKey(DAY, 0, DAY_START)}: HTTP 503`]);
+        expect(w.pendingFiles()).toEqual([path.join(dir, partFileName(DAY, 0, DAY_START))]);
+        expect(fs.readdirSync(dir)).toHaveLength(2);
+        expect(logged.join(" ")).not.toContain("cloudflarestorage");
+        w.append(line(DAY_START + 61 * MINUTE, 3)); // still writing locally
+
+        expect(await w.uploadPending()).toEqual([partKey(DAY, 0, DAY_START)]);
+        expect(w.pendingFiles()).toEqual([]);
+        w.closeOpenPart();
+        await w.uploadPending();
+        expect(store.objects().size).toBe(2);
+        expect(storedLines(partKey(DAY, 1, DAY_START + 60 * MINUTE))).toHaveLength(2);
+    });
+
+    it("reads a day's lines from its parts when it has not been compacted", async () => {
+        const w = writer();
+        w.append(line(DAY_START, 1));
+        w.closeOpenPart();
+        await w.uploadPending();
+        expect((await readRawDay(store, DAY))?.map((l) => l.pollEpoch)).toEqual([DAY_START]);
+        expect(await readRawDay(store, "2026-10-13")).toBeNull();
+    });
+
+    it("closes the open part only for the day asked, and lists the pending parts of one day", async () => {
+        const w = writer();
+        w.append(line(parseChicagoLocal("2026-10-15 02:59:00"), 1));
+        w.append(line(parseChicagoLocal("2026-10-15 03:00:00"), 2)); // the day rolls: 2026-10-14's part is closed, 2026-10-15's is open
+        const yesterdays = path.join(dir, partFileName(DAY, 23, parseChicagoLocal("2026-10-15 02:59:00")));
+        expect(w.pendingFiles()).toEqual([yesterdays]);
+        expect(w.pendingFiles(DAY)).toEqual([yesterdays]);
+        expect(w.pendingFiles("2026-10-15")).toEqual([]);
+
+        w.closeOpenPart(DAY); // not the open day's part
+        w.append(line(parseChicagoLocal("2026-10-15 03:01:00"), 3));
+        expect(fs.readdirSync(dir)).toHaveLength(2); // 2026-10-15's part was not split
+        expect(w.pendingFiles("2026-10-15")).toEqual([]);
+
+        w.closeOpenPart("2026-10-15");
+        expect(w.pendingFiles("2026-10-15")).toEqual([path.join(dir, partFileName("2026-10-15", 0, parseChicagoLocal("2026-10-15 03:00:00")))]);
+        w.append(line(parseChicagoLocal("2026-10-15 03:02:00"), 4));
+        expect(fs.readdirSync(dir)).toHaveLength(3); // a new part after the close
+        w.closeOpenPart();
+        expect(w.pendingFiles()).toHaveLength(3);
+    });
+});
+
+describe("readRawDayWithOverlap", () => {
+    const at = (text: string) => parseChicagoLocal(text);
+    const dayObject = (day: string, epochs: number[]) =>
+        store.put(dayObjectKey(day), gzipSync(Buffer.from(epochs.map((epoch, i) => `${JSON.stringify(line(epoch, i + 1))}\n`).join(""))));
+
+    it("adds the hour before the day's start from the day before, and the polls up to its close from the day after", async () => {
+        await dayObject("2026-10-13", [at("2026-10-14 01:59:00"), at("2026-10-14 02:00:00"), at("2026-10-14 02:30:00")]);
+        await dayObject(DAY, [at("2026-10-14 03:00:00"), at("2026-10-14 12:00:00"), at("2026-10-15 02:59:00")]);
+        await dayObject("2026-10-15", [at("2026-10-15 03:00:00"), at("2026-10-15 03:14:59"), at("2026-10-15 03:15:00"), at("2026-10-15 04:00:00")]);
+        expect(dayCloseInstant(DAY, 5)).toBe(at("2026-10-15 03:15:00"));
+
+        const lines = await readRawDayWithOverlap(store, DAY, 5);
+
+        expect(lines?.map((l) => l.pollEpoch)).toEqual([
+            at("2026-10-14 02:00:00"),
+            at("2026-10-14 02:30:00"),
+            at("2026-10-14 03:00:00"),
+            at("2026-10-14 12:00:00"),
+            at("2026-10-15 02:59:00"),
+            at("2026-10-15 03:00:00"),
+            at("2026-10-15 03:14:59"),
+        ]);
+    });
+
+    it("is null when the day itself has no raw record, and needs no neighbor", async () => {
+        await dayObject("2026-10-13", [at("2026-10-14 02:30:00")]);
+        expect(await readRawDayWithOverlap(store, DAY, 5)).toBeNull();
+
+        await dayObject(DAY, [at("2026-10-14 03:00:00")]);
+        expect((await readRawDayWithOverlap(store, "2026-10-15", 5))?.map((l) => l.pollEpoch)).toBeUndefined();
+        expect((await readRawDayWithOverlap(store, DAY, 5))?.map((l) => l.pollEpoch)).toEqual([at("2026-10-14 02:30:00"), at("2026-10-14 03:00:00")]);
+    });
+});
+
+describe("the checkpoint", () => {
+    const checkpoint = (overrides: Partial<Checkpoint<{ slots: number }>> = {}): Checkpoint<{ slots: number }> => ({
+        version: 1,
+        machineId: "e784",
+        writtenAt: DAY_START,
+        released: false,
+        state: { slots: 3 },
+        ...overrides,
+    });
+
+    it("round-trips through gzip JSON and reports its age from the store's last-modified", async () => {
+        clock = DAY_START;
+        const { etag } = await putCheckpoint(store, checkpoint(), { ifNoneMatch: "*" });
+        expect(etag).not.toBeNull();
+
+        const read = await getCheckpoint<{ slots: number }>(store);
+        expect(read?.checkpoint).toEqual(checkpoint());
+        expect(read?.etag).toBe(etag);
+        expect(await headCheckpoint(store, DAY_START + 3 * MINUTE)).toEqual({ ageMs: 3 * MINUTE, size: store.objects().get(CHECKPOINT_KEY)!.body.byteLength });
+        expect(await headCheckpoint(createMemoryObjectStore(), DAY_START)).toBeNull();
+        expect(await getCheckpoint(createMemoryObjectStore())).toBeNull();
+    });
+
+    it("fails a conditional put against a changed checkpoint rather than overwriting it", async () => {
+        const first = await putCheckpoint(store, checkpoint(), { ifNoneMatch: "*" });
+        await putCheckpoint(store, checkpoint({ machineId: "other", writtenAt: DAY_START + MINUTE }), { ifMatch: first.etag as string });
+
+        await expect(putCheckpoint(store, checkpoint({ writtenAt: DAY_START + 2 * MINUTE }), { ifMatch: first.etag as string })).rejects.toBeInstanceOf(PreconditionFailedError);
+        expect((await getCheckpoint<{ slots: number }>(store))?.checkpoint.machineId).toBe("other");
+    });
+
+    it("refuses an envelope stamped with a version this build does not read, naming the key", async () => {
+        await store.put(CHECKPOINT_KEY, gzipSync(Buffer.from(JSON.stringify({ ...checkpoint(), version: 2 }), "utf8")));
+        await expect(getCheckpoint(store)).rejects.toThrow("state/checkpoint.json.gz is stamped version 2; this build reads version 1");
+    });
+
+    it("reports an unreleased checkpoint from another machine under three minutes old as held, and a released one as not", () => {
+        const now = DAY_START + 2 * MINUTE;
+        expect(isCheckpointHeld(checkpoint({ machineId: "other" }), "e784", now)).toBe(true);
+        expect(isCheckpointHeld(checkpoint({ machineId: "other", released: true }), "e784", now)).toBe(false);
+        expect(isCheckpointHeld(checkpoint({ machineId: "other" }), "e784", DAY_START + LEASE_HOLD_MS)).toBe(false);
+        expect(isCheckpointHeld(checkpoint({ machineId: "e784" }), "e784", now)).toBe(false);
+    });
+});

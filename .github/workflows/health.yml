@@ -2,7 +2,10 @@ name: Health
 
 # Requests the production health route once a day. A non-200 fails the run, and GitHub emails
 # the person who last changed this file's schedule, so a stale or stuck sync reaches Nate
-# without anyone polling (revival plan U10, R13).
+# without anyone polling (revival plan U10, R13). The same route carries the train collection's
+# `trains` field (live Ghost score plan U19): once the first LiveDay row exists, a checkpoint
+# older than 45 minutes or a day left unreduced also answers 503. The worker's own alert is the
+# Healthchecks.io check, within 15 minutes; this is the daily backstop.
 on:
   schedule:
     # Two and a half hours after the daily sync's window (vercel.json: 10:00 UTC, up to 59 minutes late).
@@ -38,7 +41,10 @@ jobs:
             if [ "$status" = "200" ]; then exit 0; fi
             if [ "$attempt" = "1" ]; then sleep 60; fi
           done
-          echo "::error::Health check failed with HTTP $status. Data may be stale or the sync stuck; see the body above and the SyncRun table."
+          # The body holds two reports: the top-level status is the ridership sync, trains.status the live worker.
+          sync_status="$(jq -r '.status // empty' body.json 2>/dev/null || true)"
+          trains_status="$(jq -r '.trains.status // empty' body.json 2>/dev/null || true)"
+          echo "::error::Health check failed with HTTP $status. The top-level status (${sync_status:-unknown}) is the ridership sync (SyncRun table); trains.status (${trains_status:-unknown}) is the live worker (Healthchecks.io, Fly); see the body above."
           exit 1
 
       - name: Keep the schedule enabled

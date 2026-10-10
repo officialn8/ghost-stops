@@ -24,6 +24,37 @@ regex = '''(?i)(?:chicago_data_app_token|\$\$app_token|x-app-token|app_token|api
 secretGroup = 1
 keywords = ["app_token", "app-token", "api_token"]
 
+# The live worker's secrets (live Ghost score plan U20). Each shape has one deliberately fake
+# sample in src/test/fixtures/secret-shapes.txt, baselined in .gitleaksignore, so CI's positive
+# control fails the day a rule stops matching.
+[[rules]]
+id = "cta-train-tracker-key"
+description = "CTA Train Tracker API key (32 hex) in an env var, assignment, or query string"
+regex = '''(?i)(?:cta_train_tracker_key|train[_ -]?tracker[_ -]?key|[?&]key=)\\?["']?\s*[:=]?\s*\\?["']?([0-9a-f]{32})\b'''
+secretGroup = 1
+keywords = ["train_tracker_key", "traintracker", "tracker_key", "tracker key", "key="]
+
+[[rules]]
+id = "cloudflare-r2-key"
+description = "Cloudflare R2 access key id (32 hex) or secret access key (64 hex) in an env var or assignment"
+regex = '''(?i)(?:r2_access_key_id|r2_secret_access_key|r2_access_key|r2_secret_key)\\?["']?\s*[:=]\s*\\?["']?([0-9a-f]{32}|[0-9a-f]{64})\b'''
+secretGroup = 1
+keywords = ["r2_access_key", "r2_secret"]
+
+[[rules]]
+id = "healthchecks-ping-url"
+description = "Healthchecks.io ping URL, which anyone holding it can ping or fail"
+regex = '''https://hc-ping\.com/([A-Za-z0-9_-]{20,}(?:/[A-Za-z0-9_-]+)?)'''
+secretGroup = 1
+keywords = ["hc-ping.com"]
+
+[[rules]]
+id = "ghost-stops-revalidate-secret"
+description = "The worker's revalidate bearer secret, generated with the fixed prefix ghrv_"
+regex = '''\b(ghrv_[A-Za-z0-9_-]{32,})\b'''
+secretGroup = 1
+keywords = ["ghrv_"]
+
 # Prisma fact keys such as factKey: 'ridership_2001_avg' are identifiers, not secrets,
 # but the default generic-api-key rule reads "key" plus a quoted value as a credential.
 [[allowlists]]

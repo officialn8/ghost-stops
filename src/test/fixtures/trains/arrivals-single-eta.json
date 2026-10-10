@@ -1,0 +1,28 @@
+{
+  "ctatt": {
+    "tmst": "2026-10-09T22:27:16",
+    "errCd": "0",
+    "errNm": null,
+    "eta": {
+      "staId": "41680",
+      "stpId": "30297",
+      "staNm": "Oakton-Skokie",
+      "stpDe": "Service toward Dempster-Skokie",
+      "rn": "594",
+      "rt": "Y",
+      "destSt": "0",
+      "destNm": "Skokie",
+      "trDr": "1",
+      "prdt": "2026-10-09T22:27:05",
+      "arrT": "2026-10-09T22:35:00",
+      "isApp": "0",
+      "isSch": "1",
+      "isDly": "0",
+      "isFlt": "1",
+      "flags": null,
+      "lat": null,
+      "lon": null,
+      "heading": null
+    }
+  }
+}
