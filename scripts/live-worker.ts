@@ -23,7 +23,9 @@ import { parseArgs } from "node:util";
 import { closuresFor, deriveStatus, todayInChicago } from "../src/lib/cta/closures";
 import { CTA_ROSTER } from "../src/lib/cta/roster";
 import { createHealthchecks } from "../src/lib/live/healthchecks";
-import { createCallSink, DEFAULT_TOLERANCE_MINUTES, runLoop, serializeClosedDay } from "../src/lib/live/loop";
+import { createCallSink, runLoop, serializeClosedDay } from "../src/lib/live/loop";
+import { GHOST_TOLERANCE_MINUTES } from "../src/lib/live/matcher";
+import { closeDay, fillGapDays, finishDay, type NightlyDeps } from "../src/lib/live/nightly";
 import { createMemoryObjectStore, createR2Store, type ObjectStore } from "../src/lib/live/objectStore";
 import { createRawWriter } from "../src/lib/live/rawStore";
 import { countByRoute, scheduledStopsFor } from "../src/lib/live/schedule";
@@ -197,6 +199,22 @@ async function run(): Promise<number> {
     await refresh();
     const latestStopSeconds = versionInForce(await readScheduleIndex(store), Date.now())?.latestStopSeconds;
 
+    // The nightly steps (U8): reduce and write the closed day, refresh the site, compact the raw
+    // day; finish a day the checkpoint left half done; record gap days as set aside.
+    const { prisma } = await import("../src/lib/prisma");
+    const secret = process.env.WORKER_REVALIDATE_SECRET?.trim();
+    const siteUrl = process.env.SITE_URL?.trim();
+    if (!secret || !siteUrl) log("WORKER_REVALIDATE_SECRET or SITE_URL is not set; the site will not be asked to refresh");
+    const nightly: NightlyDeps = {
+        db: prisma,
+        store,
+        stationIds: ROSTER_IDS,
+        site: secret && siteUrl ? { url: siteUrl, secret } : null,
+        healthchecks,
+        toleranceMinutes: GHOST_TOLERANCE_MINUTES,
+        log,
+    };
+
     const controller = new AbortController();
     const stop = (signal: NodeJS.Signals) => {
         log(`${signal} received; finishing the tick`);
@@ -216,16 +234,21 @@ async function run(): Promise<number> {
         rawWriter,
         stations: openStationIds,
         machineId: machineId(process.env),
-        toleranceMinutes: DEFAULT_TOLERANCE_MINUTES,
+        toleranceMinutes: GHOST_TOLERANCE_MINUTES,
         latestStopSeconds,
         signal: controller.signal,
         healthchecks,
         hooks: {
-            onDayClose: async (tracker) => {
+            onDayClose: async (tracker, context) => {
+                // The serialized tracker stays beside the raw day: the record of what the worker held.
                 await serializeClosedDay(store, tracker);
+                const day = await closeDay(nightly, tracker, { quotaStopped: context.quota.stopped });
+                await fillGapDays(nightly, Date.now());
                 await refresh();
-                return { serviceDate: tracker.serviceDate, reduced: false, revalidated: false, compacted: false };
+                return day;
             },
+            finishDay: (day) => finishDay(nightly, day),
+            fillGaps: (now) => fillGapDays(nightly, now).then(() => {}),
         },
         log,
     });

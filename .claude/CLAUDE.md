@@ -65,7 +65,8 @@ src/
 │   │                freshness, schedule, window
 │   ├── live/        the live Ghost score (server-only): trainTracker (the CTA client), serviceDay,
 │   │                gtfs, schedule, scheduleArchive, objectStore (R2), rawStore, tracker, loop,
-│   │                healthchecks; __fixtures__/ holds the GTFS rail slice
+│   │                healthchecks, matcher, reduce, writeDay, revalidate, nightly, replay,
+│   │                sensitivity, health; __fixtures__/ holds the GTFS rail slice
 │   ├── scoring/     score (v2), components, peers, availability, windows, percentile, whyCard
 │   ├── narratives/  archetypes, generate (the narrative job), renderer, formatters
 │   ├── stations/    list (the list payload), detail (the detail payload), ridership (series), metadata (page titles)
@@ -80,7 +81,8 @@ src/
 prisma/              schema.prisma, migrations/ (Postgres)
 scripts/             run-sync, seed-reference-data, export-history, sample-upstream,
                      extract-score-snapshot, reconcile-track-segments, ingest/ (facts), archive/,
-                     live-worker (the Fly worker entry), sample-train-tracker, cut-gtfs-slice
+                     live-worker (the Fly worker entry), live-rereduce, live-sensitivity,
+                     sample-train-tracker, cut-gtfs-slice
 Dockerfile, fly.toml the worker's image and Machine; tsconfig.scripts.json type-checks scripts/
 docs/                plans/ (the revival plan), runbooks/history-load.md, audit-2026-10-02/, archive/
 docs-private/        gitignored: plans, ideation, reviews, and new runbooks written by the planning tools
@@ -109,7 +111,7 @@ CTA publishes in roughly monthly batches, about two months behind, with no annou
 
 ### The live worker
 
-`scripts/live-worker.ts` (`src/lib/live/`) runs on one Fly.io Machine, deployed with `fly deploy --ha=false`. Every minute it polls Train Tracker positions once and every open station's arrivals four to a call (37 calls a tick), feeds the slot tracker (a slot per schedule-only prediction, a passage per live train that came), appends each call's raw line to an hourly part uploaded to R2 under `raw/v1/`, checkpoints the open day to `state/checkpoint.json.gz` with a conditional put (also the single-instance lease), and pings Healthchecks.io after a wholly successful cycle. It checks CTA's static GTFS daily and archives each version under `schedules/`. The service day runs 03:00 to 03:00 Chicago and closes at 03:15; a scheduled stop belongs to the day its instant falls in. The key, the R2 secrets, and the ping URL never appear in a log line, a URL in an error, or a fixture; `.gitleaks.toml` carries a rule for each shape. Setup and operation: `docs-private/runbooks/live-worker.md` (private); `DEPLOYMENT.md`, "The live worker".
+`scripts/live-worker.ts` (`src/lib/live/`) runs on one Fly.io Machine, deployed with `fly deploy --ha=false`. Every minute it polls Train Tracker positions once and every open station's arrivals four to a call (37 calls a tick), feeds the slot tracker (a slot per schedule-only prediction, a passage per live train that came), appends each call's raw line to an hourly part uploaded to R2 under `raw/v1/`, checkpoints the open day to `state/checkpoint.json.gz` with a conditional put (also the single-instance lease), and pings Healthchecks.io after a wholly successful cycle. It checks CTA's static GTFS daily and archives each version under `schedules/`. The service day runs 03:00 to 03:00 Chicago and closes at 03:15; a scheduled stop belongs to the day its instant falls in. At the close the matcher (`matcher.ts`, tolerance `GHOST_TOLERANCE_MINUTES`) gives every schedule-only slot and every scheduled stop a verdict, the reducer (`reduce.ts`, `REDUCER_VERSION`) turns them into one `LiveDay` and 144 `LiveStationDay` rows written in one transaction (`writeDay.ts`), the worker POSTs `/api/internal/revalidate`, and the raw parts compact into the day object. `scripts/live-rereduce.ts --date` re-scores a past day from its raw file; `scripts/live-sensitivity.ts --from --to` prints the tolerance table. The key, the R2 secrets, and the ping URL never appear in a log line, a URL in an error, or a fixture; `.gitleaks.toml` carries a rule for each shape. Setup and operation: `docs-private/runbooks/live-worker.md` (private); `DEPLOYMENT.md`, "The live worker".
 
 ## Ghost score v2
 
